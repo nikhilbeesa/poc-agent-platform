@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Product Engineering Agent Platform — Schematic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<div class="grid-bg" aria-hidden="true"></div>
+
+<div class="sheet-stack">
+
+  <!-- TITLE BLOCK -->
+  <header class="title-block">
+    <div class="tb-main">
+      <div class="tb-eyebrow">AI PRODUCT ENGINEERING AGENT PLATFORM</div>
+      <h1 class="tb-title">Idea → Discovery → Agents → Artefacts</h1>
+    </div>
+    <div class="tb-fields">
+      <div class="tb-field"><span class="tb-label">PROJECT</span><span class="tb-value" id="tb-project">—</span></div>
+      <div class="tb-field"><span class="tb-label">DOMAIN</span><span class="tb-value" id="tb-domain">—</span></div>
+      <div class="tb-field"><span class="tb-label">DATE</span><span class="tb-value" id="tb-date">—</span></div>
+      <div class="tb-field"><span class="tb-label">MODE</span><span class="tb-value accent">MOCK · LOCAL</span></div>
+      <div class="tb-field"><span class="tb-label">KNOWLEDGE BASE</span><span class="tb-value" id="tb-domains">— domains</span></div>
+    </div>
+    <div class="tb-actions">
+      <button class="btn btn-ghost" id="btn-new-project">+ New project</button>
+    </div>
+  </header>
+
+  <!-- SHEET 01 — INTAKE -->
+  <section class="panel" id="panel-intake">
+    <span class="tick tick-tl"></span><span class="tick tick-tr"></span><span class="tick tick-bl"></span><span class="tick tick-br"></span>
+    <div class="panel-head">
+      <span class="panel-num">SHEET 01</span>
+      <span class="panel-title">Intake</span>
+    </div>
+    <div class="panel-body">
+      <label class="field-label" for="idea-input">Business idea</label>
+      <textarea id="idea-input" rows="2" placeholder="e.g. An app where people can book home cleaners for one-off or recurring visits"></textarea>
+      <div class="idea-examples">
+        <span class="field-label">Try:</span>
+        <button class="chip" data-idea="An app where people can book home cleaners for one-off or recurring visits">booking app</button>
+        <button class="chip" data-idea="An online store selling handmade candles and shipping them nationwide">e-commerce</button>
+        <button class="chip" data-idea="A platform connecting freelance photographers with couples planning weddings">marketplace</button>
+        <button class="chip" data-idea="A tool that helps small farms track crop yields and equipment maintenance">unseen domain ⚡</button>
+      </div>
+      <button class="btn btn-primary" id="btn-submit-idea">Run discovery →</button>
+      <div class="hint" id="learned-banner" hidden>
+        <span class="hint-icon">⚡</span> No existing domain matched this idea — the knowledge engine is learning and persisting a new one now.
+      </div>
+    </div>
+  </section>
+
+  <!-- SHEET 02 — DISCOVERY -->
+  <section class="panel is-locked" id="panel-discovery">
+    <span class="tick tick-tl"></span><span class="tick tick-tr"></span><span class="tick tick-bl"></span><span class="tick tick-br"></span>
+    <div class="panel-head">
+      <span class="panel-num">SHEET 02</span>
+      <span class="panel-title">Discovery Questionnaire</span>
+      <span class="panel-status" id="discovery-status"></span>
+    </div>
+    <div class="panel-body">
+      <div class="lock-msg">Run discovery on Sheet 01 first.</div>
+      <div id="questions-list"></div>
+      <button class="btn btn-primary" id="btn-run-agents" hidden>Dispatch agent team →</button>
+    </div>
+  </section>
+
+  <!-- SHEET 03 — AGENT ASSEMBLY -->
+  <section class="panel is-locked" id="panel-agents">
+    <span class="tick tick-tl"></span><span class="tick tick-tr"></span><span class="tick tick-bl"></span><span class="tick tick-br"></span>
+    <div class="panel-head">
+      <span class="panel-num">SHEET 03</span>
+      <span class="panel-title">Agent Assembly Line</span>
+      <span class="panel-status" id="agents-status"></span>
+    </div>
+    <div class="panel-body">
+      <div class="lock-msg">Complete discovery to dispatch the agent team.</div>
+      <svg class="schematic" id="schematic" viewBox="0 0 900 160" preserveAspectRatio="xMidYMid meet"></svg>
+      <div class="agent-log" id="agent-log"></div>
+      <div class="qa-verdict" id="qa-verdict" hidden></div>
+      <button class="btn btn-primary" id="btn-export" hidden>Export artefacts →</button>
+    </div>
+  </section>
+
+  <!-- SHEET 04 — ARTEFACTS -->
+  <section class="panel is-locked" id="panel-artefacts">
+    <span class="tick tick-tl"></span><span class="tick tick-tr"></span><span class="tick tick-bl"></span><span class="tick tick-br"></span>
+    <div class="panel-head">
+      <span class="panel-num">SHEET 04</span>
+      <span class="panel-title">Exported Artefacts</span>
+    </div>
+    <div class="panel-body">
+      <div class="lock-msg">Run the agent team to generate artefacts.</div>
+      <div class="artefact-controls" id="artefact-controls" hidden>
+        <button class="btn" id="btn-download-current">⬇ Download this document (.md)</button>
+        <button class="btn btn-ghost" id="btn-download-all">⬇ Download all 3 (.md)</button>
+      </div>
+      <div class="tabs" id="artefact-tabs" hidden></div>
+      <div class="doc-viewer" id="doc-viewer"></div>
+    </div>
+  </section>
+
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

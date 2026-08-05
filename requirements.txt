@@ -1,0 +1,13 @@
+# Core
+anthropic>=0.40.0        # Claude API client (LLM_PROVIDER=anthropic, the default)
+google-genai>=1.0         # Gemini API client (LLM_PROVIDER=gemini) — free-tier alternative
+pydantic>=2.0            # Shared context schema + validation
+python-dotenv>=1.0       # Load API keys from .env
+requests>=2.31            # HTTP calls to Supabase's REST API
+
+# Web app / deployment
+flask>=3.0                 # Local + hosted web demo server (webapp/server.py)
+gunicorn>=21.2              # Production WSGI server for Render deployment
+
+# Utility (added as needed in later phases)
+rich>=13.0                # Readable console output during development

@@ -1,0 +1,18 @@
+# Render deployment blueprint. You can either:
+#   (a) use this file automatically via Render's "Blueprint" deploy option, or
+#   (b) just set these same values manually in the Render dashboard —
+#       see the README's "Deploying to production" section.
+services:
+  - type: web
+    name: poc-agent-platform-backend
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn wsgi:app
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false   # set manually in the Render dashboard — don't commit real keys
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
