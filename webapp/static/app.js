@@ -54,6 +54,21 @@ async function refreshDomainCount() {
   } catch (e) { /* non-critical */ }
 }
 
+async function checkMode() {
+  const el = $('#tb-mode');
+  try {
+    const data = await api('/api/mode');
+    if (data.mode === 'live') {
+      el.textContent = `LIVE · ${data.provider.toUpperCase()}`;
+    } else {
+      el.textContent = 'MOCK · offline';
+    }
+  } catch (e) {
+    el.textContent = 'unknown';
+  }
+}
+checkMode();
+
 $('#btn-new-project').addEventListener('click', () => {
   location.reload();
 });

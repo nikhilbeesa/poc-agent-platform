@@ -28,6 +28,7 @@ from discovery import is_discovery_complete, run_discovery  # noqa: E402
 from export import export_all_artefacts  # noqa: E402
 from knowledge.bootstrap_seed_data import bootstrap  # noqa: E402
 from knowledge.store import get_knowledge_store  # noqa: E402
+from llm_client import get_client  # noqa: E402
 from orchestrator import AGENT_PIPELINE  # noqa: E402
 
 app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "static"))
@@ -52,9 +53,15 @@ def handle_any_error(e):
 # In-memory project store — fine for a local single-user demo.
 PROJECTS: dict[str, ProjectContext] = {}
 
-# Small artificial delay so mock mode doesn't feel instantaneous/anticlimactic
-# in a live demo. Real (live) mode would have genuine latency here instead.
+# Small artificial delay so MOCK mode doesn't feel instantaneous/
+# anticlimactic in a live demo. Live mode already has genuine API
+# latency, so this is skipped there — see _demo_pace().
 DEMO_DELAY = 0.5
+
+
+def _demo_pace():
+    if get_client() is None:
+        time.sleep(DEMO_DELAY)
 
 AGENT_META = [
     {"role": "business_analyst", "label": "Business Analyst", "note": "requirements & goals"},
@@ -78,6 +85,14 @@ def index():
 # API
 # ---------------------------------------------------------------------------
 
+@app.route("/api/mode")
+def mode():
+    client = get_client()
+    if client is None:
+        return jsonify({"mode": "mock", "provider": None})
+    return jsonify({"mode": "live", "provider": client.provider})
+
+
 @app.route("/api/knowledge/domains")
 def knowledge_domains():
     store = get_knowledge_store()
@@ -94,7 +109,7 @@ def create_project():
     store = bootstrap()  # ensures the 3 seed domains exist before we snapshot
     known_before = set(store.list_domains())
 
-    time.sleep(DEMO_DELAY)
+    _demo_pace()
     ctx = ProjectContext()
     ctx = run_discovery(ctx, idea)
 
@@ -156,7 +171,7 @@ def run_agent(project_id, index):
     if index != len(ctx.agent_contributions):
         return jsonify({"error": f"agents must run in order — expected index {len(ctx.agent_contributions)}"}), 400
 
-    time.sleep(DEMO_DELAY)
+    _demo_pace()
     agent = AGENT_PIPELINE[index]
     contribution = agent.run(ctx)
 
@@ -177,7 +192,7 @@ def export(project_id):
     if len(ctx.agent_contributions) < len(AGENT_PIPELINE):
         return jsonify({"error": "agent pipeline is not complete yet"}), 400
 
-    time.sleep(DEMO_DELAY)
+    _demo_pace()
     ctx = export_all_artefacts(ctx)
 
     return jsonify({

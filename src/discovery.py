@@ -187,16 +187,32 @@ def _live_dynamic_questions(client, context: ProjectContext, domain_info: dict |
     prompt = f"""Business idea: "{context.business_idea_raw}"
 {context_note}
 
-Generate 5-7 discovery questions SPECIFIC to this exact business idea —
-not a generic checklist. Cover target users, core operations/workflow,
-monetization or payments, and anything unique to THIS idea that a generic
-template for the domain would miss. Two different ideas in the same
-domain should get noticeably different questions.
+Generate ALL the discovery questions you genuinely need to fully
+understand this business idea before a team could start building it —
+don't stop at an arbitrary count. A simple idea might only need 5-6
+questions; a complex one might genuinely need 15-20+. Use your judgment
+on how many are actually necessary, not a fixed number.
+
+Make sure you've covered, wherever relevant to this specific idea:
+- target users / customer segments
+- core operations and day-to-day workflow
+- monetization, pricing, and payments
+- technical or platform requirements
+- competition and differentiation
+- legal, compliance, or regulatory considerations
+- growth and scaling plans
+- risks or unknowns specific to this idea
+- anything unique to THIS idea that a generic template for the domain would miss
+
+Questions must be SPECIFIC to this exact idea, not generic boilerplate.
+Two different ideas in the same domain should get noticeably different
+questions. Don't ask questions whose answer is already obvious from the
+idea as stated.
 
 Respond ONLY with JSON, no other text:
 {{"questions": [{{"id": "short_id", "text": "...", "category": "..."}}]}}"""
 
-    text = client.generate(prompt, max_tokens=600)
+    text = client.generate(prompt, max_tokens=3000)
     data = json.loads(text)
     return [DiscoveryQuestion(**q) for q in data["questions"]]
 
