@@ -27,10 +27,27 @@ for a code update.
 """
 
 import os
+import time
 
 PROVIDER = os.environ.get("LLM_PROVIDER", "anthropic").lower()
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3-flash-preview")
+
+# Free-tier / shared-capacity models occasionally return transient errors
+# under load (e.g. Gemini's 503 "currently experiencing high demand," or
+# Anthropic's 529 "overloaded"). These generally succeed on retry within
+# seconds — so retry automatically rather than surfacing a scary error to
+# the user for something that isn't actually broken.
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504, 529}
+MAX_RETRIES = 3
+RETRY_BASE_DELAY = 1.5  # seconds; doubles each attempt (1.5, 3, 6)
+
+
+def _is_retryable(exc: Exception) -> bool:
+    status = getattr(exc, "status_code", None)
+    if status is None:
+        status = getattr(exc, "code", None)  # google-genai uses .code
+    return status in RETRYABLE_STATUS_CODES
 
 
 class LLMClient:
@@ -41,6 +58,19 @@ class LLMClient:
         self.raw_client = raw_client
 
     def generate(self, prompt: str, max_tokens: int = 800) -> str:
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                return self._generate_once(prompt, max_tokens)
+            except Exception as e:
+                last_error = e
+                if attempt < MAX_RETRIES - 1 and _is_retryable(e):
+                    time.sleep(RETRY_BASE_DELAY * (2 ** attempt))
+                    continue
+                raise
+        raise last_error  # pragma: no cover — loop always returns or raises
+
+    def _generate_once(self, prompt: str, max_tokens: int) -> str:
         if self.provider == "anthropic":
             response = self.raw_client.messages.create(
                 model=ANTHROPIC_MODEL,
