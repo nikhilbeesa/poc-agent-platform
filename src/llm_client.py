@@ -14,20 +14,23 @@ returns None and every call site already treats that as "run in mock mode"
   ANTHROPIC_API_KEY   required if LLM_PROVIDER=anthropic (the default)
   GEMINI_API_KEY      required if LLM_PROVIDER=gemini
   ANTHROPIC_MODEL     optional override (default: claude-sonnet-4-6)
-  GEMINI_MODEL        optional override (default: gemini-2.5-flash)
+  GEMINI_MODEL        optional override (default: gemini-3-flash-preview)
 
-Why Gemini as the second option: Google's free tier (Flash / Flash-Lite
-models) is an actual ongoing free tier, not just trial credit — useful if
-you want to run this without an Anthropic budget. Free-tier model names
-and limits change fairly often; check https://ai.google.dev/pricing for
-the current list if GEMINI_MODEL's default stops working.
+Why Gemini as the second option: Google's free tier is an actual ongoing
+free tier, not just trial credit — useful if you want to run this without
+an Anthropic budget. Free-tier model names and availability change often
+(e.g. gemini-2.5-flash was restricted for new API keys ahead of its
+official Oct 2026 shutdown date) — check https://ai.google.dev/gemini-api/docs/gemini-3
+or https://ai.google.dev/pricing for the current list if GEMINI_MODEL's
+default stops working, and override it via env var rather than waiting
+for a code update.
 """
 
 import os
 
 PROVIDER = os.environ.get("LLM_PROVIDER", "anthropic").lower()
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3-flash-preview")
 
 
 class LLMClient:

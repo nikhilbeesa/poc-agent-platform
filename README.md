@@ -118,7 +118,7 @@ in the code changes:
 | `gemini` | `GEMINI_API_KEY` from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | Actual ongoing free tier (Flash/Flash-Lite models, rate-limited) — no credit card needed |
 
 Free-tier model availability shifts fairly often on Google's side —
-`GEMINI_MODEL` defaults to `gemini-2.5-flash`; check
+`GEMINI_MODEL` defaults to `gemini-3-flash-preview`; check
 [ai.google.dev/pricing](https://ai.google.dev/pricing) if that stops
 working and override it via env var.
 
