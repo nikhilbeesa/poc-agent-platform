@@ -30,6 +30,7 @@ from knowledge.bootstrap_seed_data import bootstrap  # noqa: E402
 from knowledge.store import get_knowledge_store  # noqa: E402
 from llm_client import get_client  # noqa: E402
 from orchestrator import AGENT_PIPELINE  # noqa: E402
+from project_store import get_project_store  # noqa: E402
 
 app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "static"))
 
@@ -195,12 +196,48 @@ def export(project_id):
     _demo_pace()
     ctx = export_all_artefacts(ctx)
 
+    qa = ctx.get_contribution(AgentRole.QA_REVIEWER)
+    qa_readiness = qa.output.get("overall_readiness") if qa else None
+
+    # Persist now that artefacts exist — this is what powers the History
+    # view. In-progress projects (mid-discovery, mid-agent-run) stay
+    # in-memory only; we only save finished work.
+    store = get_project_store()
+    store.save({
+        "id": ctx.project_id,
+        "business_idea": ctx.business_idea_raw,
+        "domain": ctx.domain_classification,
+        "domain_confidence": ctx.domain_confidence,
+        "stage": ctx.stage.value,
+        "qa_readiness": qa_readiness,
+        "consistency_notes": ctx.consistency_notes,
+        "artefacts": [
+            {"type": a.type, "title": a.title, "content_markdown": a.content_markdown}
+            for a in ctx.artefacts
+        ],
+    })
+
     return jsonify({
         "artefacts": [
             {"type": a.type, "title": a.title, "content_markdown": a.content_markdown}
             for a in ctx.artefacts
         ]
     })
+
+
+@app.route("/api/history", methods=["GET"])
+def history_list():
+    store = get_project_store()
+    return jsonify({"projects": store.list_summaries()})
+
+
+@app.route("/api/history/<project_id>", methods=["GET"])
+def history_detail(project_id):
+    store = get_project_store()
+    record = store.get(project_id)
+    if not record:
+        return jsonify({"error": "project not found"}), 404
+    return jsonify(record)
 
 
 if __name__ == "__main__":

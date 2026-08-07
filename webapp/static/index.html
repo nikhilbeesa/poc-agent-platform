@@ -29,6 +29,7 @@
       <div class="tb-field"><span class="tb-label">KNOWLEDGE BASE</span><span class="tb-value" id="tb-domains">— domains</span></div>
     </div>
     <div class="tb-actions">
+      <button class="btn btn-ghost" id="btn-history">History</button>
       <button class="btn btn-ghost" id="btn-new-project">+ New project</button>
     </div>
   </header>
@@ -100,13 +101,40 @@
       <div class="lock-msg">Run the agent team to generate artefacts.</div>
       <div class="artefact-controls" id="artefact-controls" hidden>
         <button class="btn" id="btn-download-current">⬇ Download this document (.md)</button>
-        <button class="btn btn-ghost" id="btn-download-all">⬇ Download all 3 (.md)</button>
+        <button class="btn btn-ghost" id="btn-download-all">⬇ Download all (.md)</button>
       </div>
       <div class="tabs" id="artefact-tabs" hidden></div>
       <div class="doc-viewer" id="doc-viewer"></div>
     </div>
   </section>
 
+</div>
+
+<!-- HISTORY OVERLAY -->
+<div class="overlay" id="history-overlay" hidden>
+  <div class="overlay-panel">
+    <div class="overlay-head">
+      <span class="panel-num">HISTORY</span>
+      <span class="panel-title">Past Projects</span>
+      <button class="btn btn-ghost overlay-close" id="btn-history-close">✕ Close</button>
+    </div>
+
+    <div class="overlay-body" id="history-list-view">
+      <div class="lock-msg" id="history-empty-msg" hidden>No projects yet — export your first one to see it here.</div>
+      <div id="history-list"></div>
+    </div>
+
+    <div class="overlay-body" id="history-detail-view" hidden>
+      <button class="btn btn-ghost" id="btn-history-back">← Back to list</button>
+      <div class="history-detail-meta" id="history-detail-meta"></div>
+      <div class="artefact-controls">
+        <button class="btn" id="btn-history-download-current">⬇ Download this document (.md)</button>
+        <button class="btn btn-ghost" id="btn-history-download-all">⬇ Download all (.md)</button>
+      </div>
+      <div class="tabs" id="history-tabs"></div>
+      <div class="doc-viewer" id="history-doc-viewer"></div>
+    </div>
+  </div>
 </div>
 
 <script src="/static/app.js"></script>

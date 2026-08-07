@@ -118,7 +118,9 @@ in the code changes:
 | `gemini` | `GEMINI_API_KEY` from [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | Actual ongoing free tier (Flash/Flash-Lite models, rate-limited) — no credit card needed |
 
 Free-tier model availability shifts fairly often on Google's side —
-`GEMINI_MODEL` defaults to `gemini-3-flash-preview`; check
+`GEMINI_MODEL` defaults to `gemini-3.1-flash-lite` (1,500 requests/day
+free — avoid "-preview" model names, they carry much lower quotas, often
+~20/day). Check
 [ai.google.dev/pricing](https://ai.google.dev/pricing) if that stops
 working and override it via env var.
 
@@ -126,7 +128,9 @@ working and override it via env var.
 
 1. Create a project at [supabase.com](https://supabase.com).
 2. **SQL Editor → New Query** → paste in `deploy/supabase_schema.sql` →
-   Run. Creates the `domains` table and seeds the 3 starter domains.
+   Run. Creates the `domains` table (seeded with the 3 starter domains)
+   and the `projects` table (empty — fills up as projects get exported,
+   powering the History view in the web UI).
 3. **Settings → API** → note your **Project URL** and **anon/service key**.
 
 ### 3. Deploy to Render
@@ -135,7 +139,10 @@ working and override it via env var.
 2. On [render.com](https://render.com): **New → Web Service** → connect
    your repo. It reads `render.yaml` automatically, or set manually:
    - **Build command:** `pip install -r requirements.txt`
-   - **Start command:** `gunicorn wsgi:app`
+   - **Start command:** `gunicorn wsgi:app --timeout 120`
+     (the `--timeout 120` matters — gunicorn's default 30s worker timeout
+     is too short once LLM calls + automatic retries are factored in; a
+     killed worker returns a broken raw error page instead of JSON)
 3. Add environment variables (**Settings → Environment**):
    - `LLM_PROVIDER` — `anthropic` or `gemini` (defaults to `anthropic` if unset)
    - `ANTHROPIC_API_KEY` or `GEMINI_API_KEY` — whichever matches your provider choice

@@ -74,6 +74,120 @@ $('#btn-new-project').addEventListener('click', () => {
 });
 
 // ============================================================
+// History overlay
+// ============================================================
+let historyProjects = [];
+let historyDetailArtefacts = [];
+let historyDetailActiveIndex = 0;
+
+$('#btn-history').addEventListener('click', openHistory);
+$('#btn-history-close').addEventListener('click', closeHistory);
+$('#btn-history-back').addEventListener('click', showHistoryList);
+
+async function openHistory() {
+  $('#history-overlay').hidden = false;
+  showHistoryList();
+  try {
+    const data = await api('/api/history');
+    historyProjects = data.projects;
+    renderHistoryList();
+  } catch (e) {
+    $('#history-list').innerHTML = `<div class="lock-msg">Could not load history: ${escapeHtml(e.message)}</div>`;
+  }
+}
+
+function closeHistory() {
+  $('#history-overlay').hidden = true;
+}
+
+function showHistoryList() {
+  $('#history-list-view').hidden = false;
+  $('#history-detail-view').hidden = true;
+}
+
+function renderHistoryList() {
+  const list = $('#history-list');
+  const emptyMsg = $('#history-empty-msg');
+  list.innerHTML = '';
+
+  if (!historyProjects.length) {
+    emptyMsg.hidden = false;
+    return;
+  }
+  emptyMsg.hidden = true;
+
+  historyProjects.forEach(p => {
+    const date = p.created_at ? new Date(p.created_at).toLocaleString() : 'unknown date';
+    const badge = el('span', {
+      class: `history-badge ${p.qa_readiness || ''}`,
+      text: p.qa_readiness || 'unknown',
+    });
+    const row = el('div', { class: 'history-row' }, [
+      el('div', { class: 'history-row-main' }, [
+        el('div', { class: 'history-row-idea', text: p.business_idea }),
+        el('div', { class: 'history-row-meta', text: `${p.domain || 'unclassified'} · ${p.artefact_count} artefact(s) · ${date}` }),
+      ]),
+      badge,
+    ]);
+    row.addEventListener('click', () => openHistoryDetail(p.id));
+    list.appendChild(row);
+  });
+}
+
+async function openHistoryDetail(projectId) {
+  $('#history-list-view').hidden = true;
+  $('#history-detail-view').hidden = false;
+  $('#history-detail-meta').textContent = 'Loading…';
+  $('#history-tabs').innerHTML = '';
+  $('#history-doc-viewer').innerHTML = '';
+
+  try {
+    const record = await api(`/api/history/${projectId}`);
+    const date = record.created_at ? new Date(record.created_at).toLocaleString() : 'unknown date';
+    $('#history-detail-meta').innerHTML =
+      `<strong>${escapeHtml(record.business_idea)}</strong><br>` +
+      `Domain: ${escapeHtml(record.domain || 'unclassified')} · Created: ${escapeHtml(date)} · QA: ${escapeHtml(record.qa_readiness || 'unknown')}`;
+
+    historyDetailArtefacts = record.artefacts || [];
+    historyDetailActiveIndex = 0;
+
+    const tabs = $('#history-tabs');
+    tabs.innerHTML = '';
+    historyDetailArtefacts.forEach((a, i) => {
+      const tab = el('button', { class: 'tab-btn' + (i === 0 ? ' active' : ''), text: a.title.split('—')[0].trim() || a.type });
+      tab.addEventListener('click', () => {
+        historyDetailActiveIndex = i;
+        document.querySelectorAll('#history-tabs .tab-btn').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        renderHistoryDoc(a.content_markdown);
+      });
+      tabs.appendChild(tab);
+    });
+
+    if (historyDetailArtefacts.length) renderHistoryDoc(historyDetailArtefacts[0].content_markdown);
+  } catch (e) {
+    $('#history-detail-meta').textContent = 'Could not load this project: ' + e.message;
+  }
+}
+
+function renderHistoryDoc(markdown) {
+  const viewer = $('#history-doc-viewer');
+  viewer.innerHTML = window.marked ? marked.parse(markdown) : markdown;
+}
+
+$('#btn-history-download-current').addEventListener('click', () => {
+  const a = historyDetailArtefacts[historyDetailActiveIndex];
+  if (!a) return;
+  downloadMarkdown(`${a.type}.md`, a.content_markdown);
+});
+
+$('#btn-history-download-all').addEventListener('click', () => {
+  historyDetailArtefacts.forEach((a, i) => {
+    setTimeout(() => downloadMarkdown(`${a.type}.md`, a.content_markdown), i * 350);
+  });
+});
+
+// ============================================================
 // SHEET 01 — Intake
 // ============================================================
 document.querySelectorAll('.chip').forEach(chip => {

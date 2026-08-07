@@ -55,3 +55,31 @@ values
      {"id":"mk_trust","text":"How will you build trust between strangers transacting?","category":"trust_safety"},
      {"id":"mk_matching","text":"How do buyers and sellers find each other?","category":"discovery"}]'::jsonb)
 on conflict (slug) do nothing;
+
+-- ---------------------------------------------------------------------
+-- Projects table: persists completed projects so they survive server
+-- restarts (Render's free tier definitely doesn't guarantee memory
+-- persistence) and can be browsed later from the History view.
+-- ---------------------------------------------------------------------
+
+create table if not exists projects (
+  id text primary key,
+  business_idea text not null,
+  domain text,
+  domain_confidence real,
+  stage text not null default 'complete',
+  qa_readiness text,
+  consistency_notes jsonb not null default '[]'::jsonb,
+  artefacts jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+alter table projects enable row level security;
+
+create policy "poc demo — allow all"
+  on projects
+  for all
+  using (true)
+  with check (true);
+
+create index if not exists projects_created_at_idx on projects (created_at desc);
