@@ -27,6 +27,9 @@ from discovery import is_discovery_complete, run_discovery  # noqa: E402
 from export import export_all_artefacts, save_artefacts_to_disk  # noqa: E402
 from orchestrator import AGENT_PIPELINE, run_agent_pipeline  # noqa: E402
 
+# Business requirements, user stories, architecture recommendation, test cases
+EXPECTED_ARTEFACT_COUNT = 4
+
 SAMPLE_IDEAS = [
     "An app where people can book home cleaners for one-off or recurring visits",
     "An online store selling handmade candles and shipping them nationwide",
@@ -86,11 +89,11 @@ def main() -> None:
         try:
             r = run_one(idea)
             r["error"] = None
-            status = "PASS" if r["discovery_complete"] and r["contributions"] == r["expected_agents"] and r["artefacts"] == 3 else "PARTIAL"
+            status = "PASS" if r["discovery_complete"] and r["contributions"] == r["expected_agents"] and r["artefacts"] == EXPECTED_ARTEFACT_COUNT else "PARTIAL"
             print(f"  domain: {r['domain']} (confidence {r['confidence']})")
             print(f"  discovery complete: {r['discovery_complete']}")
             print(f"  agent contributions: {r['contributions']}/{r['expected_agents']}")
-            print(f"  artefacts exported: {r['artefacts']}/3")
+            print(f"  artefacts exported: {r['artefacts']}/{EXPECTED_ARTEFACT_COUNT}")
             print(f"  QA readiness: {r['readiness']}" + (f"  ({len(r['conflicts'])} conflict(s))" if r["conflicts"] else ""))
             print(f"  status: {status}")
         except Exception as e:

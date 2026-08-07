@@ -132,6 +132,39 @@ def export_architecture_recommendation(context: ProjectContext) -> Artefact:
     )
 
 
+def export_test_cases(context: ProjectContext) -> Artefact:
+    qa = context.get_contribution(AgentRole.QA_REVIEWER)
+    output = qa.output if qa else {}
+    template = (TEMPLATE_DIR / "test_cases.md").read_text()
+
+    def _render_case(tc: dict) -> str:
+        steps = "\n".join(f"  {i}. {s}" for i, s in enumerate(tc.get("steps", []), start=1))
+        return (
+            f"### {tc.get('id', '?')} — {tc.get('title', 'Untitled')}\n"
+            f"*Related to: {tc.get('related_to', '—')}*\n\n"
+            f"**Preconditions:** {tc.get('preconditions', 'None specified')}\n\n"
+            f"**Steps:**\n{steps}\n\n"
+            f"**Expected result:** {tc.get('expected_result', 'Not specified')}\n"
+        )
+
+    test_cases = output.get("test_cases", [])
+    functional = [tc for tc in test_cases if tc.get("type") == "functional"]
+    security = [tc for tc in test_cases if tc.get("type") != "functional"]
+
+    values = {
+        "project_name": (context.business_idea_raw[:60] or "Untitled Project"),
+        "generated_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "functional_test_cases": "\n".join(_render_case(tc) for tc in functional) or "None generated.",
+        "security_test_cases": "\n".join(_render_case(tc) for tc in security) or "None generated.",
+    }
+    content = _fill_template(template, values)
+    return Artefact(
+        id=str(uuid.uuid4()), type="test_cases",
+        title=f"Test Cases — {values['project_name']}",
+        content_markdown=content, generated_by=AgentRole.QA_REVIEWER,
+    )
+
+
 def export_all_artefacts(context: ProjectContext) -> ProjectContext:
     log_agent_call(logger, context.project_id, "export", "started")
 
@@ -139,6 +172,7 @@ def export_all_artefacts(context: ProjectContext) -> ProjectContext:
         export_business_requirements(context),
         export_user_stories(context),
         export_architecture_recommendation(context),
+        export_test_cases(context),
     ]
     context.artefacts = artefacts
     context.stage = ProjectStage.COMPLETE

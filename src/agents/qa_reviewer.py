@@ -2,13 +2,16 @@
 QA / Review Agent
 ==================
 Runs last. Input: every other agent's contribution collected so far.
-Output: a consistency check — does the architecture actually support the
-business requirements? Do the security recommendations match what the
-architecture proposed? Anything contradictory?
+Output: (1) a consistency check — does the architecture actually support
+the business requirements? Do the security recommendations match what
+the architecture proposed? — and (2) a set of test cases derived from
+the user stories and security risks, since QA naturally covers both
+"is this internally consistent" and "how would we verify it works."
 
-This is what Section 12 of the spec means by "the generated artefacts are
-internally consistent" — this agent is the automated check for that, though
-a human should still eyeball the output before trusting it fully.
+The consistency check is what Section 12 of the spec means by "the
+generated artefacts are internally consistent" — this agent is the
+automated check for that, though a human should still eyeball the output
+before trusting it fully.
 
 Unlike the other agents, this one also writes directly onto
 context.consistency_notes (not just its own contribution), since that
@@ -33,10 +36,19 @@ class QAReviewerAgent(BaseAgent):
             for c in context.agent_contributions
         )
 
-        return f"""You are a QA reviewer. Check the following agent
-contributions for consistency. Look for contradictions (e.g. architecture
-missing something the requirements need, security recommendations that
-don't match the proposed components).
+        return f"""You are a QA reviewer. Do two things with the agent
+contributions below:
+
+1. CONSISTENCY CHECK — look for contradictions (e.g. architecture missing
+   something the requirements need, security recommendations that don't
+   match the proposed components).
+
+2. TEST CASES — write test cases that would verify this project works as
+   intended. Cover every user story from the Product Manager's output
+   (functional tests), plus dedicated tests for the risks the Security
+   agent flagged (security/negative tests). Don't limit yourself to a
+   fixed count — write as many as genuinely needed for real coverage,
+   typically at least one per user story plus one per major security risk.
 
 Business idea: "{context.business_idea_raw}"
 
@@ -48,7 +60,18 @@ Respond ONLY with JSON in exactly this shape:
   "consistency_notes": ["...", "..."],
   "conflicts_found": [{{"between_agents": "...", "description": "..."}}],
   "overall_readiness": "ready" or "needs_revision",
-  "recommendation": "..."
+  "recommendation": "...",
+  "test_cases": [
+    {{
+      "id": "TC1",
+      "type": "functional or security or edge_case",
+      "related_to": "story id or risk this test verifies, e.g. S1",
+      "title": "short test name",
+      "preconditions": "...",
+      "steps": ["...", "..."],
+      "expected_result": "..."
+    }}
+  ]
 }}"""
 
     def mock_response(self, context: ProjectContext) -> dict:
@@ -90,8 +113,10 @@ Respond ONLY with JSON in exactly this shape:
 
         readiness = "needs_revision" if conflicts else "ready"
 
+        test_cases = self._mock_test_cases(pm, sec)
+
         return {
-            "summary": f"Reviewed {len(context.agent_contributions)} contributions; {len(conflicts)} conflict(s) found.",
+            "summary": f"Reviewed {len(context.agent_contributions)} contributions; {len(conflicts)} conflict(s) found; {len(test_cases)} test case(s) derived.",
             "consistency_notes": notes or ["No specific consistency notes generated."],
             "conflicts_found": conflicts,
             "overall_readiness": readiness,
@@ -100,7 +125,47 @@ Respond ONLY with JSON in exactly this shape:
                 if readiness == "ready" else
                 "Resolve the flagged conflicts before exporting final artefacts."
             ),
+            "test_cases": test_cases,
         }
+
+    def _mock_test_cases(self, pm, sec) -> list[dict]:
+        """Deterministic stand-in for the LLM deriving test cases from
+        stories + security risks — one functional test per user story,
+        one security test per flagged risk."""
+        cases = []
+        n = 0
+
+        for story in (pm.output.get("stories", []) if pm else []):
+            n += 1
+            cases.append({
+                "id": f"TC{n}",
+                "type": "functional",
+                "related_to": story.get("id", "?"),
+                "title": f"Verify: {story.get('i_want', 'core action')}",
+                "preconditions": f"User is acting as: {story.get('as_a', 'a user')}",
+                "steps": [
+                    f"Set up a user matching '{story.get('as_a', 'the target user')}'",
+                    f"Attempt to {story.get('i_want', 'perform the described action')}",
+                ],
+                "expected_result": f"User successfully achieves: {story.get('so_that', 'the intended benefit')}",
+            })
+
+        for risk in (sec.output.get("key_risks", []) if sec else []):
+            n += 1
+            cases.append({
+                "id": f"TC{n}",
+                "type": "security",
+                "related_to": "security review",
+                "title": f"Verify mitigation for: {risk}",
+                "preconditions": "System deployed with proposed security mitigations in place",
+                "steps": [
+                    f"Attempt to trigger the risk scenario: {risk}",
+                    "Observe whether the system's mitigation actually prevents/limits it",
+                ],
+                "expected_result": "The risk is mitigated or blocked, not just documented",
+            })
+
+        return cases
 
     def run(self, context: ProjectContext) -> AgentContribution:
         contribution = super().run(context)
