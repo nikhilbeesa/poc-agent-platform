@@ -69,74 +69,102 @@ async function checkMode() {
 }
 checkMode();
 
-$('#btn-new-project').addEventListener('click', () => {
+// ============================================================
+// View switching: dashboard <-> pipeline
+// ============================================================
+$('#btn-go-dashboard').addEventListener('click', goToDashboard);
+$('#btn-pipeline-back').addEventListener('click', goToDashboard);
+$('#btn-open-new-project').addEventListener('click', () => {
+  sessionStorage.setItem('poc_view', 'pipeline');
   location.reload();
 });
+$('#btn-history-back').addEventListener('click', showDashboardList);
+
+function goToDashboard() {
+  if (projectId && $('#artefact-tabs').children.length === 0) {
+    if (!confirm('Leave this in-progress project? Unexported projects are not saved.')) return;
+  }
+  sessionStorage.removeItem('poc_view');
+  location.reload();
+}
+
+function showPipelineView() {
+  $('#dashboard-view').hidden = true;
+  $('#dashboard-detail-view').hidden = true;
+  $('#pipeline-view').hidden = false;
+}
+
+function showDashboardList() {
+  $('#pipeline-view').hidden = true;
+  $('#dashboard-detail-view').hidden = true;
+  $('#dashboard-view').hidden = false;
+  loadDashboard();
+}
+
+// Decide initial view on page load
+if (sessionStorage.getItem('poc_view') === 'pipeline') {
+  sessionStorage.removeItem('poc_view');
+  showPipelineView();
+} else {
+  loadDashboard();
+}
 
 // ============================================================
-// History overlay
+// Dashboard: project list (table)
 // ============================================================
-let historyProjects = [];
-let historyDetailArtefacts = [];
-let historyDetailActiveIndex = 0;
+async function loadDashboard() {
+  $('#dash-loading-msg').hidden = false;
+  $('#dash-empty-msg').hidden = true;
+  $('#dash-table').hidden = true;
 
-$('#btn-history').addEventListener('click', openHistory);
-$('#btn-history-close').addEventListener('click', closeHistory);
-$('#btn-history-back').addEventListener('click', showHistoryList);
-
-async function openHistory() {
-  $('#history-overlay').hidden = false;
-  showHistoryList();
   try {
     const data = await api('/api/history');
-    historyProjects = data.projects;
-    renderHistoryList();
+    renderDashboardTable(data.projects);
   } catch (e) {
-    $('#history-list').innerHTML = `<div class="lock-msg">Could not load history: ${escapeHtml(e.message)}</div>`;
+    $('#dash-loading-msg').textContent = 'Could not load projects: ' + e.message;
   }
 }
 
-function closeHistory() {
-  $('#history-overlay').hidden = true;
-}
+function renderDashboardTable(projects) {
+  const loadingMsg = $('#dash-loading-msg');
+  const emptyMsg = $('#dash-empty-msg');
+  const table = $('#dash-table');
+  const body = $('#dash-table-body');
+  body.innerHTML = '';
+  loadingMsg.hidden = true;
 
-function showHistoryList() {
-  $('#history-list-view').hidden = false;
-  $('#history-detail-view').hidden = true;
-}
-
-function renderHistoryList() {
-  const list = $('#history-list');
-  const emptyMsg = $('#history-empty-msg');
-  list.innerHTML = '';
-
-  if (!historyProjects.length) {
+  if (!projects.length) {
     emptyMsg.hidden = false;
+    table.hidden = true;
     return;
   }
   emptyMsg.hidden = true;
+  table.hidden = false;
 
-  historyProjects.forEach(p => {
-    const date = p.created_at ? new Date(p.created_at).toLocaleString() : 'unknown date';
-    const badge = el('span', {
-      class: `history-badge ${p.qa_readiness || ''}`,
-      text: p.qa_readiness || 'unknown',
-    });
-    const row = el('div', { class: 'history-row' }, [
-      el('div', { class: 'history-row-main' }, [
-        el('div', { class: 'history-row-idea', text: p.business_idea }),
-        el('div', { class: 'history-row-meta', text: `${p.domain || 'unclassified'} · ${p.artefact_count} artefact(s) · ${date}` }),
-      ]),
-      badge,
+  projects.forEach(p => {
+    const date = p.created_at ? new Date(p.created_at).toLocaleString() : 'unknown';
+    const badge = el('span', { class: `history-badge ${p.qa_readiness || ''}`, text: p.qa_readiness || 'unknown' });
+    const row = el('tr', {}, [
+      el('td', { class: 'dash-idea-cell', text: p.business_idea }),
+      el('td', { class: 'dash-domain-cell', text: p.domain || 'unclassified' }),
+      el('td', { text: String(p.artefact_count) }),
+      el('td', {}, [badge]),
+      el('td', { class: 'dash-date-cell', text: date }),
     ]);
-    row.addEventListener('click', () => openHistoryDetail(p.id));
-    list.appendChild(row);
+    row.addEventListener('click', () => openDashboardDetail(p.id));
+    body.appendChild(row);
   });
 }
 
-async function openHistoryDetail(projectId) {
-  $('#history-list-view').hidden = true;
-  $('#history-detail-view').hidden = false;
+// ============================================================
+// Dashboard: project detail (view past artefacts)
+// ============================================================
+let historyDetailArtefacts = [];
+let historyDetailActiveIndex = 0;
+
+async function openDashboardDetail(projectId) {
+  $('#dashboard-view').hidden = true;
+  $('#dashboard-detail-view').hidden = false;
   $('#history-detail-meta').textContent = 'Loading…';
   $('#history-tabs').innerHTML = '';
   $('#history-doc-viewer').innerHTML = '';
