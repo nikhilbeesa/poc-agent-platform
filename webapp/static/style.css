@@ -55,9 +55,9 @@ html, body {
 .sheet-stack {
   position: relative;
   z-index: 1;
-  max-width: 880px;
+  max-width: min(1600px, 92vw);
   margin: 0 auto;
-  padding: 28px 20px 80px;
+  padding: 28px clamp(20px, 3vw, 56px) 80px;
 }
 
 /* ---------------- Title block ---------------- */
@@ -395,7 +395,7 @@ textarea:focus, input[type="text"]:focus, .btn:focus-visible, .chip:focus-visibl
 }
 .doc-viewer h1 { font-size: 19px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
 .doc-viewer h2 { font-size: 15px; color: var(--cyan); margin-top: 24px; }
-.doc-viewer p, .doc-viewer li { color: var(--text-dim); }
+.doc-viewer p, .doc-viewer li { color: var(--text-dim); max-width: 72ch; }
 .doc-viewer strong { color: var(--text); }
 .doc-viewer table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 12.5px; }
 .doc-viewer th, .doc-viewer td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
