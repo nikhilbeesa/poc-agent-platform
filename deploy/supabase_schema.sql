@@ -1,4 +1,9 @@
 -- Run this in Supabase: Project → SQL Editor → New Query → paste → Run.
+-- Fully idempotent — safe to re-run this whole file anytime (e.g. after
+-- pulling an update that adds a new table), even if some of it already
+-- exists. Every CREATE is guarded, and policies are dropped-then-recreated
+-- rather than using a bare CREATE POLICY, since Postgres doesn't support
+-- "CREATE POLICY IF NOT EXISTS" reliably.
 -- Creates the `domains` table backing SupabaseKnowledgeStore.
 
 create table if not exists domains (
@@ -18,6 +23,7 @@ create table if not exists domains (
 -- per-user policies, most likely tied to Supabase Auth).
 alter table domains enable row level security;
 
+drop policy if exists "poc demo — allow all" on domains;
 create policy "poc demo — allow all"
   on domains
   for all
@@ -76,6 +82,7 @@ create table if not exists projects (
 
 alter table projects enable row level security;
 
+drop policy if exists "poc demo — allow all" on projects;
 create policy "poc demo — allow all"
   on projects
   for all
