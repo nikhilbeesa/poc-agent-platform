@@ -1,19 +1,8 @@
 """
-Live Demo Script
-=================
-A narrated, presentation-friendly walkthrough of the full pipeline —
-built for showing this to stakeholders, not for automated testing (see
-test_end_to_end.py for that).
-
-Two modes:
+Live Demo Script — narrated, presentation-friendly walkthrough of the
+full pipeline. Two modes:
   --interactive   You type real answers to the discovery questions live.
   (default)       Auto-answers instantly, for a quick unattended run-through.
-
-Usage:
-  python3 src/demo.py                                    # quick, auto-answered
-  python3 src/demo.py --interactive                       # live, you answer
-  python3 src/demo.py --idea "your business idea here"     # custom idea
-  python3 src/demo.py --interactive --idea "..."           # both
 """
 
 import argparse
@@ -34,6 +23,16 @@ import llm_client  # noqa: E402
 
 DEFAULT_IDEA = "A platform where people can rent out their driveways for parking by the hour"
 
+AGENT_LABELS = {
+    AgentRole.BUSINESS_ANALYST: "Business Analyst      — business requirements",
+    AgentRole.PRODUCT_MANAGER: "Product Manager         — user stories",
+    AgentRole.PRODUCT_REQUIREMENTS: "Product Requirements     — PRD",
+    AgentRole.SOLUTION_ARCHITECT: "Solution Architect        — architecture",
+    AgentRole.SECURITY: "Security                   — security assessment",
+    AgentRole.QA_TEST_STRATEGY: "QA Test Strategy             — test strategy",
+    AgentRole.QA_REVIEWER: "AI Reviewer                    — final review report",
+}
+
 
 def _pause(seconds: float = 0.6) -> None:
     time.sleep(seconds)
@@ -53,17 +52,13 @@ def _step(text: str) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--interactive", action="store_true",
-                         help="Type real answers to discovery questions live")
-    parser.add_argument("--idea", type=str, default=None,
-                         help="Custom business idea (defaults to a sample)")
+    parser.add_argument("--interactive", action="store_true")
+    parser.add_argument("--idea", type=str, default=None)
     args = parser.parse_args()
 
-    # Quiet the file/console logger noise for a clean presentation —
-    # everything still gets written to logs/agent_activity.log underneath.
     logging.getLogger("poc_platform").setLevel(logging.CRITICAL)
 
-    mode = "LIVE (real Claude API)" if llm_client.get_client() else "MOCK (no API key set)"
+    mode = "LIVE (real API)" if llm_client.get_client() else "MOCK (no API key set)"
 
     _header("AI PRODUCT ENGINEERING AGENT PLATFORM — LIVE DEMO")
     print(f"  Mode: {mode}")
@@ -73,10 +68,9 @@ def main() -> None:
         print(f"\n  Using sample idea (pass --idea \"...\" for your own):")
     print(f'  "{idea}"')
 
-    # -----------------------------------------------------------------
     _header("PHASE 2 — DISCOVERY")
     ctx = ProjectContext()
-    store = bootstrap()  # ensures seed domains exist before we snapshot
+    store = bootstrap()
     known_before = set(store.list_domains())
 
     _step("Intaking the idea and classifying its domain...")
@@ -95,29 +89,18 @@ def main() -> None:
             answer = input("      > ").strip() or "(no answer given — skipping)"
             ctx.add_answer(q.id, answer)
         else:
-            answer = f"[auto-answered for demo — {q.category}]"
-            ctx.add_answer(q.id, answer)
+            ctx.add_answer(q.id, f"[auto-answered for demo — {q.category}]")
         _pause(0.15)
 
     assert is_discovery_complete(ctx)
     print("\n  ✓ Discovery complete.")
 
-    # -----------------------------------------------------------------
-    _header("PHASE 3 — THE AI AGENT TEAM")
-    print("  Running 5 specialist agents in sequence. Each one reads the")
-    print("  shared project context — including prior agents' work.\n")
-
-    agent_labels = {
-        AgentRole.BUSINESS_ANALYST: "Business Analyst   — requirements & goals",
-        AgentRole.PRODUCT_MANAGER: "Product Manager     — epics & user stories",
-        AgentRole.SOLUTION_ARCHITECT: "Solution Architect  — recommended approach",
-        AgentRole.SECURITY: "Security             — risk & compliance review",
-        AgentRole.QA_REVIEWER: "QA / Reviewer        — consistency check",
-    }
+    _header("PHASE 3 — THE AI AGENT TEAM (7 agents)")
+    print("  Running 7 specialist agents in sequence.\n")
 
     ctx.stage = ProjectStage.AGENT_PROCESSING
     for agent in AGENT_PIPELINE:
-        label = agent_labels[agent.role]
+        label = AGENT_LABELS.get(agent.role, agent.role.value)
         print(f"    ⏳ {label} ...", end="", flush=True)
         t0 = time.time()
         agent.run(ctx)
@@ -127,11 +110,10 @@ def main() -> None:
 
     qa = ctx.get_contribution(AgentRole.QA_REVIEWER)
     readiness = qa.output.get("overall_readiness", "unknown") if qa else "unknown"
-    print(f"\n  QA verdict: {readiness.upper()}")
+    print(f"\n  Final AI review verdict: {readiness.upper()}")
     for note in ctx.consistency_notes[:3]:
         print(f"    - {note}")
 
-    # -----------------------------------------------------------------
     _header("PHASE 5 — EXPORTED ARTEFACTS")
     ctx = export_all_artefacts(ctx)
     out_dir = f"/tmp/poc_demo_output/{ctx.project_id[:8]}"
@@ -141,14 +123,6 @@ def main() -> None:
     for p in paths:
         print(f"    {p}")
 
-    print("\n  Preview — Business Requirements Document:\n")
-    print("  " + "-" * 68)
-    for line in ctx.artefacts[0].content_markdown.strip().split("\n")[:14]:
-        print(f"  {line}")
-    print("  ...")
-    print("  " + "-" * 68)
-
-    # -----------------------------------------------------------------
     _header("DONE")
     print(f"  Full documents are open-able at: {out_dir}")
     print(f"  Domain knowledge store now has: {sorted(get_knowledge_store().list_domains())}")

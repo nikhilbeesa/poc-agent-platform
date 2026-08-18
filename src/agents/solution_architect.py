@@ -1,17 +1,6 @@
 """
-Solution Architect Agent
-=========================
-Input: the raw idea, domain, and — importantly — the Business Analyst's
-contribution (requirements, constraints, target users). This is the first
-real "handoff" in the pipeline: one agent's output becomes another agent's
-input, both going through the shared ProjectContext rather than talking
-directly to each other.
-
-Output maps onto artefact_templates/architecture_recommendation.md.
-
-Per the spec's guiding principle ("recommend, don't assume"), this agent
-proposes AN approach with reasoning and alternatives — it does not lock in
-a fixed tech stack.
+Solution Architect Agent -> Solution Architecture Recommendation
+Reads Business Analyst + Product Requirements.
 """
 
 import sys
@@ -25,14 +14,20 @@ from context import AgentRole, ProjectContext  # noqa: E402
 
 class SolutionArchitectAgent(BaseAgent):
     role = AgentRole.SOLUTION_ARCHITECT
+    max_output_tokens = 1600
 
     def build_prompt(self, context: ProjectContext) -> str:
         ba_contribution = context.get_contribution(AgentRole.BUSINESS_ANALYST)
+        prd_contribution = context.get_contribution(AgentRole.PRODUCT_REQUIREMENTS)
         ba_output = ba_contribution.output if ba_contribution else {}
+        prd_output = prd_contribution.output if prd_contribution else {}
 
         return f"""You are a solution architect. Based on the business
-analysis below, recommend a technical approach. Recommend — do not assume
-a single fixed stack; note the reasoning and alternatives considered.
+analysis and product requirements below, recommend a technical approach.
+Recommend — do not assume a single fixed stack; note the reasoning and
+alternatives considered. A dedicated Security agent will produce the full
+security assessment separately, so keep your own security note brief —
+just flag anything architecturally relevant.
 
 Business idea: "{context.business_idea_raw}"
 Domain: {context.domain_classification}
@@ -43,6 +38,10 @@ Business analyst's findings:
 - Key requirements: {ba_output.get('key_requirements', [])}
 - Constraints: {ba_output.get('constraints', [])}
 
+Product requirements:
+- Functional requirements: {prd_output.get('functional_requirements', [])}
+- Non-functional requirements: {prd_output.get('non_functional_requirements', [])}
+
 Respond ONLY with JSON in exactly this shape:
 {{
   "summary": "one sentence overview",
@@ -51,7 +50,7 @@ Respond ONLY with JSON in exactly this shape:
   "alternatives_considered": ["...", "..."],
   "key_components": ["...", "..."],
   "data_considerations": "...",
-  "security_considerations": "...",
+  "brief_security_note": "one or two sentences flagging anything architecturally relevant to security — full assessment is a separate document",
   "scalability_notes": "...",
   "risks_and_tradeoffs": ["...", "..."]
 }}"""
@@ -77,9 +76,7 @@ Respond ONLY with JSON in exactly this shape:
                 "Authentication",
             ] + (["Payment processing"] if any("payment" in r.lower() for r in requirements) else []),
             "data_considerations": "Start with a relational data model unless the domain has clear document/graph needs; revisit as real usage data comes in.",
-            "security_considerations": ba_output.get(
-                "constraints", ["Standard authentication and data protection practices apply"]
-            )[0] if ba_output.get("constraints") else "Standard authentication and data-at-rest protection for a POC.",
+            "brief_security_note": "Standard authentication and data-at-rest protection expected — see the Security Assessment document for the full review.",
             "scalability_notes": "POC scope only — architecture should avoid decisions that would require a full rewrite to scale, without over-building for scale that isn't validated yet.",
             "risks_and_tradeoffs": [
                 "Choosing flexibility over speed may slow the POC timeline",
@@ -91,17 +88,19 @@ Respond ONLY with JSON in exactly this shape:
 if __name__ == "__main__":
     import json
     from agents.business_analyst import BusinessAnalystAgent
+    from agents.product_manager import ProductManagerAgent
+    from agents.product_requirements import ProductRequirementsAgent
     from context import DiscoveryQuestion
 
     ctx = ProjectContext(business_idea_raw="An app where people can book home cleaners")
     ctx.domain_classification = "booking_platform"
     ctx.discovery_questions = [
-        DiscoveryQuestion(id="q1", text="Who books?", category="users",
-                           status="answered", answer="Individual homeowners"),
-        DiscoveryQuestion(id="q2", text="Payment timing?", category="payments",
-                           status="answered", answer="At time of booking"),
+        DiscoveryQuestion(id="q1", text="Who books?", category="users", status="answered", answer="Individual homeowners"),
+        DiscoveryQuestion(id="q2", text="Payment timing?", category="payments", status="answered", answer="At time of booking"),
     ]
 
-    BusinessAnalystAgent().run(ctx)  # run BA first so Architect can read it
+    BusinessAnalystAgent().run(ctx)
+    ProductManagerAgent().run(ctx)
+    ProductRequirementsAgent().run(ctx)
     contribution = SolutionArchitectAgent().run(ctx)
     print(json.dumps(contribution.model_dump(), indent=2, default=str))

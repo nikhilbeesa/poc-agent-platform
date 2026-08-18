@@ -10,20 +10,34 @@
 ## 2. Target users
 {{target_users}}
 
-## 3. Core problem being solved
+## 3. Stakeholders
+{{stakeholders}}
+
+## 4. Core problem being solved
 {{problem_statement}}
 
-## 4. Business goals
+## 5. Business goals
 {{business_goals}}
 
-## 5. Key requirements
+## 6. Success metrics
+{{success_metrics}}
+
+## 7. Scope
+
+### In scope
+{{scope_in}}
+
+### Out of scope
+{{scope_out}}
+
+## 8. Key requirements
 {{requirements_list}}
 
-## 6. Constraints
+## 9. Constraints
 {{constraints}}
 
-## 7. Assumptions
+## 10. Assumptions
 {{assumptions}}
 
-## 8. Open questions
+## 11. Open questions
 {{open_questions}}

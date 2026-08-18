@@ -1,21 +1,6 @@
 """
-QA / Review Agent
-==================
-Runs last. Input: every other agent's contribution collected so far.
-Output: (1) a consistency check — does the architecture actually support
-the business requirements? Do the security recommendations match what
-the architecture proposed? — and (2) a set of test cases derived from
-the user stories and security risks, since QA naturally covers both
-"is this internally consistent" and "how would we verify it works."
-
-The consistency check is what Section 12 of the spec means by "the
-generated artefacts are internally consistent" — this agent is the
-automated check for that, though a human should still eyeball the output
-before trusting it fully.
-
-Unlike the other agents, this one also writes directly onto
-context.consistency_notes (not just its own contribution), since that
-field exists precisely for this purpose.
+AI Review Agent (final consistency check) -> AI Review Report
+Runs LAST — reads every other agent's contribution.
 """
 
 import sys
@@ -26,9 +11,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from agents.base import BaseAgent  # noqa: E402
 from context import AgentContribution, AgentRole, ProjectContext  # noqa: E402
 
+EXPECTED_PRIOR_ROLES = [
+    AgentRole.BUSINESS_ANALYST,
+    AgentRole.PRODUCT_MANAGER,
+    AgentRole.PRODUCT_REQUIREMENTS,
+    AgentRole.SOLUTION_ARCHITECT,
+    AgentRole.SECURITY,
+    AgentRole.QA_TEST_STRATEGY,
+]
+
 
 class QAReviewerAgent(BaseAgent):
     role = AgentRole.QA_REVIEWER
+    max_output_tokens = 1600
 
     def build_prompt(self, context: ProjectContext) -> str:
         contributions_summary = "\n\n".join(
@@ -36,19 +31,16 @@ class QAReviewerAgent(BaseAgent):
             for c in context.agent_contributions
         )
 
-        return f"""You are a QA reviewer. Do two things with the agent
-contributions below:
+        return f"""You are producing the final AI Review Report for this
+project. Your ONLY job is checking consistency across everyone else's
+work below — you do not write new requirements or test cases, those
+already exist in the other documents.
 
-1. CONSISTENCY CHECK — look for contradictions (e.g. architecture missing
-   something the requirements need, security recommendations that don't
-   match the proposed components).
-
-2. TEST CASES — write test cases that would verify this project works as
-   intended. Cover every user story from the Product Manager's output
-   (functional tests), plus dedicated tests for the risks the Security
-   agent flagged (security/negative tests). Don't limit yourself to a
-   fixed count — write as many as genuinely needed for real coverage,
-   typically at least one per user story plus one per major security risk.
+Look specifically for:
+- Does the architecture actually support what the requirements/PRD ask for?
+- Do the security recommendations match the architecture's actual components?
+- Does the test strategy actually cover what the PRD/user stories promise?
+- Any other contradiction between agents' outputs.
 
 Business idea: "{context.business_idea_raw}"
 
@@ -60,31 +52,20 @@ Respond ONLY with JSON in exactly this shape:
   "consistency_notes": ["...", "..."],
   "conflicts_found": [{{"between_agents": "...", "description": "..."}}],
   "overall_readiness": "ready" or "needs_revision",
-  "recommendation": "...",
-  "test_cases": [
-    {{
-      "id": "TC1",
-      "type": "functional or security or edge_case",
-      "related_to": "story id or risk this test verifies, e.g. S1",
-      "title": "short test name",
-      "preconditions": "...",
-      "steps": ["...", "..."],
-      "expected_result": "..."
-    }}
-  ]
+  "recommendation": "..."
 }}"""
 
     def mock_response(self, context: ProjectContext) -> dict:
         ba = context.get_contribution(AgentRole.BUSINESS_ANALYST)
-        pm = context.get_contribution(AgentRole.PRODUCT_MANAGER)
         arch = context.get_contribution(AgentRole.SOLUTION_ARCHITECT)
+        pm = context.get_contribution(AgentRole.PRODUCT_MANAGER)
+        prd = context.get_contribution(AgentRole.PRODUCT_REQUIREMENTS)
         sec = context.get_contribution(AgentRole.SECURITY)
+        qa_strategy = context.get_contribution(AgentRole.QA_TEST_STRATEGY)
 
         conflicts = []
         notes = []
 
-        # A couple of simple, genuinely-checkable rules, standing in for
-        # the LLM's judgment in mock mode.
         if ba and arch:
             ba_reqs = " ".join(ba.output.get("key_requirements", [])).lower()
             arch_components = " ".join(arch.output.get("key_components", [])).lower()
@@ -96,15 +77,32 @@ Respond ONLY with JSON in exactly this shape:
             else:
                 notes.append("Architecture components align with the business analyst's stated requirements.")
 
-        if pm and arch:
-            notes.append(f"{len(pm.output.get('stories', []))} user stories map to epics that are covered by the proposed architecture's core components.")
+        if prd and arch:
+            notes.append("Architecture's recommended approach addresses the PRD's functional requirements.")
 
-        if sec:
-            notes.append("Security review completed and references the proposed architecture's actual components.")
+        if pm and qa_strategy:
+            story_count = len(pm.output.get("stories", []))
+            functional_tc = len([tc for tc in qa_strategy.output.get("test_cases", []) if tc.get("type") == "functional"])
+            if functional_tc < story_count:
+                conflicts.append({
+                    "between_agents": "product_manager, qa_test_strategy",
+                    "description": f"{story_count} user stories exist but only {functional_tc} functional test cases were written — coverage gap.",
+                })
+            else:
+                notes.append(f"Test strategy covers all {story_count} user stories with functional test cases.")
 
-        missing = [role.value for role in
-                   [AgentRole.BUSINESS_ANALYST, AgentRole.PRODUCT_MANAGER, AgentRole.SOLUTION_ARCHITECT, AgentRole.SECURITY]
-                   if context.get_contribution(role) is None]
+        if sec and qa_strategy:
+            risk_count = len(sec.output.get("key_risks", []))
+            security_tc = len([tc for tc in qa_strategy.output.get("test_cases", []) if tc.get("type") == "security"])
+            if security_tc < risk_count:
+                conflicts.append({
+                    "between_agents": "security, qa_test_strategy",
+                    "description": f"{risk_count} security risks were flagged but only {security_tc} security test cases exist to verify mitigation.",
+                })
+            else:
+                notes.append(f"Test strategy includes security test cases for all {risk_count} flagged risks.")
+
+        missing = [role.value for role in EXPECTED_PRIOR_ROLES if context.get_contribution(role) is None]
         if missing:
             conflicts.append({
                 "between_agents": ", ".join(missing),
@@ -113,64 +111,20 @@ Respond ONLY with JSON in exactly this shape:
 
         readiness = "needs_revision" if conflicts else "ready"
 
-        test_cases = self._mock_test_cases(pm, sec)
-
         return {
-            "summary": f"Reviewed {len(context.agent_contributions)} contributions; {len(conflicts)} conflict(s) found; {len(test_cases)} test case(s) derived.",
+            "summary": f"Reviewed {len(context.agent_contributions)} contributions; {len(conflicts)} conflict(s) found.",
             "consistency_notes": notes or ["No specific consistency notes generated."],
             "conflicts_found": conflicts,
             "overall_readiness": readiness,
             "recommendation": (
-                "Artefacts are internally consistent and ready for export."
+                "All artefacts are internally consistent and ready for export."
                 if readiness == "ready" else
-                "Resolve the flagged conflicts before exporting final artefacts."
+                "Resolve the flagged conflicts before treating these artefacts as final."
             ),
-            "test_cases": test_cases,
         }
-
-    def _mock_test_cases(self, pm, sec) -> list[dict]:
-        """Deterministic stand-in for the LLM deriving test cases from
-        stories + security risks — one functional test per user story,
-        one security test per flagged risk."""
-        cases = []
-        n = 0
-
-        for story in (pm.output.get("stories", []) if pm else []):
-            n += 1
-            cases.append({
-                "id": f"TC{n}",
-                "type": "functional",
-                "related_to": story.get("id", "?"),
-                "title": f"Verify: {story.get('i_want', 'core action')}",
-                "preconditions": f"User is acting as: {story.get('as_a', 'a user')}",
-                "steps": [
-                    f"Set up a user matching '{story.get('as_a', 'the target user')}'",
-                    f"Attempt to {story.get('i_want', 'perform the described action')}",
-                ],
-                "expected_result": f"User successfully achieves: {story.get('so_that', 'the intended benefit')}",
-            })
-
-        for risk in (sec.output.get("key_risks", []) if sec else []):
-            n += 1
-            cases.append({
-                "id": f"TC{n}",
-                "type": "security",
-                "related_to": "security review",
-                "title": f"Verify mitigation for: {risk}",
-                "preconditions": "System deployed with proposed security mitigations in place",
-                "steps": [
-                    f"Attempt to trigger the risk scenario: {risk}",
-                    "Observe whether the system's mitigation actually prevents/limits it",
-                ],
-                "expected_result": "The risk is mitigated or blocked, not just documented",
-            })
-
-        return cases
 
     def run(self, context: ProjectContext) -> AgentContribution:
         contribution = super().run(context)
-        # QA's job is specifically to populate the shared consistency log,
-        # not just produce its own isolated output.
         context.consistency_notes.extend(contribution.output.get("consistency_notes", []))
         for conflict in contribution.output.get("conflicts_found", []):
             context.consistency_notes.append(f"CONFLICT [{conflict['between_agents']}]: {conflict['description']}")
@@ -181,21 +135,24 @@ if __name__ == "__main__":
     import json
     from agents.business_analyst import BusinessAnalystAgent
     from agents.product_manager import ProductManagerAgent
+    from agents.product_requirements import ProductRequirementsAgent
     from agents.solution_architect import SolutionArchitectAgent
     from agents.security import SecurityAgent
+    from agents.qa_test_strategy import QATestStrategyAgent
     from context import DiscoveryQuestion
 
     ctx = ProjectContext(business_idea_raw="An app where people can book home cleaners")
     ctx.domain_classification = "booking_platform"
     ctx.discovery_questions = [
-        DiscoveryQuestion(id="q1", text="Who books?", category="users",
-                           status="answered", answer="Individual homeowners"),
+        DiscoveryQuestion(id="q1", text="Who books?", category="users", status="answered", answer="Individual homeowners"),
     ]
 
     BusinessAnalystAgent().run(ctx)
     ProductManagerAgent().run(ctx)
+    ProductRequirementsAgent().run(ctx)
     SolutionArchitectAgent().run(ctx)
     SecurityAgent().run(ctx)
+    QATestStrategyAgent().run(ctx)
     contribution = QAReviewerAgent().run(ctx)
 
     print(json.dumps(contribution.model_dump(), indent=2, default=str))

@@ -2,21 +2,7 @@
 Discovery Engine
 ================
 Turns a raw business idea into a classified domain plus a tailored set of
-discovery questions. This is where AI reasoning is actually used (per the
-guiding principle: AI for judgment calls, deterministic code for everything
-else).
-
-Two AI calls happen here:
-1. classify_domain — decide which known domain (if any) this idea fits,
-   or propose a new one.
-2. generate_followup_questions — given the idea + seed questions, produce
-   2-4 extra questions tailored to what THIS idea specifically needs.
-
-Runs in two modes:
-- LIVE mode: calls the real Claude API (requires ANTHROPIC_API_KEY env var)
-- MOCK mode: used automatically when no API key is set, so this module
-  can be developed/tested without API access. Mock logic uses simple
-  keyword matching instead of the LLM.
+discovery questions.
 """
 
 from __future__ import annotations
@@ -26,7 +12,6 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from context import DiscoveryQuestion, ProjectContext, ProjectStage, QuestionStatus  # noqa: E402
 from knowledge.bootstrap_seed_data import bootstrap  # noqa: E402
@@ -38,26 +23,17 @@ from logging_config import get_logger, log_agent_call  # noqa: E402
 logger = get_logger()
 
 
-# ---------------------------------------------------------------------------
-# Step 1: Idea intake
-# ---------------------------------------------------------------------------
-
 def intake_idea(context: ProjectContext, idea_text: str) -> ProjectContext:
-    """Deterministic — just records the raw idea and advances the stage."""
     context.business_idea_raw = idea_text.strip()
     context.stage = ProjectStage.DISCOVERY
     return context
 
 
-# ---------------------------------------------------------------------------
-# Step 2: Domain classification (AI reasoning)
-# ---------------------------------------------------------------------------
-
 def classify_domain(context: ProjectContext) -> ProjectContext:
     log_agent_call(logger, context.project_id, "discovery_engine", "started",
                     {"step": "classify_domain"})
 
-    store = bootstrap()  # ensures seed domains exist; no-op after first run
+    store = bootstrap()
     known_names = store.list_domains()
 
     client = get_client()
@@ -66,9 +42,6 @@ def classify_domain(context: ProjectContext) -> ProjectContext:
     else:
         domain, confidence = _live_classify(client, context.business_idea_raw, known_names)
 
-    # If the classifier didn't land on a domain we already know, learn it
-    # now — per spec Section 7: "unknown domains should be analysed and
-    # incorporated without changing the platform architecture."
     if not store.domain_exists(domain):
         learned = learn_domain(context.business_idea_raw, domain, context.project_id, store)
         domain = learned["slug"]
@@ -107,10 +80,6 @@ _STOPWORDS = {
 
 
 def _guess_domain_slug(idea_text: str) -> str:
-    """Used only in mock mode as a stand-in for the LLM proposing a new
-    domain name. Picks 1-2 meaningful words from the idea itself so
-    different unrecognised ideas get different learned domains, rather
-    than everything collapsing into one generic fallback."""
     words = [w.strip(".,!?").lower() for w in idea_text.split()]
     significant = [w for w in words if w not in _STOPWORDS and len(w) > 3]
     if len(significant) >= 2:
@@ -121,7 +90,6 @@ def _guess_domain_slug(idea_text: str) -> str:
 
 
 def _mock_classify(idea_text: str, known_names: list[str]) -> tuple[str, float]:
-    """Simple keyword heuristic — stands in for the LLM call in mock mode."""
     text = idea_text.lower()
     if "booking_platform" in known_names and any(w in text for w in ["book", "appointment", "schedule", "reserve"]):
         return "booking_platform", 0.75
@@ -135,10 +103,6 @@ def _mock_classify(idea_text: str, known_names: list[str]) -> tuple[str, float]:
     return _guess_domain_slug(idea_text), 0.3
 
 
-# ---------------------------------------------------------------------------
-# Step 3: Dynamic question generation (AI reasoning + seed knowledge)
-# ---------------------------------------------------------------------------
-
 def generate_discovery_questions(context: ProjectContext) -> ProjectContext:
     log_agent_call(logger, context.project_id, "discovery_engine", "started",
                     {"step": "generate_questions"})
@@ -148,23 +112,12 @@ def generate_discovery_questions(context: ProjectContext) -> ProjectContext:
 
     client = get_client()
     if client is None:
-        # Mock/offline mode: same tested behavior as before — a fixed
-        # per-domain checklist plus 2 generic mock follow-ups. This is
-        # intentionally NOT dynamic, because there's no real reasoning
-        # available to generate genuinely tailored questions offline.
         questions: list[DiscoveryQuestion] = []
         if domain_info:
             for q in domain_info["seed_questions"]:
                 questions.append(DiscoveryQuestion(**q))
         questions.extend(_mock_followups(context))
     else:
-        # Live mode: the FULL question set is generated fresh for this
-        # specific idea. The domain's description/typical_modules are
-        # passed as light context — not a verbatim checklist — so two
-        # different ideas in the same domain (e.g. two different booking
-        # apps) get genuinely different questions, not the same fixed
-        # list every time. This is what makes discovery actually dynamic
-        # rather than a templated form with the domain name swapped in.
         questions = _live_dynamic_questions(client, context, domain_info)
 
     context.discovery_questions = questions
@@ -218,24 +171,11 @@ Respond ONLY with JSON, no other text:
 
 
 def _mock_followups(context: ProjectContext) -> list[DiscoveryQuestion]:
-    """Stands in for the LLM's tailored follow-ups in mock mode."""
     return [
-        DiscoveryQuestion(
-            id="mock_scale",
-            text="Roughly how many users do you expect in the first 6 months?",
-            category="scale",
-        ),
-        DiscoveryQuestion(
-            id="mock_platform",
-            text="Web, mobile app, or both?",
-            category="platform",
-        ),
+        DiscoveryQuestion(id="mock_scale", text="Roughly how many users do you expect in the first 6 months?", category="scale"),
+        DiscoveryQuestion(id="mock_platform", text="Web, mobile app, or both?", category="platform"),
     ]
 
-
-# ---------------------------------------------------------------------------
-# Helpers for driving the questionnaire
-# ---------------------------------------------------------------------------
 
 def next_pending_question(context: ProjectContext) -> DiscoveryQuestion | None:
     for q in context.discovery_questions:
@@ -249,7 +189,6 @@ def is_discovery_complete(context: ProjectContext) -> bool:
 
 
 def run_discovery(context: ProjectContext, idea_text: str) -> ProjectContext:
-    """Full Phase 2 pipeline: intake -> classify -> generate questions."""
     context = intake_idea(context, idea_text)
     context = classify_domain(context)
     context = generate_discovery_questions(context)
@@ -265,11 +204,7 @@ if __name__ == "__main__":
     for q in ctx.discovery_questions:
         print(f"  [{q.category}] {q.text}")
 
-    # Simulate answering a couple of questions
     if ctx.discovery_questions:
         ctx.add_answer(ctx.discovery_questions[0].id, "Individual homeowners, mostly recurring bookings")
-        print(f"\nAnswered: '{ctx.discovery_questions[0].text}' -> '{ctx.discovery_questions[0].answer}'")
 
     print(f"\nDiscovery complete: {is_discovery_complete(ctx)}")
-    ctx.save("/tmp/discovery_test_context.json")
-    print("Saved test context to /tmp/discovery_test_context.json")

@@ -1,20 +1,7 @@
 """
 End-to-End Test + Success Criteria Validation
-================================================
-Runs the FULL pipeline — discovery, all 5 agents, artefact export — across
-several different sample business ideas, then checks the results against
-the spec's own Section 12 success criteria:
-
-  1. A user can submit a business idea and complete guided discovery.
-  2. The platform demonstrates collaboration between multiple AI agents.
-  3. The generated artefacts are internally consistent.
-  4. The architecture remains adaptable to projects of different sizes
-     and domains.
-  5. The POC provides a solid foundation for Phase 2 development.
-
-This is Phase 5's "run end-to-end test" and "validate against success
-criteria" tasks in one script, since the validation genuinely depends on
-having run the full pipeline first.
+Runs the FULL pipeline across several sample ideas, checks results
+against the spec's Section 12 success criteria.
 """
 
 import sys
@@ -27,8 +14,8 @@ from discovery import is_discovery_complete, run_discovery  # noqa: E402
 from export import export_all_artefacts, save_artefacts_to_disk  # noqa: E402
 from orchestrator import AGENT_PIPELINE, run_agent_pipeline  # noqa: E402
 
-# Business requirements, user stories, architecture recommendation, test cases
-EXPECTED_ARTEFACT_COUNT = 4
+# Business requirements, user stories, PRD, architecture, security, QA/test strategy, AI review report
+EXPECTED_ARTEFACT_COUNT = 7
 
 SAMPLE_IDEAS = [
     "An app where people can book home cleaners for one-off or recurring visits",
@@ -39,8 +26,6 @@ SAMPLE_IDEAS = [
 
 
 def auto_answer_all(context: ProjectContext) -> None:
-    """Stand-in for a human answering the questionnaire, so this test can
-    run unattended. Real usage would have an actual person answer these."""
     for q in context.discovery_questions:
         if q.status.value == "pending":
             context.add_answer(q.id, f"[auto-answered for testing — category: {q.category}]")
@@ -80,7 +65,7 @@ def run_one(idea: str) -> dict:
 
 def main() -> None:
     print("=" * 70)
-    print("END-TO-END TEST — running full pipeline on 4 sample ideas")
+    print(f"END-TO-END TEST — running full pipeline on {len(SAMPLE_IDEAS)} sample ideas")
     print("=" * 70)
 
     results = []
@@ -101,9 +86,6 @@ def main() -> None:
             print(f"  FAILED: {e}")
         results.append(r)
 
-    # -----------------------------------------------------------------
-    # Success criteria checklist (Section 12 of the spec)
-    # -----------------------------------------------------------------
     print("\n" + "=" * 70)
     print("SUCCESS CRITERIA CHECK (spec Section 12)")
     print("=" * 70)
@@ -116,7 +98,7 @@ def main() -> None:
 
     c2 = all(r["contributions"] == r["expected_agents"] for r in successful) and len(successful) > 0
     print(f"2. Multiple AI agents collaborate: "
-          f"{'PASS' if c2 else 'FAIL'} (all {len(successful)} runs produced {successful[0]['expected_agents'] if successful else 0}/5 agent contributions, including a verified handoff — see Phase 3 test)")
+          f"{'PASS' if c2 else 'FAIL'} (all {len(successful)} runs produced {successful[0]['expected_agents'] if successful else 0} agent contributions, including verified handoffs)")
 
     ready_count = sum(1 for r in successful if r["readiness"] == "ready")
     c3 = ready_count == len(successful) and len(successful) > 0
@@ -128,9 +110,8 @@ def main() -> None:
     print(f"4. Architecture adapts across different domains: "
           f"{'PASS' if c4 else 'PARTIAL'} (ran cleanly across {len(domains_covered)} distinct domains: {sorted(domains_covered)}, including one auto-learned)")
 
-    c5 = True  # qualitative — see notes below
-    print(f"5. Solid foundation for Phase 2: "
-          f"PASS (qualitative — see notes below)")
+    c5 = True
+    print(f"5. Solid foundation for Phase 2: PASS (qualitative — see notes below)")
     print("   Notes: shared context schema, per-agent modularity, persisted knowledge")
     print("   store, and structured logging are all in place as extension points.")
 

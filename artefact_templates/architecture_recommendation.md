@@ -1,4 +1,4 @@
-# Architecture Recommendation
+# Solution Architecture Recommendation
 
 **Project:** {{project_name}}
 **Generated:** {{generated_date}}
@@ -18,8 +18,10 @@
 ## 5. Data considerations
 {{data_considerations}}
 
-## 6. Security considerations
-{{security_considerations}}
+## 6. Security note
+{{brief_security_note}}
+
+*Full security review is in the dedicated Security Assessment document.*
 
 ## 7. Scalability notes
 {{scalability_notes}}

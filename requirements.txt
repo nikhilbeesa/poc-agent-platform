@@ -9,5 +9,5 @@ requests>=2.31            # HTTP calls to Supabase's REST API
 flask>=3.0                 # Local + hosted web demo server (webapp/server.py)
 gunicorn>=21.2              # Production WSGI server for Render deployment
 
-# Utility (added as needed in later phases)
+# Utility
 rich>=13.0                # Readable console output during development

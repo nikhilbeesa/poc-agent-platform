@@ -8,22 +8,21 @@ providers a config change, not a code change.
 
 Provider is chosen via the LLM_PROVIDER env var ("anthropic" or "gemini",
 defaults to "anthropic"). If the relevant API key isn't set, get_client()
-returns None and every call site already treats that as "run in mock mode"
-— nothing needed to change there.
+returns None and every call site already treats that as "run in mock mode".
 
   ANTHROPIC_API_KEY   required if LLM_PROVIDER=anthropic (the default)
   GEMINI_API_KEY      required if LLM_PROVIDER=gemini
   ANTHROPIC_MODEL     optional override (default: claude-sonnet-4-6)
-  GEMINI_MODEL        optional override (default: gemini-3-flash-preview)
+  GEMINI_MODEL        optional override (default: gemini-3.1-flash-lite)
 
 Why Gemini as the second option: Google's free tier is an actual ongoing
-free tier, not just trial credit — useful if you want to run this without
-an Anthropic budget. Free-tier model names and availability change often
-(e.g. gemini-2.5-flash was restricted for new API keys ahead of its
-official Oct 2026 shutdown date) — check https://ai.google.dev/gemini-api/docs/gemini-3
-or https://ai.google.dev/pricing for the current list if GEMINI_MODEL's
-default stops working, and override it via env var rather than waiting
-for a code update.
+free tier, not just trial credit. Free-tier model names, availability,
+and quotas change often and have been especially volatile through 2026 —
+the 2.5 generation was restricted for new API keys, and "-preview" models
+carry drastically lower daily quotas (~20/day) than stable non-preview
+models (gemini-3.1-flash-lite gets ~1,500/day). If GEMINI_MODEL's default
+stops working, check https://ai.google.dev/gemini-api/docs/rate-limits
+for current quotas and override via env var.
 """
 
 import os
@@ -31,13 +30,12 @@ import time
 
 PROVIDER = os.environ.get("LLM_PROVIDER", "anthropic").lower()
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3-flash-preview")
+GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
 # Free-tier / shared-capacity models occasionally return transient errors
-# under load (e.g. Gemini's 503 "currently experiencing high demand," or
-# Anthropic's 529 "overloaded"). These generally succeed on retry within
-# seconds — so retry automatically rather than surfacing a scary error to
-# the user for something that isn't actually broken.
+# under load. These generally succeed on retry within seconds — so retry
+# automatically rather than surfacing a scary error for something that
+# isn't actually broken.
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504, 529}
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 1.5  # seconds; doubles each attempt (1.5, 3, 6)
@@ -68,7 +66,7 @@ class LLMClient:
                     time.sleep(RETRY_BASE_DELAY * (2 ** attempt))
                     continue
                 raise
-        raise last_error  # pragma: no cover — loop always returns or raises
+        raise last_error  # pragma: no cover
 
     def _generate_once(self, prompt: str, max_tokens: int) -> str:
         if self.provider == "anthropic":
@@ -91,8 +89,6 @@ class LLMClient:
 
 
 def get_client():
-    """Returns an LLMClient for whichever provider is configured, or None
-    if no relevant API key is set (mock mode)."""
     if PROVIDER == "anthropic":
         if not os.environ.get("ANTHROPIC_API_KEY"):
             return None

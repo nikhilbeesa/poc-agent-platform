@@ -1,11 +1,6 @@
 """
-Bootstrap Seed Data
-====================
-The 3 hand-written starter domains (previously a static dict in
-seed_domains.py, now persisted through the KnowledgeStore instead).
-Running bootstrap() writes these into the store if they're not already
-there — safe to call every time; it won't overwrite domains that already
-exist (including ones the system has since learned on its own).
+Bootstrap Seed Data — writes the 3 starter domains into the store if not
+already present. Idempotent; safe to call every time.
 """
 
 import sys
@@ -20,11 +15,8 @@ _SEED_DOMAINS = {
         "name": "Booking Platform",
         "description": "A service where customers schedule appointments or reservations with providers (e.g. home services, salons, consultations).",
         "typical_modules": [
-            "provider/vendor profiles",
-            "availability & scheduling",
-            "booking & cancellation flow",
-            "payments",
-            "reviews & ratings",
+            "provider/vendor profiles", "availability & scheduling",
+            "booking & cancellation flow", "payments", "reviews & ratings",
             "notifications/reminders",
         ],
         "seed_questions": [
@@ -39,12 +31,8 @@ _SEED_DOMAINS = {
         "name": "E-Commerce",
         "description": "A platform for browsing and purchasing physical or digital products online.",
         "typical_modules": [
-            "product catalog",
-            "cart & checkout",
-            "payments",
-            "inventory management",
-            "shipping/fulfilment",
-            "order tracking",
+            "product catalog", "cart & checkout", "payments",
+            "inventory management", "shipping/fulfilment", "order tracking",
         ],
         "seed_questions": [
             {"id": "ec_catalog_size", "text": "Roughly how many products, and do you manage your own inventory?", "category": "catalog"},
@@ -55,14 +43,10 @@ _SEED_DOMAINS = {
     },
     "marketplace": {
         "name": "Marketplace",
-        "description": "A two-sided platform connecting independent buyers and sellers (or requesters and providers), where the platform doesn't own the inventory/service itself.",
+        "description": "A two-sided platform connecting independent buyers and sellers, where the platform doesn't own the inventory/service itself.",
         "typical_modules": [
-            "buyer & seller profiles",
-            "listing management",
-            "search & discovery",
-            "messaging between parties",
-            "payments & payouts",
-            "trust & safety (reviews, disputes)",
+            "buyer & seller profiles", "listing management", "search & discovery",
+            "messaging between parties", "payments & payouts", "trust & safety",
         ],
         "seed_questions": [
             {"id": "mk_sides", "text": "Who are the two sides of your marketplace (e.g. buyers/sellers, requesters/providers)?", "category": "users"},

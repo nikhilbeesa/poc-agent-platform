@@ -1,17 +1,7 @@
 """
-Project Store
-==============
-Persists completed projects (idea, domain, artefacts) so they survive
-server restarts and can be browsed later — the "History" view in the
-web UI. Same dual-backend pattern as knowledge/store.py: a local
-file-backed store for development, a Supabase-backed one for production,
-chosen automatically via the same env vars.
-
-Deliberately only persists at EXPORT time (once artefacts exist) — an
-in-progress project (mid-discovery, mid-agent-run) stays in the
-in-memory PROJECTS dict in webapp/server.py as before. This keeps the
-history view meaningful: it shows finished work, not half-finished
-sessions someone abandoned.
+Project Store — persists completed projects (idea, domain, artefacts) so
+they survive server restarts and power the History dashboard. Same
+dual-backend pattern as knowledge/store.py.
 """
 
 import json
@@ -25,7 +15,6 @@ DATA_DIR = Path(__file__).resolve().parent / "knowledge" / "data" / "projects"
 
 
 def _project_summary(record: dict) -> dict:
-    """Trimmed-down view for list endpoints — no full artefact content."""
     return {
         "id": record["id"],
         "business_idea": record["business_idea"],
@@ -37,8 +26,6 @@ def _project_summary(record: dict) -> dict:
 
 
 class ProjectStore:
-    """Local file-backed store — one JSON file per project."""
-
     def __init__(self, data_dir: Path = DATA_DIR):
         self.data_dir = data_dir
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -49,12 +36,12 @@ class ProjectStore:
         path = self.data_dir / f"{record['id']}.json"
         path.write_text(json.dumps(record, indent=2, default=str))
 
-    def list_summaries(self, limit: int = 50) -> list[dict]:
+    def list_summaries(self, limit: int = 50) -> list:
         files = sorted(self.data_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
         records = [json.loads(p.read_text()) for p in files[:limit]]
         return [_project_summary(r) for r in records]
 
-    def get(self, project_id: str) -> dict | None:
+    def get(self, project_id: str):
         path = self.data_dir / f"{project_id}.json"
         if not path.exists():
             return None
@@ -62,9 +49,7 @@ class ProjectStore:
 
 
 class SupabaseProjectStore:
-    """Supabase Postgres-backed store via the PostgREST HTTP API."""
-
-    def __init__(self, url: str | None = None, key: str | None = None):
+    def __init__(self, url: str = None, key: str = None):
         self.url = (url or os.environ["SUPABASE_URL"]).rstrip("/")
         self.key = key or os.environ["SUPABASE_KEY"]
         self._headers = {
@@ -91,7 +76,7 @@ class SupabaseProjectStore:
         resp = requests.post(self._endpoint(), headers=headers, json=payload, timeout=15)
         resp.raise_for_status()
 
-    def list_summaries(self, limit: int = 50) -> list[dict]:
+    def list_summaries(self, limit: int = 50) -> list:
         resp = requests.get(
             self._endpoint(
                 f"?select=id,business_idea,domain,qa_readiness,artefacts,created_at"
@@ -102,11 +87,8 @@ class SupabaseProjectStore:
         resp.raise_for_status()
         return [_project_summary({**row, "artefacts": row.get("artefacts") or []}) for row in resp.json()]
 
-    def get(self, project_id: str) -> dict | None:
-        resp = requests.get(
-            self._endpoint(f"?id=eq.{project_id}&select=*"),
-            headers=self._headers, timeout=15,
-        )
+    def get(self, project_id: str):
+        resp = requests.get(self._endpoint(f"?id=eq.{project_id}&select=*"), headers=self._headers, timeout=15)
         resp.raise_for_status()
         rows = resp.json()
         return rows[0] if rows else None

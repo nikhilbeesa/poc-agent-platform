@@ -9,6 +9,7 @@
 ## Stories
 
 Each story follows: *As a [user type], I want [goal], so that [benefit].*
+Acceptance criteria define what "done" means for each story.
 
 {{stories_list}}
 

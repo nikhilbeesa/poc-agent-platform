@@ -6,9 +6,8 @@ let questions = [];
 let currentAgentIndex = 0;
 let agentMeta = [];
 
-const NODE_COUNT = 5;
 const NODE_X_START = 70;
-const NODE_X_GAP = 190;
+const NODE_X_GAP = 130;
 const NODE_Y = 70;
 const NODE_R = 26;
 
@@ -38,6 +37,24 @@ async function api(path, opts = {}) {
   return data;
 }
 
+function escapeHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function downloadMarkdown(filename, content) {
+  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
 // ============================================================
 // Title block
 // ============================================================
@@ -55,16 +72,16 @@ async function refreshDomainCount() {
 }
 
 async function checkMode() {
-  const el = $('#tb-mode');
+  const elm = $('#tb-mode');
   try {
     const data = await api('/api/mode');
     if (data.mode === 'live') {
-      el.textContent = `LIVE · ${data.provider.toUpperCase()}`;
+      elm.textContent = `LIVE · ${data.provider.toUpperCase()}`;
     } else {
-      el.textContent = 'MOCK · offline';
+      elm.textContent = 'MOCK · offline';
     }
   } catch (e) {
-    el.textContent = 'unknown';
+    elm.textContent = 'unknown';
   }
 }
 checkMode();
@@ -101,7 +118,6 @@ function showDashboardList() {
   loadDashboard();
 }
 
-// Decide initial view on page load
 if (sessionStorage.getItem('poc_view') === 'pipeline') {
   sessionStorage.removeItem('poc_view');
   showPipelineView();
@@ -162,7 +178,7 @@ function renderDashboardTable(projects) {
 let historyDetailArtefacts = [];
 let historyDetailActiveIndex = 0;
 
-async function openDashboardDetail(projectId) {
+async function openDashboardDetail(id) {
   $('#dashboard-view').hidden = true;
   $('#dashboard-detail-view').hidden = false;
   $('#history-detail-meta').textContent = 'Loading…';
@@ -170,7 +186,7 @@ async function openDashboardDetail(projectId) {
   $('#history-doc-viewer').innerHTML = '';
 
   try {
-    const record = await api(`/api/history/${projectId}`);
+    const record = await api(`/api/history/${id}`);
     const date = record.created_at ? new Date(record.created_at).toLocaleString() : 'unknown date';
     $('#history-detail-meta').innerHTML =
       `<strong>${escapeHtml(record.business_idea)}</strong><br>` +
@@ -329,7 +345,11 @@ function drawSchematic() {
   svg.innerHTML = '';
   const ns = 'http://www.w3.org/2000/svg';
 
-  // Trace lines first (so they sit behind nodes)
+  // viewBox width scales with the number of agents, so this stays
+  // correct however many nodes there are (currently 7, but not hardcoded)
+  const totalWidth = NODE_X_START * 2 + Math.max(0, agentMeta.length - 1) * NODE_X_GAP;
+  svg.setAttribute('viewBox', `0 0 ${totalWidth} 160`);
+
   for (let i = 0; i < agentMeta.length - 1; i++) {
     const line = document.createElementNS(ns, 'line');
     line.setAttribute('x1', nodeX(i) + NODE_R);
@@ -365,7 +385,6 @@ function drawSchematic() {
     idx.setAttribute('x', nodeX(i));
     idx.setAttribute('y', NODE_Y + 5);
     idx.setAttribute('text-anchor', 'middle');
-    idx.setAttribute('class', 'node-idx');
     idx.setAttribute('id', `idx-${i}`);
     idx.setAttribute('fill', 'var(--text-faint)');
     idx.setAttribute('font-family', 'var(--mono)');
@@ -446,7 +465,7 @@ async function runAgentPipeline() {
     }
   }
 
-  $('#agents-status').textContent = 'complete — 5/5';
+  $('#agents-status').textContent = `complete — ${agentMeta.length}/${agentMeta.length}`;
   $('#btn-export').hidden = false;
 }
 
@@ -461,12 +480,6 @@ function showQaVerdict(data) {
     ? '<ul>' + notes.map(n => `<li>${escapeHtml(n)}</li>`).join('') + '</ul>'
     : '';
   box.innerHTML = `VERDICT: ${readiness.toUpperCase()}` + notesHtml;
-}
-
-function escapeHtml(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
 }
 
 // ============================================================
@@ -517,23 +530,7 @@ function renderArtefacts(artefacts) {
 
 function renderDoc(markdown) {
   const viewer = $('#doc-viewer');
-  if (window.marked) {
-    viewer.innerHTML = marked.parse(markdown);
-  } else {
-    viewer.textContent = markdown;
-  }
-}
-
-function downloadMarkdown(filename, content) {
-  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  viewer.innerHTML = window.marked ? marked.parse(markdown) : markdown;
 }
 
 $('#btn-download-current').addEventListener('click', () => {
@@ -543,8 +540,6 @@ $('#btn-download-current').addEventListener('click', () => {
 });
 
 $('#btn-download-all').addEventListener('click', () => {
-  // Small stagger between downloads — some browsers block several
-  // simultaneous downloads triggered without individual user gestures.
   currentArtefacts.forEach((a, i) => {
     setTimeout(() => downloadMarkdown(`${a.type}.md`, a.content_markdown), i * 350);
   });

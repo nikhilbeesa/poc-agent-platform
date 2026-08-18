@@ -1,17 +1,7 @@
 """
-Base Agent
-==========
-Every specialist agent (Business Analyst, Solution Architect, Security,
-Product Manager, QA) extends this. The contract is deliberately narrow:
-
-- Input: the shared ProjectContext (idea, domain, answered questions,
-  and any prior agents' contributions it needs to read)
-- Output: a structured dict (agent-specific shape), wrapped in an
-  AgentContribution and appended back onto the context
-
-This is what makes agents swappable/addable without touching the
-orchestrator: as long as an agent implements build_prompt, parse_response,
-and mock_response, it plugs into the pipeline.
+Base Agent — every specialist agent extends this. Contract: read the
+shared ProjectContext, produce a structured dict, get wrapped in an
+AgentContribution and appended back onto the context.
 """
 
 from __future__ import annotations
@@ -31,18 +21,15 @@ logger = get_logger()
 
 class BaseAgent:
     role: AgentRole = None  # set by subclass
+    max_output_tokens: int = 1200  # override in subclasses that produce longer documents
 
     def build_prompt(self, context: ProjectContext) -> str:
-        """Return the prompt to send to the LLM. Must instruct it to
-        respond with JSON matching this agent's expected output shape."""
         raise NotImplementedError
 
     def mock_response(self, context: ProjectContext) -> dict:
-        """Deterministic stand-in output used when no API key is set."""
         raise NotImplementedError
 
     def parse_response(self, text: str) -> dict:
-        """Default JSON parsing — override if an agent needs something else."""
         return json.loads(text)
 
     def run(self, context: ProjectContext) -> AgentContribution:
@@ -54,11 +41,10 @@ class BaseAgent:
                 output = self.mock_response(context)
             else:
                 prompt = self.build_prompt(context)
-                raw = call_llm(client, prompt)
+                raw = call_llm(client, prompt, max_tokens=self.max_output_tokens)
                 output = self.parse_response(raw)
         except Exception as e:
-            log_agent_call(logger, context.project_id, self.role.value, "failed",
-                            {"error": str(e)})
+            log_agent_call(logger, context.project_id, self.role.value, "failed", {"error": str(e)})
             raise
 
         contribution = AgentContribution(

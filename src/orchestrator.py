@@ -1,14 +1,6 @@
 """
-Orchestrator
-============
-Sequences agent calls. Deterministic — no AI reasoning happens here, only
-decisions about ORDER and WHEN, which matches the spec's principle that
-control flow stays in the application, not the model.
-
-Currently sequential: Business Analyst -> Solution Architect, because the
-Architect needs the BA's output as input. As more agents are added
-(Product Manager, Security, QA Reviewer), this is the only file that needs
-to change — each agent itself stays self-contained.
+Orchestrator — sequences agent calls. Deterministic, no AI reasoning here.
+7 agents, each producing (or contributing to) one of the 7 exported documents.
 """
 
 import sys
@@ -18,8 +10,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from agents.business_analyst import BusinessAnalystAgent  # noqa: E402
 from agents.product_manager import ProductManagerAgent  # noqa: E402
+from agents.product_requirements import ProductRequirementsAgent  # noqa: E402
 from agents.solution_architect import SolutionArchitectAgent  # noqa: E402
 from agents.security import SecurityAgent  # noqa: E402
+from agents.qa_test_strategy import QATestStrategyAgent  # noqa: E402
 from agents.qa_reviewer import QAReviewerAgent  # noqa: E402
 from context import ProjectContext, ProjectStage  # noqa: E402
 from discovery import is_discovery_complete  # noqa: E402
@@ -27,18 +21,21 @@ from logging_config import get_logger, log_agent_call  # noqa: E402
 
 logger = get_logger()
 
-# Ordered pipeline, following Section 6 of the spec's agent role order.
-# Each agent depends on at least one prior agent's output:
-#   Business Analyst  -> no dependency, runs first
-#   Product Manager    -> reads Business Analyst
-#   Solution Architect -> reads Business Analyst
-#   Security            -> reads Business Analyst + Solution Architect
-#   QA / Review          -> reads everyone, runs last
+# Dependency order:
+#   Business Analyst     -> no dependency, runs first
+#   Product Manager        -> reads Business Analyst
+#   Product Requirements    -> reads Business Analyst + Product Manager
+#   Solution Architect        -> reads Business Analyst + Product Requirements
+#   Security                    -> reads Business Analyst + Solution Architect
+#   QA Test Strategy               -> reads Product Manager + Security
+#   AI Review (QA Reviewer)          -> reads everyone, runs last
 AGENT_PIPELINE = [
     BusinessAnalystAgent(),
     ProductManagerAgent(),
+    ProductRequirementsAgent(),
     SolutionArchitectAgent(),
     SecurityAgent(),
+    QATestStrategyAgent(),
     QAReviewerAgent(),
 ]
 
@@ -69,12 +66,9 @@ if __name__ == "__main__":
     ctx = ProjectContext(business_idea_raw="An app where people can book home cleaners for one-off or recurring visits")
     ctx.domain_classification = "booking_platform"
     ctx.discovery_questions = [
-        DiscoveryQuestion(id="q1", text="Who books?", category="users",
-                           status="answered", answer="Individual homeowners, mostly recurring"),
-        DiscoveryQuestion(id="q2", text="Payment timing?", category="payments",
-                           status="answered", answer="At time of booking"),
-        DiscoveryQuestion(id="q3", text="Web, mobile, or both?", category="platform",
-                           status="answered", answer="Mobile app primarily"),
+        DiscoveryQuestion(id="q1", text="Who books?", category="users", status="answered", answer="Individual homeowners, mostly recurring"),
+        DiscoveryQuestion(id="q2", text="Payment timing?", category="payments", status="answered", answer="At time of booking"),
+        DiscoveryQuestion(id="q3", text="Web, mobile, or both?", category="platform", status="answered", answer="Mobile app primarily"),
     ]
 
     ctx = run_agent_pipeline(ctx)
@@ -87,6 +81,3 @@ if __name__ == "__main__":
     print("\nConsistency notes:")
     for n in ctx.consistency_notes:
         print(f"  - {n}")
-
-    ctx.save("/tmp/agent_pipeline_test_context.json")
-    print("\nSaved full context to /tmp/agent_pipeline_test_context.json")

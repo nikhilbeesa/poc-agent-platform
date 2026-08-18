@@ -1,15 +1,12 @@
 """
-Local Web Demo Server
-=======================
-Thin Flask API over the existing pipeline (discovery, agents, export).
-Runs entirely locally, no API key required — uses mock mode throughout.
+Local/Hosted Web Demo Server
+==============================
+Thin Flask API over the pipeline (discovery, 7 agents, export). Runs
+entirely locally in mock mode, no API key required; set ANTHROPIC_API_KEY
+or GEMINI_API_KEY (+ LLM_PROVIDER) for live mode.
 
-Each agent runs via its own endpoint call rather than one big "run
-everything" call, so the frontend can show real step-by-step progress
-instead of a single spinner.
-
-Run with:  python3 webapp/server.py
-Then open: http://localhost:5001
+Serves both the API and the static frontend from one app — single-host
+deployment, no CORS needed.
 """
 
 import os
@@ -37,26 +34,19 @@ app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "stati
 
 @app.errorhandler(Exception)
 def handle_any_error(e):
-    """Flask's default error page is HTML — that's what caused the
-    'Unexpected token <' error in the browser, because the frontend
-    always expects JSON back from /api/* routes. This makes every
-    unhandled error (missing env vars, a bad Supabase URL, an LLM API
-    error, anything) come back as readable JSON with the real message,
-    so it actually shows up in the UI instead of a cryptic parse error."""
+    """Every unhandled error comes back as readable JSON instead of an
+    HTML error page — Flask's default error page is HTML, which breaks
+    the frontend's res.json() parsing."""
     import traceback
-    traceback.print_exc()  # full traceback still goes to Render's logs
+    traceback.print_exc()
     from werkzeug.exceptions import HTTPException
     if isinstance(e, HTTPException):
         return jsonify({"error": e.description}), e.code
     return jsonify({"error": f"{type(e).__name__}: {e}"}), 500
 
 
-# In-memory project store — fine for a local single-user demo.
-PROJECTS: dict[str, ProjectContext] = {}
+PROJECTS: dict = {}
 
-# Small artificial delay so MOCK mode doesn't feel instantaneous/
-# anticlimactic in a live demo. Live mode already has genuine API
-# latency, so this is skipped there — see _demo_pace().
 DEMO_DELAY = 0.5
 
 
@@ -64,27 +54,22 @@ def _demo_pace():
     if get_client() is None:
         time.sleep(DEMO_DELAY)
 
+
 AGENT_META = [
     {"role": "business_analyst", "label": "Business Analyst", "note": "requirements & goals"},
     {"role": "product_manager", "label": "Product Manager", "note": "epics & user stories"},
+    {"role": "product_requirements", "label": "Product Requirements", "note": "PRD"},
     {"role": "solution_architect", "label": "Solution Architect", "note": "recommended approach"},
     {"role": "security", "label": "Security", "note": "risk & compliance review"},
-    {"role": "qa_reviewer", "label": "QA / Reviewer", "note": "consistency check"},
+    {"role": "qa_test_strategy", "label": "QA Test Strategy", "note": "test plan & test cases"},
+    {"role": "qa_reviewer", "label": "AI Reviewer", "note": "final consistency check"},
 ]
 
-
-# ---------------------------------------------------------------------------
-# Static frontend
-# ---------------------------------------------------------------------------
 
 @app.route("/")
 def index():
     return send_from_directory(app.static_folder, "index.html")
 
-
-# ---------------------------------------------------------------------------
-# API
-# ---------------------------------------------------------------------------
 
 @app.route("/api/mode")
 def mode():
@@ -107,7 +92,7 @@ def create_project():
     if not idea:
         return jsonify({"error": "idea is required"}), 400
 
-    store = bootstrap()  # ensures the 3 seed domains exist before we snapshot
+    store = bootstrap()  # ensures seed domains exist before we snapshot
     known_before = set(store.list_domains())
 
     _demo_pace()
@@ -199,9 +184,6 @@ def export(project_id):
     qa = ctx.get_contribution(AgentRole.QA_REVIEWER)
     qa_readiness = qa.output.get("overall_readiness") if qa else None
 
-    # Persist now that artefacts exist — this is what powers the History
-    # view. In-progress projects (mid-discovery, mid-agent-run) stay
-    # in-memory only; we only save finished work.
     store = get_project_store()
     store.save({
         "id": ctx.project_id,
@@ -243,6 +225,6 @@ def history_detail(project_id):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
     print("\n  AI Product Engineering Agent Platform — local demo server")
-    print(f"  Running in {'LIVE' if os.environ.get('ANTHROPIC_API_KEY') else 'MOCK'} mode")
+    print(f"  Running in {'LIVE' if os.environ.get('ANTHROPIC_API_KEY') or os.environ.get('GEMINI_API_KEY') else 'MOCK'} mode")
     print(f"  Open: http://localhost:{port}\n")
     app.run(host="0.0.0.0", port=port, debug=False)

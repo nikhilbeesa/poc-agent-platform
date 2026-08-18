@@ -4,6 +4,7 @@
 -- exists. Every CREATE is guarded, and policies are dropped-then-recreated
 -- rather than using a bare CREATE POLICY, since Postgres doesn't support
 -- "CREATE POLICY IF NOT EXISTS" reliably.
+
 -- Creates the `domains` table backing SupabaseKnowledgeStore.
 
 create table if not exists domains (
@@ -15,12 +16,6 @@ create table if not exists domains (
   created_at timestamptz not null default now()
 );
 
--- Row Level Security: Supabase enables this by default on new projects,
--- and with no policy, ALL access is blocked — the app would fail to read
--- or write anything. This policy opens read/write to anyone holding the
--- anon key, which is fine for a POC using the anon key server-side, but
--- NOT something to carry into a real multi-user product (that needs
--- per-user policies, most likely tied to Supabase Auth).
 alter table domains enable row level security;
 
 drop policy if exists "poc demo — allow all" on domains;
@@ -30,10 +25,7 @@ create policy "poc demo — allow all"
   using (true)
   with check (true);
 
--- Optional: seed the 3 starter domains directly in SQL, so a fresh
--- Supabase project has them without needing to run bootstrap_seed_data.py
--- first. The Python bootstrap() function does the same thing and is
--- idempotent either way, so running both is harmless.
+-- Optional: seed the 3 starter domains directly in SQL.
 insert into domains (slug, name, description, typical_modules, seed_questions)
 values
   ('booking_platform', 'Booking Platform',
@@ -64,8 +56,7 @@ on conflict (slug) do nothing;
 
 -- ---------------------------------------------------------------------
 -- Projects table: persists completed projects so they survive server
--- restarts (Render's free tier definitely doesn't guarantee memory
--- persistence) and can be browsed later from the History view.
+-- restarts and can be browsed later from the History/Dashboard view.
 -- ---------------------------------------------------------------------
 
 create table if not exists projects (

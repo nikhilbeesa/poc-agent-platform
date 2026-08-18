@@ -1,7 +1,6 @@
 """
-Quick smoke test across a few different business idea types.
-Not a formal test suite (that's a Phase 5 concern) — just enough to check
-the discovery engine behaves sensibly across domains before moving on.
+Quick smoke test across a few different business idea types for the
+discovery engine alone (no agents).
 """
 
 import sys
@@ -16,7 +15,7 @@ SAMPLE_IDEAS = [
     "An app where people can book home cleaners for one-off or recurring visits",
     "An online store selling handmade candles and shipping them nationwide",
     "A platform connecting freelance photographers with couples planning weddings",
-    "A tool that helps small farms track crop yields and equipment maintenance",  # deliberately unseen domain
+    "A tool that helps small farms track crop yields and equipment maintenance",
 ]
 
 for idea in SAMPLE_IDEAS:

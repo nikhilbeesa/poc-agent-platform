@@ -1,18 +1,7 @@
 """
-Learn New Domain
-=================
-When discovery encounters a business idea that doesn't fit any known
-domain, this analyses the idea and writes a new domain entry — description,
-typical modules, seed questions — straight into the KnowledgeStore.
-
-This is Section 7 of the spec, verbatim: "Unknown domains should be
-analysed and incorporated without changing the platform architecture."
-No code changes happen here — only new data gets added. The next idea
-that looks like this one will match an existing domain instead of
-falling through again.
-
-Same live/mock pattern as everything else: real LLM call if
-ANTHROPIC_API_KEY is set, deterministic mock output otherwise.
+Learn New Domain — analyses an unrecognised idea and persists a new
+domain entry to the store. Section 7 of the spec: unknown domains get
+"analysed and incorporated without changing the platform architecture."
 """
 
 import json
@@ -33,10 +22,7 @@ def _slugify(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
 
 
-def learn_domain(idea_text: str, proposed_name: str, project_id: str,
-                  store=None) -> dict:
-    """Analyse an unrecognised idea and persist a new domain entry.
-    Returns the saved domain dict plus its storage slug."""
+def learn_domain(idea_text: str, proposed_name: str, project_id: str, store=None) -> dict:
     store = store or get_knowledge_store()
 
     log_agent_call(logger, project_id, "knowledge_engine", "started",
@@ -60,10 +46,9 @@ def _live_learn(client, idea_text: str, proposed_name: str) -> dict:
     prompt = f"""This business idea doesn't clearly match any known domain:
 "{idea_text}"
 
-Propose a new domain category for it, in the same shape as an existing
-domain knowledge entry: a name, a short description, the typical
-functional modules businesses like this usually need, and 3-5 baseline
-discovery questions worth asking any business in this domain.
+Propose a new domain category for it: a name, a short description, the
+typical functional modules businesses like this usually need, and 3-5
+baseline discovery questions worth asking any business in this domain.
 
 Respond ONLY with JSON in exactly this shape:
 {{
@@ -78,16 +63,11 @@ Respond ONLY with JSON in exactly this shape:
 
 
 def _mock_learn(idea_text: str, proposed_name: str) -> dict:
-    """Deterministic stand-in for the LLM's domain analysis."""
     slug = _slugify(proposed_name)
     return {
         "name": proposed_name.replace("_", " ").title(),
         "description": f"A newly-learned domain, inferred from an idea that didn't match existing domains: \"{idea_text}\"",
-        "typical_modules": [
-            "core workflow",
-            "user accounts",
-            "notifications",
-        ],
+        "typical_modules": ["core workflow", "user accounts", "notifications"],
         "seed_questions": [
             {"id": f"{slug}_users", "text": "Who are the primary users of this platform?", "category": "users"},
             {"id": f"{slug}_value", "text": "What's the core value this delivers to those users?", "category": "value_proposition"},
