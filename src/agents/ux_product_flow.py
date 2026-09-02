@@ -49,8 +49,8 @@ Epics: {pm_output.get('epics', [])}
 PRD functional requirements: {prd_output.get('functional_requirements', [])}
 Roles and permissions: {prd_output.get('roles_and_permissions', [])}
 Navigation behavior: {prd_output.get('navigation_behavior', 'N/A')}
-State behaviors: {prd_output.get('state_behaviors', {{}})}
-Security/access constraints affecting UX: {prd_output.get('security_privacy_access_constraints', {{}}).get('ux_implications', [])}
+State behaviors: {prd_output.get('state_behaviors', {})}
+Security/access constraints affecting UX: {prd_output.get('security_privacy_access_constraints', {}).get('ux_implications', [])}
 
 Rules:
 - Assign each screen a unique ID: SCR-001, SCR-002, ...
