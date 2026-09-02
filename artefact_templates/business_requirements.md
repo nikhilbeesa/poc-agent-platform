@@ -4,40 +4,58 @@
 **Domain:** {{domain_classification}}
 **Generated:** {{generated_date}}
 
-## 1. Business overview
-{{business_idea_summary}}
+## 1. Project Overview
+{{project_overview}}
 
-## 2. Target users
-{{target_users}}
-
-## 3. Stakeholders
-{{stakeholders}}
-
-## 4. Core problem being solved
+## 2. Business Problem & Problem Statement
 {{problem_statement}}
 
-## 5. Business goals
-{{business_goals}}
+## 3. Target Users
+{{target_users}}
 
-## 6. Success metrics
+## 4. User Personas
+{{user_personas}}
+
+## 5. Stakeholders
+{{stakeholders}}
+
+## 6. User Pain Points
+{{user_pain_points}}
+
+## 7. Business Objectives & Goals
+{{business_objectives}}
+
+## 8. Expected Business Outcomes
+{{expected_business_outcomes}}
+
+## 9. Success Metrics
 {{success_metrics}}
 
-## 7. Scope
+## 10. Scope
 
-### In scope
+### In Scope
 {{scope_in}}
 
-### Out of scope
+### Out of Scope
 {{scope_out}}
 
-## 8. Key requirements
-{{requirements_list}}
+## 11. Requirements
+{{requirements}}
 
-## 9. Constraints
+## 12. Business Rules
+{{business_rules}}
+
+## 13. Constraints
 {{constraints}}
 
-## 10. Assumptions
+## 14. Assumptions
 {{assumptions}}
 
-## 11. Open questions
+## 15. Dependencies
+{{dependencies}}
+
+## 16. Risks
+{{risks}}
+
+## 17. Open Questions
 {{open_questions}}

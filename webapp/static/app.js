@@ -3,11 +3,10 @@
 // ============================================================
 let projectId = null;
 let questions = [];
-let currentAgentIndex = 0;
 let agentMeta = [];
 
 const NODE_X_START = 70;
-const NODE_X_GAP = 130;
+const NODE_X_GAP = 150;
 const NODE_Y = 70;
 const NODE_R = 26;
 
@@ -28,10 +27,7 @@ function el(tag, attrs = {}, children = []) {
 function unlock(panelId) { $(panelId).classList.remove('is-locked'); }
 
 async function api(path, opts = {}) {
-  const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json' },
-    ...opts,
-  });
+  const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || 'request failed');
   return data;
@@ -47,12 +43,21 @@ function downloadMarkdown(filename, content) {
   const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+// Status strings like "READY FOR DESIGN AGENT" have spaces, which can't
+// be used directly as CSS classes — slugify for styling, keep the raw
+// text for display.
+function statusSlug(status) {
+  if (!status) return 'unknown';
+  const s = status.toUpperCase();
+  if (s.includes('NOT READY')) return 'status-not-ready';
+  if (s.includes('WARNING')) return 'status-warnings';
+  if (s.includes('READY')) return 'status-ready';
+  return 'status-unknown';
 }
 
 // ============================================================
@@ -75,11 +80,7 @@ async function checkMode() {
   const elm = $('#tb-mode');
   try {
     const data = await api('/api/mode');
-    if (data.mode === 'live') {
-      elm.textContent = `LIVE · ${data.provider.toUpperCase()}`;
-    } else {
-      elm.textContent = 'MOCK · offline';
-    }
+    elm.textContent = data.mode === 'live' ? `LIVE · ${data.provider.toUpperCase()}` : 'MOCK · offline';
   } catch (e) {
     elm.textContent = 'unknown';
   }
@@ -132,7 +133,6 @@ async function loadDashboard() {
   $('#dash-loading-msg').hidden = false;
   $('#dash-empty-msg').hidden = true;
   $('#dash-table').hidden = true;
-
   try {
     const data = await api('/api/history');
     renderDashboardTable(data.projects);
@@ -150,16 +150,13 @@ function renderDashboardTable(projects) {
   loadingMsg.hidden = true;
 
   if (!projects.length) {
-    emptyMsg.hidden = false;
-    table.hidden = true;
-    return;
+    emptyMsg.hidden = false; table.hidden = true; return;
   }
-  emptyMsg.hidden = true;
-  table.hidden = false;
+  emptyMsg.hidden = true; table.hidden = false;
 
   projects.forEach(p => {
     const date = p.created_at ? new Date(p.created_at).toLocaleString() : 'unknown';
-    const badge = el('span', { class: `history-badge ${p.qa_readiness || ''}`, text: p.qa_readiness || 'unknown' });
+    const badge = el('span', { class: `history-badge ${statusSlug(p.handoff_status)}`, text: p.handoff_status || 'unknown' });
     const row = el('tr', {}, [
       el('td', { class: 'dash-idea-cell', text: p.business_idea }),
       el('td', { class: 'dash-domain-cell', text: p.domain || 'unclassified' }),
@@ -190,7 +187,7 @@ async function openDashboardDetail(id) {
     const date = record.created_at ? new Date(record.created_at).toLocaleString() : 'unknown date';
     $('#history-detail-meta').innerHTML =
       `<strong>${escapeHtml(record.business_idea)}</strong><br>` +
-      `Domain: ${escapeHtml(record.domain || 'unclassified')} · Created: ${escapeHtml(date)} · QA: ${escapeHtml(record.qa_readiness || 'unknown')}`;
+      `Domain: ${escapeHtml(record.domain || 'unclassified')} · Created: ${escapeHtml(date)} · Handoff: ${escapeHtml(record.handoff_status || 'unknown')}`;
 
     historyDetailArtefacts = record.artefacts || [];
     historyDetailActiveIndex = 0;
@@ -207,7 +204,6 @@ async function openDashboardDetail(id) {
       });
       tabs.appendChild(tab);
     });
-
     if (historyDetailArtefacts.length) renderHistoryDoc(historyDetailArtefacts[0].content_markdown);
   } catch (e) {
     $('#history-detail-meta').textContent = 'Could not load this project: ' + e.message;
@@ -215,53 +211,37 @@ async function openDashboardDetail(id) {
 }
 
 function renderHistoryDoc(markdown) {
-  const viewer = $('#history-doc-viewer');
-  viewer.innerHTML = window.marked ? marked.parse(markdown) : markdown;
+  $('#history-doc-viewer').innerHTML = window.marked ? marked.parse(markdown) : markdown;
 }
 
 $('#btn-history-download-current').addEventListener('click', () => {
   const a = historyDetailArtefacts[historyDetailActiveIndex];
-  if (!a) return;
-  downloadMarkdown(`${a.type}.md`, a.content_markdown);
+  if (a) downloadMarkdown(`${a.type}.md`, a.content_markdown);
 });
-
 $('#btn-history-download-all').addEventListener('click', () => {
-  historyDetailArtefacts.forEach((a, i) => {
-    setTimeout(() => downloadMarkdown(`${a.type}.md`, a.content_markdown), i * 350);
-  });
+  historyDetailArtefacts.forEach((a, i) => setTimeout(() => downloadMarkdown(`${a.type}.md`, a.content_markdown), i * 350));
 });
 
 // ============================================================
 // SHEET 01 — Intake
 // ============================================================
 document.querySelectorAll('.chip').forEach(chip => {
-  chip.addEventListener('click', () => {
-    $('#idea-input').value = chip.dataset.idea;
-  });
+  chip.addEventListener('click', () => { $('#idea-input').value = chip.dataset.idea; });
 });
 
 $('#btn-submit-idea').addEventListener('click', async () => {
   const idea = $('#idea-input').value.trim();
   if (!idea) return;
-
   const btn = $('#btn-submit-idea');
-  btn.disabled = true;
-  btn.textContent = 'Running discovery…';
+  btn.disabled = true; btn.textContent = 'Running discovery…';
 
   try {
-    const data = await api('/api/project', {
-      method: 'POST',
-      body: JSON.stringify({ idea }),
-    });
-
+    const data = await api('/api/project', { method: 'POST', body: JSON.stringify({ idea }) });
     projectId = data.project_id;
     questions = data.questions;
     setTitleBlock({ projectId, domain: `${data.domain} (${Math.round(data.confidence * 100)}%)` });
     await refreshDomainCount();
-
-    if (data.learned_new_domain) {
-      $('#learned-banner').hidden = false;
-    }
+    if (data.learned_new_domain) $('#learned-banner').hidden = false;
 
     renderQuestions();
     unlock('#panel-discovery');
@@ -269,8 +249,7 @@ $('#btn-submit-idea').addEventListener('click', async () => {
   } catch (e) {
     alert('Something went wrong: ' + e.message);
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'Run discovery →';
+    btn.disabled = false; btn.textContent = 'Run discovery →';
   }
 });
 
@@ -302,11 +281,7 @@ function renderQuestions() {
 async function submitAnswer(questionId, answerText) {
   if (!answerText) return;
   try {
-    const data = await api(`/api/project/${projectId}/answer`, {
-      method: 'POST',
-      body: JSON.stringify({ question_id: questionId, answer: answerText }),
-    });
-
+    const data = await api(`/api/project/${projectId}/answer`, { method: 'POST', body: JSON.stringify({ question_id: questionId, answer: answerText }) });
     const row = $(`#q-row-${questionId}`);
     row.classList.add('answered');
     $(`#q-tag-${questionId}`).textContent = `✓ ${answerText}`;
@@ -345,8 +320,6 @@ function drawSchematic() {
   svg.innerHTML = '';
   const ns = 'http://www.w3.org/2000/svg';
 
-  // viewBox width scales with the number of agents, so this stays
-  // correct however many nodes there are (currently 7, but not hardcoded)
   const totalWidth = NODE_X_START * 2 + Math.max(0, agentMeta.length - 1) * NODE_X_GAP;
   svg.setAttribute('viewBox', `0 0 ${totalWidth} 160`);
 
@@ -363,51 +336,34 @@ function drawSchematic() {
 
   agentMeta.forEach((agent, i) => {
     const g = document.createElementNS(ns, 'g');
-
     const circle = document.createElementNS(ns, 'circle');
-    circle.setAttribute('cx', nodeX(i));
-    circle.setAttribute('cy', NODE_Y);
-    circle.setAttribute('r', NODE_R);
-    circle.setAttribute('class', 'node-circle');
-    circle.setAttribute('id', `node-${i}`);
+    circle.setAttribute('cx', nodeX(i)); circle.setAttribute('cy', NODE_Y); circle.setAttribute('r', NODE_R);
+    circle.setAttribute('class', 'node-circle'); circle.setAttribute('id', `node-${i}`);
     g.appendChild(circle);
 
     const check = document.createElementNS(ns, 'text');
-    check.setAttribute('x', nodeX(i));
-    check.setAttribute('y', NODE_Y + 6);
-    check.setAttribute('text-anchor', 'middle');
-    check.setAttribute('class', 'node-check');
-    check.setAttribute('id', `check-${i}`);
+    check.setAttribute('x', nodeX(i)); check.setAttribute('y', NODE_Y + 6);
+    check.setAttribute('text-anchor', 'middle'); check.setAttribute('class', 'node-check'); check.setAttribute('id', `check-${i}`);
     check.textContent = '✓';
     g.appendChild(check);
 
     const idx = document.createElementNS(ns, 'text');
-    idx.setAttribute('x', nodeX(i));
-    idx.setAttribute('y', NODE_Y + 5);
-    idx.setAttribute('text-anchor', 'middle');
-    idx.setAttribute('id', `idx-${i}`);
-    idx.setAttribute('fill', 'var(--text-faint)');
-    idx.setAttribute('font-family', 'var(--mono)');
-    idx.setAttribute('font-size', '13');
+    idx.setAttribute('x', nodeX(i)); idx.setAttribute('y', NODE_Y + 5);
+    idx.setAttribute('text-anchor', 'middle'); idx.setAttribute('id', `idx-${i}`);
+    idx.setAttribute('fill', 'var(--text-faint)'); idx.setAttribute('font-family', 'var(--mono)'); idx.setAttribute('font-size', '13');
     idx.textContent = `0${i + 1}`;
     g.appendChild(idx);
 
     const label1 = document.createElementNS(ns, 'text');
-    label1.setAttribute('x', nodeX(i));
-    label1.setAttribute('y', NODE_Y + NODE_R + 22);
-    label1.setAttribute('text-anchor', 'middle');
-    label1.setAttribute('class', 'node-label');
-    label1.setAttribute('id', `label-${i}`);
+    label1.setAttribute('x', nodeX(i)); label1.setAttribute('y', NODE_Y + NODE_R + 22);
+    label1.setAttribute('text-anchor', 'middle'); label1.setAttribute('class', 'node-label'); label1.setAttribute('id', `label-${i}`);
     label1.textContent = agent.label;
     g.appendChild(label1);
 
     const label2 = document.createElementNS(ns, 'text');
-    label2.setAttribute('x', nodeX(i));
-    label2.setAttribute('y', NODE_Y + NODE_R + 36);
-    label2.setAttribute('text-anchor', 'middle');
-    label2.setAttribute('class', 'node-label');
-    label2.setAttribute('font-size', '9');
-    label2.setAttribute('opacity', '0.7');
+    label2.setAttribute('x', nodeX(i)); label2.setAttribute('y', NODE_Y + NODE_R + 36);
+    label2.setAttribute('text-anchor', 'middle'); label2.setAttribute('class', 'node-label');
+    label2.setAttribute('font-size', '9'); label2.setAttribute('opacity', '0.7');
     label2.textContent = agent.note;
     g.appendChild(label2);
 
@@ -416,19 +372,12 @@ function drawSchematic() {
 }
 
 function setNodeState(i, state) {
-  const circle = $(`#node-${i}`);
-  const label = $(`#label-${i}`);
-  const check = $(`#check-${i}`);
-  const idx = $(`#idx-${i}`);
-  circle.classList.remove('active', 'done');
-  label.classList.remove('active', 'done');
+  const circle = $(`#node-${i}`), label = $(`#label-${i}`), check = $(`#check-${i}`), idx = $(`#idx-${i}`);
+  circle.classList.remove('active', 'done'); label.classList.remove('active', 'done');
   if (state === 'active') {
-    circle.classList.add('active');
-    label.classList.add('active');
+    circle.classList.add('active'); label.classList.add('active');
   } else if (state === 'done') {
-    circle.classList.add('done');
-    label.classList.add('done');
-    check.classList.add('show');
+    circle.classList.add('done'); label.classList.add('done'); check.classList.add('show');
     idx.style.display = 'none';
     const trace = $(`#trace-${i}`);
     if (trace) trace.classList.add('charged');
@@ -437,8 +386,7 @@ function setNodeState(i, state) {
 
 function logLine(text, done = false) {
   const log = $('#agent-log');
-  const line = el('div', { text, class: done ? 'log-done' : '' });
-  log.appendChild(line);
+  log.appendChild(el('div', { text, class: done ? 'log-done' : '' }));
   log.scrollTop = log.scrollHeight;
 }
 
@@ -446,18 +394,13 @@ async function runAgentPipeline() {
   $('#agents-status').textContent = 'running…';
 
   for (let i = 0; i < agentMeta.length; i++) {
-    currentAgentIndex = i;
     setNodeState(i, 'active');
     logLine(`⏳ ${agentMeta[i].label} reading project context…`);
-
     try {
       const data = await api(`/api/project/${projectId}/agent/${i}`, { method: 'POST' });
       setNodeState(i, 'done');
       logLine(`✓ ${agentMeta[i].label} — ${data.summary}`, true);
-
-      if (agentMeta[i].role === 'qa_reviewer') {
-        showQaVerdict(data);
-      }
+      if (agentMeta[i].role === 'ai_handoff_validation') showQaVerdict(data);
     } catch (e) {
       logLine(`✗ ${agentMeta[i].label} failed: ${e.message}`);
       $('#agents-status').textContent = 'error';
@@ -470,20 +413,18 @@ async function runAgentPipeline() {
 }
 
 function showQaVerdict(data) {
-  const readiness = (data.output && data.output.overall_readiness) || 'unknown';
+  const status = (data.output && data.output.final_handoff_status) || 'unknown';
   const box = $('#qa-verdict');
   box.hidden = false;
-  box.className = `qa-verdict ${readiness}`;
+  box.className = `qa-verdict ${statusSlug(status)}`;
 
   const notes = data.consistency_notes || [];
-  const notesHtml = notes.length
-    ? '<ul>' + notes.map(n => `<li>${escapeHtml(n)}</li>`).join('') + '</ul>'
-    : '';
-  box.innerHTML = `VERDICT: ${readiness.toUpperCase()}` + notesHtml;
+  const notesHtml = notes.length ? '<ul>' + notes.map(n => `<li>${escapeHtml(n)}</li>`).join('') + '</ul>' : '';
+  box.innerHTML = `HANDOFF STATUS: ${escapeHtml(status)}` + notesHtml;
 }
 
 // ============================================================
-// SHEET 04 — Artefacts
+// SHEET 04 — Artefacts (5-document package)
 // ============================================================
 let currentArtefacts = [];
 let activeArtefactIndex = 0;
@@ -491,17 +432,14 @@ let activeArtefactIndex = 0;
 $('#btn-export').addEventListener('click', async () => {
   unlock('#panel-artefacts');
   const btn = $('#btn-export');
-  btn.disabled = true;
-  btn.textContent = 'Exporting…';
-
+  btn.disabled = true; btn.textContent = 'Exporting…';
   try {
     const data = await api(`/api/project/${projectId}/export`, { method: 'POST' });
     renderArtefacts(data.artefacts);
   } catch (e) {
     alert('Export failed: ' + e.message);
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'Export artefacts →';
+    btn.disabled = false; btn.textContent = 'Export 5-document package →';
   }
 });
 
@@ -529,18 +467,13 @@ function renderArtefacts(artefacts) {
 }
 
 function renderDoc(markdown) {
-  const viewer = $('#doc-viewer');
-  viewer.innerHTML = window.marked ? marked.parse(markdown) : markdown;
+  $('#doc-viewer').innerHTML = window.marked ? marked.parse(markdown) : markdown;
 }
 
 $('#btn-download-current').addEventListener('click', () => {
   const a = currentArtefacts[activeArtefactIndex];
-  if (!a) return;
-  downloadMarkdown(`${a.type}.md`, a.content_markdown);
+  if (a) downloadMarkdown(`${a.type}.md`, a.content_markdown);
 });
-
 $('#btn-download-all').addEventListener('click', () => {
-  currentArtefacts.forEach((a, i) => {
-    setTimeout(() => downloadMarkdown(`${a.type}.md`, a.content_markdown), i * 350);
-  });
+  currentArtefacts.forEach((a, i) => setTimeout(() => downloadMarkdown(`${a.type}.md`, a.content_markdown), i * 350));
 });

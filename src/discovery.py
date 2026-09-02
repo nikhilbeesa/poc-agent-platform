@@ -1,16 +1,7 @@
-"""
-Discovery Engine
-================
-Turns a raw business idea into a classified domain plus a tailored set of
-discovery questions.
-"""
-
 from __future__ import annotations
-
 import json
 import sys
 from pathlib import Path
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from context import DiscoveryQuestion, ProjectContext, ProjectStage, QuestionStatus  # noqa: E402
@@ -30,29 +21,20 @@ def intake_idea(context: ProjectContext, idea_text: str) -> ProjectContext:
 
 
 def classify_domain(context: ProjectContext) -> ProjectContext:
-    log_agent_call(logger, context.project_id, "discovery_engine", "started",
-                    {"step": "classify_domain"})
-
+    log_agent_call(logger, context.project_id, "discovery_engine", "started", {"step": "classify_domain"})
     store = bootstrap()
     known_names = store.list_domains()
-
     client = get_client()
     if client is None:
         domain, confidence = _mock_classify(context.business_idea_raw, known_names)
     else:
         domain, confidence = _live_classify(client, context.business_idea_raw, known_names)
-
     if not store.domain_exists(domain):
         learned = learn_domain(context.business_idea_raw, domain, context.project_id, store)
         domain = learned["slug"]
-        log_agent_call(logger, context.project_id, "discovery_engine", "info",
-                        {"step": "classify_domain", "note": "learned new domain", "domain": domain})
-
     context.domain_classification = domain
     context.domain_confidence = confidence
-
-    log_agent_call(logger, context.project_id, "discovery_engine", "completed",
-                    {"step": "classify_domain", "domain": domain, "confidence": confidence})
+    log_agent_call(logger, context.project_id, "discovery_engine", "completed", {"step": "classify_domain", "domain": domain, "confidence": confidence})
     return context
 
 
@@ -66,17 +48,12 @@ Business idea: "{idea_text}"
 
 Respond ONLY with JSON, no other text:
 {{"domain": "...", "confidence": 0.0}}"""
-
     text = client.generate(prompt, max_tokens=200)
     data = json.loads(text)
     return data["domain"], float(data["confidence"])
 
 
-_STOPWORDS = {
-    "a", "an", "the", "app", "apps", "platform", "tool", "that", "for",
-    "people", "can", "and", "to", "of", "where", "who", "with", "their",
-    "your", "you", "helps", "let", "lets", "allow", "allows", "connecting",
-}
+_STOPWORDS = {"a", "an", "the", "app", "apps", "platform", "tool", "that", "for", "people", "can", "and", "to", "of", "where", "who", "with", "their", "your", "you", "helps", "let", "lets", "allow", "allows", "connecting"}
 
 
 def _guess_domain_slug(idea_text: str) -> str:
@@ -104,12 +81,9 @@ def _mock_classify(idea_text: str, known_names: list[str]) -> tuple[str, float]:
 
 
 def generate_discovery_questions(context: ProjectContext) -> ProjectContext:
-    log_agent_call(logger, context.project_id, "discovery_engine", "started",
-                    {"step": "generate_questions"})
-
+    log_agent_call(logger, context.project_id, "discovery_engine", "started", {"step": "generate_questions"})
     store = get_knowledge_store()
     domain_info = store.get_domain(context.domain_classification)
-
     client = get_client()
     if client is None:
         questions: list[DiscoveryQuestion] = []
@@ -119,21 +93,14 @@ def generate_discovery_questions(context: ProjectContext) -> ProjectContext:
         questions.extend(_mock_followups(context))
     else:
         questions = _live_dynamic_questions(client, context, domain_info)
-
     context.discovery_questions = questions
-
-    log_agent_call(logger, context.project_id, "discovery_engine", "completed",
-                    {"step": "generate_questions", "count": len(questions),
-                     "mode": "mock" if client is None else "live_dynamic"})
+    log_agent_call(logger, context.project_id, "discovery_engine", "completed", {"step": "generate_questions", "count": len(questions)})
     return context
 
 
 def _live_dynamic_questions(client, context: ProjectContext, domain_info: dict | None) -> list[DiscoveryQuestion]:
     if domain_info:
-        context_note = (
-            f"Domain: {context.domain_classification} — {domain_info['description']}\n"
-            f"Businesses like this typically need: {', '.join(domain_info.get('typical_modules', []))}"
-        )
+        context_note = f"Domain: {context.domain_classification} — {domain_info['description']}\nBusinesses like this typically need: {', '.join(domain_info.get('typical_modules', []))}"
     else:
         context_note = f"Domain: {context.domain_classification} (a newly-identified, unfamiliar business type)"
 
@@ -143,28 +110,14 @@ def _live_dynamic_questions(client, context: ProjectContext, domain_info: dict |
 Generate ALL the discovery questions you genuinely need to fully
 understand this business idea before a team could start building it —
 don't stop at an arbitrary count. A simple idea might only need 5-6
-questions; a complex one might genuinely need 15-20+. Use your judgment
-on how many are actually necessary, not a fixed number.
+questions; a complex one might genuinely need 15-20+.
 
-Make sure you've covered, wherever relevant to this specific idea:
-- target users / customer segments
-- core operations and day-to-day workflow
-- monetization, pricing, and payments
-- technical or platform requirements
-- competition and differentiation
-- legal, compliance, or regulatory considerations
-- growth and scaling plans
-- risks or unknowns specific to this idea
-- anything unique to THIS idea that a generic template for the domain would miss
-
-Questions must be SPECIFIC to this exact idea, not generic boilerplate.
-Two different ideas in the same domain should get noticeably different
-questions. Don't ask questions whose answer is already obvious from the
-idea as stated.
+Cover, wherever relevant: target users/segments, core operations,
+monetization/pricing, technical/platform requirements, competition,
+legal/compliance, growth plans, risks, and anything unique to THIS idea.
 
 Respond ONLY with JSON, no other text:
 {{"questions": [{{"id": "short_id", "text": "...", "category": "..."}}]}}"""
-
     text = client.generate(prompt, max_tokens=3000)
     data = json.loads(text)
     return [DiscoveryQuestion(**q) for q in data["questions"]]
@@ -175,13 +128,6 @@ def _mock_followups(context: ProjectContext) -> list[DiscoveryQuestion]:
         DiscoveryQuestion(id="mock_scale", text="Roughly how many users do you expect in the first 6 months?", category="scale"),
         DiscoveryQuestion(id="mock_platform", text="Web, mobile app, or both?", category="platform"),
     ]
-
-
-def next_pending_question(context: ProjectContext) -> DiscoveryQuestion | None:
-    for q in context.discovery_questions:
-        if q.status == QuestionStatus.PENDING:
-            return q
-    return None
 
 
 def is_discovery_complete(context: ProjectContext) -> bool:
@@ -198,13 +144,5 @@ def run_discovery(context: ProjectContext, idea_text: str) -> ProjectContext:
 if __name__ == "__main__":
     ctx = ProjectContext()
     ctx = run_discovery(ctx, "An app where people can book home cleaners for one-off or recurring visits")
-
-    print(f"\nDomain classified as: {ctx.domain_classification} (confidence: {ctx.domain_confidence})")
-    print(f"\nGenerated {len(ctx.discovery_questions)} discovery questions:\n")
-    for q in ctx.discovery_questions:
-        print(f"  [{q.category}] {q.text}")
-
-    if ctx.discovery_questions:
-        ctx.add_answer(ctx.discovery_questions[0].id, "Individual homeowners, mostly recurring bookings")
-
-    print(f"\nDiscovery complete: {is_discovery_complete(ctx)}")
+    print(f"\nDomain: {ctx.domain_classification} (confidence: {ctx.domain_confidence})")
+    print(f"{len(ctx.discovery_questions)} questions generated")

@@ -1,24 +1,13 @@
-"""
-Bootstrap Seed Data — writes the 3 starter domains into the store if not
-already present. Idempotent; safe to call every time.
-"""
-
 import sys
 from pathlib import Path
-
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 from knowledge.store import get_knowledge_store  # noqa: E402
 
 _SEED_DOMAINS = {
     "booking_platform": {
         "name": "Booking Platform",
-        "description": "A service where customers schedule appointments or reservations with providers (e.g. home services, salons, consultations).",
-        "typical_modules": [
-            "provider/vendor profiles", "availability & scheduling",
-            "booking & cancellation flow", "payments", "reviews & ratings",
-            "notifications/reminders",
-        ],
+        "description": "A service where customers schedule appointments or reservations with providers.",
+        "typical_modules": ["provider/vendor profiles", "availability & scheduling", "booking & cancellation flow", "payments", "reviews & ratings", "notifications/reminders"],
         "seed_questions": [
             {"id": "bp_users", "text": "Who books — individuals, businesses, or both?", "category": "users"},
             {"id": "bp_providers", "text": "How do service providers get onboarded — self-signup or vetted by you?", "category": "operations"},
@@ -30,10 +19,7 @@ _SEED_DOMAINS = {
     "e_commerce": {
         "name": "E-Commerce",
         "description": "A platform for browsing and purchasing physical or digital products online.",
-        "typical_modules": [
-            "product catalog", "cart & checkout", "payments",
-            "inventory management", "shipping/fulfilment", "order tracking",
-        ],
+        "typical_modules": ["product catalog", "cart & checkout", "payments", "inventory management", "shipping/fulfilment", "order tracking"],
         "seed_questions": [
             {"id": "ec_catalog_size", "text": "Roughly how many products, and do you manage your own inventory?", "category": "catalog"},
             {"id": "ec_fulfilment", "text": "Who handles shipping — you, a third party, or dropshipping?", "category": "fulfilment"},
@@ -43,16 +29,13 @@ _SEED_DOMAINS = {
     },
     "marketplace": {
         "name": "Marketplace",
-        "description": "A two-sided platform connecting independent buyers and sellers, where the platform doesn't own the inventory/service itself.",
-        "typical_modules": [
-            "buyer & seller profiles", "listing management", "search & discovery",
-            "messaging between parties", "payments & payouts", "trust & safety",
-        ],
+        "description": "A two-sided platform connecting independent buyers and sellers.",
+        "typical_modules": ["buyer & seller profiles", "listing management", "search & discovery", "messaging between parties", "payments & payouts", "trust & safety"],
         "seed_questions": [
-            {"id": "mk_sides", "text": "Who are the two sides of your marketplace (e.g. buyers/sellers, requesters/providers)?", "category": "users"},
+            {"id": "mk_sides", "text": "Who are the two sides of your marketplace?", "category": "users"},
             {"id": "mk_revenue", "text": "How does the platform make money — commission, subscription, listing fees?", "category": "business_model"},
-            {"id": "mk_trust", "text": "How will you build trust between strangers transacting (reviews, verification, escrow)?", "category": "trust_safety"},
-            {"id": "mk_matching", "text": "How do buyers and sellers find each other — search, browse, matching algorithm?", "category": "discovery"},
+            {"id": "mk_trust", "text": "How will you build trust between strangers transacting?", "category": "trust_safety"},
+            {"id": "mk_matching", "text": "How do buyers and sellers find each other?", "category": "discovery"},
         ],
     },
 }

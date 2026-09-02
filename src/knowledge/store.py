@@ -1,16 +1,6 @@
-"""
-Knowledge Store
-================
-Persisted storage for domain knowledge. Two backends sharing the same
-interface: KnowledgeStore (local JSON files, zero setup) and
-SupabaseKnowledgeStore (Postgres via PostgREST, for production).
-get_knowledge_store() picks automatically based on env vars.
-"""
-
 import json
 import os
 from pathlib import Path
-
 import requests
 
 DATA_DIR = Path(__file__).resolve().parent / "data" / "domains"
@@ -34,8 +24,7 @@ class KnowledgeStore:
         return json.loads(path.read_text())
 
     def save_domain(self, name: str, domain: dict) -> None:
-        path = self.data_dir / f"{name}.json"
-        path.write_text(json.dumps(domain, indent=2))
+        (self.data_dir / f"{name}.json").write_text(json.dumps(domain, indent=2))
 
     def get_all(self) -> dict:
         return {name: self.get_domain(name) for name in self.list_domains()}
@@ -45,11 +34,7 @@ class SupabaseKnowledgeStore:
     def __init__(self, url: str | None = None, key: str | None = None):
         self.url = (url or os.environ["SUPABASE_URL"]).rstrip("/")
         self.key = key or os.environ["SUPABASE_KEY"]
-        self._headers = {
-            "apikey": self.key,
-            "Authorization": f"Bearer {self.key}",
-            "Content-Type": "application/json",
-        }
+        self._headers = {"apikey": self.key, "Authorization": f"Bearer {self.key}", "Content-Type": "application/json"}
 
     def _endpoint(self, path: str = "") -> str:
         return f"{self.url}/rest/v1/domains{path}"
@@ -69,21 +54,11 @@ class SupabaseKnowledgeStore:
         if not rows:
             return None
         row = rows[0]
-        return {
-            "name": row["name"],
-            "description": row["description"],
-            "typical_modules": row["typical_modules"],
-            "seed_questions": row["seed_questions"],
-        }
+        return {"name": row["name"], "description": row["description"], "typical_modules": row["typical_modules"], "seed_questions": row["seed_questions"]}
 
     def save_domain(self, name: str, domain: dict) -> None:
-        payload = {
-            "slug": name,
-            "name": domain.get("name", name),
-            "description": domain.get("description", ""),
-            "typical_modules": domain.get("typical_modules", []),
-            "seed_questions": domain.get("seed_questions", []),
-        }
+        payload = {"slug": name, "name": domain.get("name", name), "description": domain.get("description", ""),
+                   "typical_modules": domain.get("typical_modules", []), "seed_questions": domain.get("seed_questions", [])}
         headers = {**self._headers, "Prefer": "resolution=merge-duplicates"}
         resp = requests.post(self._endpoint(), headers=headers, json=payload, timeout=15)
         resp.raise_for_status()

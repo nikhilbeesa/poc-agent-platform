@@ -1,8 +1,6 @@
 """
 Live Demo Script — narrated, presentation-friendly walkthrough of the
-full pipeline. Two modes:
-  --interactive   You type real answers to the discovery questions live.
-  (default)       Auto-answers instantly, for a quick unattended run-through.
+full 5-agent / 5-document pipeline.
 """
 
 import argparse
@@ -10,7 +8,6 @@ import logging
 import sys
 import time
 from pathlib import Path
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from context import AgentRole, ProjectContext, ProjectStage  # noqa: E402
@@ -24,30 +21,24 @@ import llm_client  # noqa: E402
 DEFAULT_IDEA = "A platform where people can rent out their driveways for parking by the hour"
 
 AGENT_LABELS = {
-    AgentRole.BUSINESS_ANALYST: "Business Analyst      — business requirements",
-    AgentRole.PRODUCT_MANAGER: "Product Manager         — user stories",
-    AgentRole.PRODUCT_REQUIREMENTS: "Product Requirements     — PRD",
-    AgentRole.SOLUTION_ARCHITECT: "Solution Architect        — architecture",
-    AgentRole.SECURITY: "Security                   — security assessment",
-    AgentRole.QA_TEST_STRATEGY: "QA Test Strategy             — test strategy",
-    AgentRole.QA_REVIEWER: "AI Reviewer                    — final review report",
+    AgentRole.BUSINESS_ANALYST: "Business Analyst        -> Business Requirements",
+    AgentRole.PRODUCT_MANAGER: "Product Manager           -> User Stories",
+    AgentRole.PRODUCT_REQUIREMENTS: "Product Requirements       -> PRD",
+    AgentRole.UX_PRODUCT_FLOW: "UX / Product Flow            -> UX Product Flow Spec",
+    AgentRole.AI_HANDOFF_VALIDATION: "AI Handoff Validation           -> Handoff Validation Report",
 }
-
-
-def _pause(seconds: float = 0.6) -> None:
-    time.sleep(seconds)
 
 
 def _header(title: str) -> None:
     print("\n" + "=" * 72)
     print(f"  {title}")
     print("=" * 72)
-    _pause()
+    time.sleep(0.5)
 
 
 def _step(text: str) -> None:
-    print(f"\n→ {text}")
-    _pause(0.3)
+    print(f"\n-> {text}")
+    time.sleep(0.3)
 
 
 def main() -> None:
@@ -60,15 +51,15 @@ def main() -> None:
 
     mode = "LIVE (real API)" if llm_client.get_client() else "MOCK (no API key set)"
 
-    _header("AI PRODUCT ENGINEERING AGENT PLATFORM — LIVE DEMO")
+    _header("AI PRODUCT SPECIFICATION PACKAGE — LIVE DEMO")
     print(f"  Mode: {mode}")
 
     idea = args.idea or DEFAULT_IDEA
     if not args.idea:
-        print(f"\n  Using sample idea (pass --idea \"...\" for your own):")
+        print("\n  Using sample idea (pass --idea \"...\" for your own):")
     print(f'  "{idea}"')
 
-    _header("PHASE 2 — DISCOVERY")
+    _header("DISCOVERY")
     ctx = ProjectContext()
     store = bootstrap()
     known_before = set(store.list_domains())
@@ -76,11 +67,9 @@ def main() -> None:
     _step("Intaking the idea and classifying its domain...")
     ctx = run_discovery(ctx, idea)
 
-    print(f"\n  Domain classified as: '{ctx.domain_classification}' "
-          f"(confidence: {ctx.domain_confidence})")
+    print(f"\n  Domain classified as: '{ctx.domain_classification}' (confidence: {ctx.domain_confidence})")
     if ctx.domain_classification not in known_before:
-        print("  ⚡ This didn't match an existing domain — the system just")
-        print("     LEARNED and PERSISTED a new one automatically.")
+        print("  This didn't match an existing domain — the system just learned and persisted a new one automatically.")
 
     print(f"\n  Generated {len(ctx.discovery_questions)} discovery questions:\n")
     for q in ctx.discovery_questions:
@@ -90,31 +79,31 @@ def main() -> None:
             ctx.add_answer(q.id, answer)
         else:
             ctx.add_answer(q.id, f"[auto-answered for demo — {q.category}]")
-        _pause(0.15)
+        time.sleep(0.15)
 
     assert is_discovery_complete(ctx)
-    print("\n  ✓ Discovery complete.")
+    print("\n  Discovery complete.")
 
-    _header("PHASE 3 — THE AI AGENT TEAM (7 agents)")
-    print("  Running 7 specialist agents in sequence.\n")
+    _header("THE 5-AGENT PIPELINE")
+    print("  Running 5 specialist agents in sequence.\n")
 
     ctx.stage = ProjectStage.AGENT_PROCESSING
     for agent in AGENT_PIPELINE:
         label = AGENT_LABELS.get(agent.role, agent.role.value)
-        print(f"    ⏳ {label} ...", end="", flush=True)
+        print(f"    ... {label}", end="", flush=True)
         t0 = time.time()
         agent.run(ctx)
         elapsed = time.time() - t0
-        print(f"\r    ✓ {label} ({elapsed:.1f}s)" + " " * 12)
+        print(f"\r    OK  {label} ({elapsed:.1f}s)" + " " * 12)
     ctx.stage = ProjectStage.REVIEW
 
-    qa = ctx.get_contribution(AgentRole.QA_REVIEWER)
-    readiness = qa.output.get("overall_readiness", "unknown") if qa else "unknown"
-    print(f"\n  Final AI review verdict: {readiness.upper()}")
+    val = ctx.get_contribution(AgentRole.AI_HANDOFF_VALIDATION)
+    status = val.output.get("final_handoff_status", "unknown") if val else "unknown"
+    print(f"\n  Final AI Handoff Validation status: {status}")
     for note in ctx.consistency_notes[:3]:
         print(f"    - {note}")
 
-    _header("PHASE 5 — EXPORTED ARTEFACTS")
+    _header("EXPORTED DOCUMENTS")
     ctx = export_all_artefacts(ctx)
     out_dir = f"/tmp/poc_demo_output/{ctx.project_id[:8]}"
     paths = save_artefacts_to_disk(ctx, out_dir)

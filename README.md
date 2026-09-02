@@ -1,9 +1,16 @@
-# AI Product Engineering Agent Platform — POC
+# AI Product Specification Package — POC
 
 A working proof of concept: capture a business idea, run guided discovery,
-hand it to a team of 7 specialist AI agents, and export 7 detailed,
-implementation-ready documents. Runs locally in mock mode with zero setup,
-or live against Anthropic Claude or Google Gemini.
+hand it to 5 specialist AI agents, and export a **5-document Product
+Specification Package** — ready to hand off to an independent, external
+Design AI Agent that generates UI/UX designs from these documents alone.
+
+## Scope
+
+This POC's responsibility ends at producing a complete, detailed,
+structured, internally consistent, AI-consumable specification package.
+It does **not** build the downstream Design AI Agent, generate UI
+designs, wireframes, or any frontend code.
 
 ## What's here
 
@@ -15,14 +22,12 @@ poc-agent-platform/
 ├── render.yaml                          # Render deployment blueprint
 ├── deploy/
 │   └── supabase_schema.sql              # DB schema (domains + projects tables)
-├── artefact_templates/                  # Markdown templates for the 7 documents
+├── artefact_templates/                  # Markdown templates for the 5 documents
 │   ├── business_requirements.md
 │   ├── user_stories.md
 │   ├── prd.md
-│   ├── architecture_recommendation.md
-│   ├── security_assessment.md
-│   ├── qa_test_strategy.md
-│   └── ai_review_report.md
+│   ├── ux_product_flow_specification.md
+│   └── ai_handoff_validation.md
 ├── webapp/                              # Local/hosted web demo (Flask + schematic UI)
 │   ├── server.py
 │   └── static/
@@ -34,26 +39,60 @@ poc-agent-platform/
     ├── logging_config.py                # Structured logging for every agent call
     ├── llm_client.py                    # Provider-agnostic LLM wrapper (Anthropic/Gemini) + retries
     ├── discovery.py                     # Idea intake, domain classification, dynamic questions
-    ├── orchestrator.py                  # Sequences the 7 agents
-    ├── export.py                        # Fills agent output into the 7 templates
-    ├── project_store.py                 # Persists completed projects (History dashboard)
+    ├── orchestrator.py                  # Sequences the 5 agents
+    ├── export.py                        # Fills agent output into the 5 templates
+    ├── project_store.py                 # Persists completed packages (Dashboard/History)
     ├── demo.py                          # Narrated terminal demo script
     ├── test_discovery_samples.py
-    ├── test_end_to_end.py               # Full pipeline test + success-criteria validation
+    ├── test_end_to_end.py               # Full pipeline test + acceptance criteria check
     ├── agents/
     │   ├── base.py                      # Shared contract every agent follows
     │   ├── business_analyst.py          # -> Business Requirements Document
     │   ├── product_manager.py           # -> User Stories Document
-    │   ├── product_requirements.py      # -> Product Requirements Document (PRD)
-    │   ├── solution_architect.py        # -> Solution Architecture Recommendation
-    │   ├── security.py                  # -> Security Assessment
-    │   ├── qa_test_strategy.py          # -> QA / Test Strategy
-    │   └── qa_reviewer.py               # -> AI Review Report (final consistency check)
+    │   ├── product_requirements.py      # -> PRD (absorbs architecture + security context)
+    │   ├── ux_product_flow.py           # -> UX / Product Flow Specification
+    │   └── ai_handoff_validation.py     # -> AI Handoff Validation Report (final agent)
     └── knowledge/
         ├── store.py                     # Persisted, file- or Supabase-backed domain storage
         ├── bootstrap_seed_data.py       # Seeds the 3 starter domains
         └── learn.py                     # Learns + persists new domains automatically
 ```
+
+## The 5 agents → 5 documents
+
+| # | Agent | Document | Answers | Depends on |
+|---|---|---|---|---|
+| 1 | Business Analyst | `business_requirements.md` | Why are we building this? | — (runs first) |
+| 2 | Product Manager | `user_stories.md` | Who needs to do what, and why? | Business Analyst |
+| 3 | Product Requirements | `prd.md` | What should the product do? | Business Analyst + Product Manager |
+| 4 | UX / Product Flow | `ux_product_flow_specification.md` | How should users experience it? | Product Manager + PRD |
+| 5 | AI Handoff Validation | `ai_handoff_validation.md` | Is the package ready to hand off? | All 4 — runs last |
+
+**No separate Architecture, Security, or QA Test Strategy documents are
+generated.** Architecture and security context that affects product
+behavior is absorbed into the PRD as dedicated sections (`Technical &
+Integration Constraints`, `Security, Privacy & Access Constraints`) —
+scoped to what a UI/UX designer actually needs, not infrastructure
+implementation detail.
+
+## Traceability
+
+Every document uses consistent, cross-referenced IDs so a downstream
+agent (or a human) can trace exactly where a screen or flow originated:
+
+```
+BR-001 (business requirement)
+  ↓
+US-001 (user story)
+  ↓
+FR-001 (PRD functional requirement)
+  ↓
+FLOW-001 / SCR-001 (UX flow / screen)
+```
+
+The AI Handoff Validation agent checks this traceability explicitly —
+e.g. it flags a business requirement with no corresponding user story, or
+a functional requirement with no corresponding screen.
 
 ## Web demo (local, no API key needed)
 
@@ -63,8 +102,8 @@ python3 webapp/server.py
 ```
 
 Open **http://localhost:5001**. Dashboard-first UI: a table of past
-projects, "+ New project" opens the intake flow. Runs entirely in mock
-mode by default.
+projects with their handoff status, "+ New project" opens the intake
+flow. Runs entirely in mock mode by default.
 
 ## Terminal demo
 
@@ -77,29 +116,12 @@ python3 src/demo.py --idea "your business idea here"
 
 ```bash
 python3 src/context.py
-python3 src/logging_config.py
 python3 src/discovery.py
 python3 src/test_discovery_samples.py
 python3 src/orchestrator.py
 python3 src/export.py
-python3 src/test_end_to_end.py          # full pipeline across 4 ideas + success-criteria check
+python3 src/test_end_to_end.py          # full pipeline across 4 ideas + acceptance criteria check
 ```
-
-## The 7 agents -> 7 documents
-
-| # | Agent | Document | Depends on |
-|---|---|---|---|
-| 1 | Business Analyst | Business Requirements Document | — (runs first) |
-| 2 | Product Manager | User Stories Document | Business Analyst |
-| 3 | Product Requirements | Product Requirements Document (PRD) | Business Analyst + Product Manager |
-| 4 | Solution Architect | Solution Architecture Recommendation | Business Analyst + PRD |
-| 5 | Security | Security Assessment | Business Analyst + Architect |
-| 6 | QA Test Strategy | QA / Test Strategy | Product Manager + Security |
-| 7 | AI Reviewer | AI Review Report | Everyone (runs last) |
-
-Each agent has its own file under `src/agents/`, follows the same
-contract (`agents/base.py`), and runs in both live mode (real LLM calls)
-and mock mode (deterministic fallback, no API key needed).
 
 ## LLM provider — Anthropic or Gemini
 
@@ -113,21 +135,16 @@ Switched with one env var, no code changes:
 `GEMINI_MODEL` defaults to `gemini-3.1-flash-lite` (~1,500 requests/day
 free). Free-tier model names/quotas shift often on Google's side — check
 https://ai.google.dev/gemini-api/docs/rate-limits if the default stops
-working, and override via env var rather than waiting for a code update.
+working, and override via env var.
 
 Every LLM call automatically retries transient errors (429/503/etc.) up
-to 3 times with backoff before surfacing a real error — see
-`src/llm_client.py`.
+to 3 times with backoff — see `src/llm_client.py`.
 
 ## Deploying to production (Render + Supabase, single host)
 
-One Render service serves everything — Flask serves both the frontend
-and the `/api/*` routes from the same app, so there's no separate
-frontend host, no CORS.
-
-1. **Supabase**: create a project at supabase.com → SQL Editor → paste
-   & run `deploy/supabase_schema.sql` → note your Project URL + anon key
-   from Settings → API.
+1. **Supabase**: create a project → SQL Editor → paste & run
+   `deploy/supabase_schema.sql` → note your Project URL + anon key from
+   Settings → API.
 2. **Render**: New → Web Service → connect your repo (reads
    `render.yaml` automatically, or set Build Command
    `pip install -r requirements.txt` / Start Command
@@ -136,8 +153,18 @@ frontend host, no CORS.
    `SUPABASE_URL`, `SUPABASE_KEY`.
 3. Deploy — Render gives you one URL serving the whole app.
 
-Render's free tier spins down after inactivity — first request after a
-while takes ~30-60s to wake up. Normal, not a bug.
+## AI Handoff Validation — the final quality gate
+
+The last agent produces exactly one of three statuses, and does **not**
+default to "ready":
+
+- **READY FOR DESIGN AGENT** — no gaps or conflicts found
+- **READY WITH WARNINGS** — minor gaps/conflicts found, package is usable but imperfect
+- **NOT READY FOR DESIGN AGENT** — a required document is missing entirely, or too many gaps/conflicts exist
+
+Verified in testing: deliberately running the pipeline with the UX
+document missing correctly forces `NOT READY FOR DESIGN AGENT` — the
+status logic isn't cosmetic.
 
 ## Known limitations
 
@@ -147,5 +174,7 @@ while takes ~30-60s to wake up. Normal, not a bug.
 - Discovery questions are only genuinely dynamic in live mode; mock mode
   uses a fixed per-domain checklist since there's no real reasoning
   available offline.
-- QA's "ready" verdict means *internal consistency between agents*, not
-  that a human has reviewed the business plan for soundness.
+- The AI Handoff Validation's cross-document consistency checks in mock
+  mode use a handful of genuinely-checkable rules (e.g. ID cross-
+  referencing, role alignment) as a stand-in for the LLM's broader
+  judgment in live mode.

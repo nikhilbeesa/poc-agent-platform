@@ -1,8 +1,3 @@
-"""
-Logging setup — every agent call gets logged as structured JSON lines to
-logs/agent_activity.log. Deterministic logic, no AI involved.
-"""
-
 import json
 import logging
 from datetime import datetime, timezone
@@ -17,26 +12,19 @@ def get_logger(name: str = "poc_platform") -> logging.Logger:
     logger = logging.getLogger(name)
     if logger.handlers:
         return logger
-
     logger.setLevel(logging.INFO)
-
-    file_handler = logging.FileHandler(LOG_FILE)
-    file_handler.setFormatter(logging.Formatter("%(message)s"))
-    logger.addHandler(file_handler)
-
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
-    logger.addHandler(console_handler)
-
+    fh = logging.FileHandler(LOG_FILE)
+    fh.setFormatter(logging.Formatter("%(message)s"))
+    logger.addHandler(fh)
+    ch = logging.StreamHandler()
+    ch.setFormatter(logging.Formatter("[%(levelname)s] %(message)s"))
+    logger.addHandler(ch)
     return logger
 
 
 def log_agent_call(logger, project_id: str, agent: str, event: str, detail: dict | None = None) -> None:
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "project_id": project_id,
-        "agent": agent,
-        "event": event,
-        "detail": detail or {},
+        "project_id": project_id, "agent": agent, "event": event, "detail": detail or {},
     }
     logger.info(json.dumps(entry))

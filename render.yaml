@@ -1,5 +1,3 @@
-# Render deployment blueprint. Use Render's "Blueprint" deploy option, or
-# set these same values manually in the Render dashboard.
 services:
   - type: web
     name: poc-agent-platform
@@ -8,8 +6,7 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn wsgi:app --timeout 120
     # --timeout 120: gunicorn's default worker timeout is 30s, which is
-    # too short once LLM calls + automatic retries are factored in; a
-    # killed worker returns a broken raw error page instead of JSON.
+    # too short once LLM calls + automatic retries are factored in.
     envVars:
       - key: LLM_PROVIDER
         sync: false   # "anthropic" or "gemini" — set manually

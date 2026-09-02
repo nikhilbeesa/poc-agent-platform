@@ -1,18 +1,11 @@
 """
-Local/Hosted Web Demo Server
-==============================
-Thin Flask API over the pipeline (discovery, 7 agents, export). Runs
-entirely locally in mock mode, no API key required; set ANTHROPIC_API_KEY
-or GEMINI_API_KEY (+ LLM_PROVIDER) for live mode.
-
-Serves both the API and the static frontend from one app — single-host
-deployment, no CORS needed.
+Local/Hosted Web Demo Server — thin Flask API over the pipeline
+(discovery, 5 agents, export of the 5-document package).
 """
 
 import os
 import sys
 import time
-import uuid
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -35,8 +28,7 @@ app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "stati
 @app.errorhandler(Exception)
 def handle_any_error(e):
     """Every unhandled error comes back as readable JSON instead of an
-    HTML error page — Flask's default error page is HTML, which breaks
-    the frontend's res.json() parsing."""
+    HTML error page, which breaks the frontend's res.json() parsing."""
     import traceback
     traceback.print_exc()
     from werkzeug.exceptions import HTTPException
@@ -46,7 +38,6 @@ def handle_any_error(e):
 
 
 PROJECTS: dict = {}
-
 DEMO_DELAY = 0.5
 
 
@@ -56,13 +47,11 @@ def _demo_pace():
 
 
 AGENT_META = [
-    {"role": "business_analyst", "label": "Business Analyst", "note": "requirements & goals"},
-    {"role": "product_manager", "label": "Product Manager", "note": "epics & user stories"},
+    {"role": "business_analyst", "label": "Business Analyst", "note": "business requirements"},
+    {"role": "product_manager", "label": "Product Manager", "note": "user stories"},
     {"role": "product_requirements", "label": "Product Requirements", "note": "PRD"},
-    {"role": "solution_architect", "label": "Solution Architect", "note": "recommended approach"},
-    {"role": "security", "label": "Security", "note": "risk & compliance review"},
-    {"role": "qa_test_strategy", "label": "QA Test Strategy", "note": "test plan & test cases"},
-    {"role": "qa_reviewer", "label": "AI Reviewer", "note": "final consistency check"},
+    {"role": "ux_product_flow", "label": "UX / Product Flow", "note": "screens, flows, states"},
+    {"role": "ai_handoff_validation", "label": "AI Handoff Validation", "note": "final readiness check"},
 ]
 
 
@@ -81,8 +70,7 @@ def mode():
 
 @app.route("/api/knowledge/domains")
 def knowledge_domains():
-    store = get_knowledge_store()
-    return jsonify({"domains": store.list_domains()})
+    return jsonify({"domains": get_knowledge_store().list_domains()})
 
 
 @app.route("/api/project", methods=["POST"])
@@ -92,13 +80,12 @@ def create_project():
     if not idea:
         return jsonify({"error": "idea is required"}), 400
 
-    store = bootstrap()  # ensures seed domains exist before we snapshot
+    store = bootstrap()
     known_before = set(store.list_domains())
 
     _demo_pace()
     ctx = ProjectContext()
     ctx = run_discovery(ctx, idea)
-
     PROJECTS[ctx.project_id] = ctx
 
     learned = ctx.domain_classification not in known_before
@@ -120,21 +107,14 @@ def answer_question(project_id):
     ctx = PROJECTS.get(project_id)
     if not ctx:
         return jsonify({"error": "unknown project"}), 404
-
     data = request.get_json(force=True)
     question_id = data.get("question_id")
     answer = (data.get("answer") or "").strip() or "(no answer provided)"
-
     try:
         ctx.add_answer(question_id, answer)
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
-
-    return jsonify({
-        "question_id": question_id,
-        "status": "answered",
-        "discovery_complete": is_discovery_complete(ctx),
-    })
+    return jsonify({"question_id": question_id, "status": "answered", "discovery_complete": is_discovery_complete(ctx)})
 
 
 @app.route("/api/project/<project_id>/agents", methods=["GET"])
@@ -147,13 +127,10 @@ def run_agent(project_id, index):
     ctx = PROJECTS.get(project_id)
     if not ctx:
         return jsonify({"error": "unknown project"}), 404
-
     if not is_discovery_complete(ctx):
         return jsonify({"error": "discovery is not complete yet"}), 400
-
     if index < 0 or index >= len(AGENT_PIPELINE):
         return jsonify({"error": "invalid agent index"}), 400
-
     if index != len(ctx.agent_contributions):
         return jsonify({"error": f"agents must run in order — expected index {len(ctx.agent_contributions)}"}), 400
 
@@ -165,7 +142,7 @@ def run_agent(project_id, index):
         "agent": contribution.agent.value,
         "summary": contribution.summary,
         "output": contribution.output,
-        "consistency_notes": ctx.consistency_notes if contribution.agent == AgentRole.QA_REVIEWER else [],
+        "consistency_notes": ctx.consistency_notes if contribution.agent == AgentRole.AI_HANDOFF_VALIDATION else [],
     })
 
 
@@ -174,15 +151,14 @@ def export(project_id):
     ctx = PROJECTS.get(project_id)
     if not ctx:
         return jsonify({"error": "unknown project"}), 404
-
     if len(ctx.agent_contributions) < len(AGENT_PIPELINE):
         return jsonify({"error": "agent pipeline is not complete yet"}), 400
 
     _demo_pace()
     ctx = export_all_artefacts(ctx)
 
-    qa = ctx.get_contribution(AgentRole.QA_REVIEWER)
-    qa_readiness = qa.output.get("overall_readiness") if qa else None
+    val = ctx.get_contribution(AgentRole.AI_HANDOFF_VALIDATION)
+    handoff_status = val.output.get("final_handoff_status") if val else None
 
     store = get_project_store()
     store.save({
@@ -191,7 +167,7 @@ def export(project_id):
         "domain": ctx.domain_classification,
         "domain_confidence": ctx.domain_confidence,
         "stage": ctx.stage.value,
-        "qa_readiness": qa_readiness,
+        "handoff_status": handoff_status,
         "consistency_notes": ctx.consistency_notes,
         "artefacts": [
             {"type": a.type, "title": a.title, "content_markdown": a.content_markdown}
@@ -209,14 +185,12 @@ def export(project_id):
 
 @app.route("/api/history", methods=["GET"])
 def history_list():
-    store = get_project_store()
-    return jsonify({"projects": store.list_summaries()})
+    return jsonify({"projects": get_project_store().list_summaries()})
 
 
 @app.route("/api/history/<project_id>", methods=["GET"])
 def history_detail(project_id):
-    store = get_project_store()
-    record = store.get(project_id)
+    record = get_project_store().get(project_id)
     if not record:
         return jsonify({"error": "project not found"}), 404
     return jsonify(record)
@@ -224,7 +198,7 @@ def history_detail(project_id):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5001))
-    print("\n  AI Product Engineering Agent Platform — local demo server")
+    print("\n  AI Product Specification Package — local demo server")
     print(f"  Running in {'LIVE' if os.environ.get('ANTHROPIC_API_KEY') or os.environ.get('GEMINI_API_KEY') else 'MOCK'} mode")
     print(f"  Open: http://localhost:{port}\n")
     app.run(host="0.0.0.0", port=port, debug=False)

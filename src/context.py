@@ -1,14 +1,6 @@
 """
-Shared Project Context
-=======================
-This is the single "notebook" that every AI agent reads from and writes to.
-No agent talks to another agent directly — they all talk through this object.
-That keeps the system simple: adding a new agent later just means giving it
-read/write access to the parts of this context it needs.
-
-Design principle from the spec: "AI is used where reasoning adds value;
-deterministic logic remains in the application." This file is pure
-deterministic logic — validation, structure, versioning. No AI here.
+Shared Project Context — the single "notebook" every AI agent reads from
+and writes to. No agent talks to another agent directly.
 """
 
 from __future__ import annotations
@@ -33,11 +25,9 @@ class ProjectStage(str, Enum):
 class AgentRole(str, Enum):
     BUSINESS_ANALYST = "business_analyst"
     PRODUCT_MANAGER = "product_manager"
-    PRODUCT_REQUIREMENTS = "product_requirements"  # PRD agent
-    SOLUTION_ARCHITECT = "solution_architect"
-    SECURITY = "security"
-    QA_TEST_STRATEGY = "qa_test_strategy"          # test strategy + test cases
-    QA_REVIEWER = "qa_reviewer"                     # final AI Review Report — reads everyone
+    PRODUCT_REQUIREMENTS = "product_requirements"      # PRD agent — absorbs architecture + security context
+    UX_PRODUCT_FLOW = "ux_product_flow"                 # screens, flows, states — primary handoff to Design AI Agent
+    AI_HANDOFF_VALIDATION = "ai_handoff_validation"     # final agent — validates the 5-doc package as one unit
 
 
 class QuestionStatus(str, Enum):

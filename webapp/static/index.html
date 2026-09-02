@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AI Product Engineering Agent Platform — Schematic</title>
+<title>AI Product Specification Package — Schematic</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
@@ -18,8 +18,8 @@
   <!-- TITLE BLOCK -->
   <header class="title-block">
     <div class="tb-main">
-      <div class="tb-eyebrow">AI PRODUCT ENGINEERING AGENT PLATFORM</div>
-      <h1 class="tb-title">Idea → Discovery → Agents → Artefacts</h1>
+      <div class="tb-eyebrow">AI PRODUCT SPECIFICATION PACKAGE</div>
+      <h1 class="tb-title">Idea → Discovery → 5 Agents → 5-Document Handoff Package</h1>
     </div>
     <div class="tb-fields">
       <div class="tb-field"><span class="tb-label">PROJECT</span><span class="tb-value" id="tb-project">—</span></div>
@@ -51,8 +51,8 @@
             <tr>
               <th>Business idea</th>
               <th>Domain</th>
-              <th>Artefacts</th>
-              <th>QA status</th>
+              <th>Docs</th>
+              <th>Handoff status</th>
               <th>Created</th>
             </tr>
           </thead>
@@ -74,7 +74,7 @@
       <div class="history-detail-meta" id="history-detail-meta"></div>
       <div class="artefact-controls">
         <button class="btn" id="btn-history-download-current">⬇ Download this document (.md)</button>
-        <button class="btn btn-ghost" id="btn-history-download-all">⬇ Download all (.md)</button>
+        <button class="btn btn-ghost" id="btn-history-download-all">⬇ Download all 5 (.md)</button>
       </div>
       <div class="tabs" id="history-tabs"></div>
       <div class="doc-viewer" id="history-doc-viewer"></div>
@@ -140,7 +140,7 @@
         <svg class="schematic" id="schematic" viewBox="0 0 900 160" preserveAspectRatio="xMidYMid meet"></svg>
         <div class="agent-log" id="agent-log"></div>
         <div class="qa-verdict" id="qa-verdict" hidden></div>
-        <button class="btn btn-primary" id="btn-export" hidden>Export artefacts →</button>
+        <button class="btn btn-primary" id="btn-export" hidden>Export 5-document package →</button>
       </div>
     </section>
 
@@ -149,13 +149,13 @@
       <span class="tick tick-tl"></span><span class="tick tick-tr"></span><span class="tick tick-bl"></span><span class="tick tick-br"></span>
       <div class="panel-head">
         <span class="panel-num">SHEET 04</span>
-        <span class="panel-title">Exported Artefacts</span>
+        <span class="panel-title">Handoff Package (5 Documents)</span>
       </div>
       <div class="panel-body">
-        <div class="lock-msg">Run the agent team to generate artefacts.</div>
+        <div class="lock-msg">Run the agent team to generate the handoff package.</div>
         <div class="artefact-controls" id="artefact-controls" hidden>
           <button class="btn" id="btn-download-current">⬇ Download this document (.md)</button>
-          <button class="btn btn-ghost" id="btn-download-all">⬇ Download all (.md)</button>
+          <button class="btn btn-ghost" id="btn-download-all">⬇ Download all 5 (.md)</button>
         </div>
         <div class="tabs" id="artefact-tabs" hidden></div>
         <div class="doc-viewer" id="doc-viewer"></div>

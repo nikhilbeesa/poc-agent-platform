@@ -1,11 +1,8 @@
-"""
-Quick smoke test across a few different business idea types for the
-discovery engine alone (no agents).
-"""
+"""Quick smoke test across a few different business idea types for the
+discovery engine alone (no agents)."""
 
 import sys
 from pathlib import Path
-
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from context import ProjectContext  # noqa: E402
