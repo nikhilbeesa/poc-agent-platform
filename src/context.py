@@ -42,6 +42,10 @@ class DiscoveryQuestion(BaseModel):
     category: str
     status: QuestionStatus = QuestionStatus.PENDING
     answer: Optional[str] = None
+    # Short tappable choice labels for choice-based UI. Empty list means
+    # this question genuinely needs a free-text answer. The frontend always
+    # appends its own "Other / something else" option when options is non-empty.
+    options: list[str] = Field(default_factory=list)
 
 
 class AgentContribution(BaseModel):

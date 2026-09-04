@@ -122,8 +122,54 @@
       </div>
       <div class="panel-body">
         <div class="lock-msg">Run discovery on Sheet 01 first.</div>
-        <div id="questions-list"></div>
-        <button class="btn btn-primary" id="btn-run-agents" hidden>Dispatch agent team →</button>
+
+        <!-- Conversational, one-question-at-a-time flow -->
+        <div id="discovery-flow" hidden>
+          <div class="df-progress-row">
+            <div class="df-progress-bar"><div class="df-progress-fill" id="df-progress-fill"></div></div>
+            <div class="df-progress-label" id="df-progress-label">Question 1 of 1</div>
+          </div>
+
+          <div class="df-card" id="df-card">
+            <span class="tick tick-tl"></span><span class="tick tick-tr"></span><span class="tick tick-bl"></span><span class="tick tick-br"></span>
+            <div class="df-microcopy" id="df-microcopy"></div>
+            <div class="df-category" id="df-category"></div>
+            <h3 class="df-question" id="df-question"></h3>
+
+            <div class="df-options" id="df-options" role="radiogroup"></div>
+
+            <div class="df-freetext" id="df-freetext" hidden>
+              <textarea id="df-freetext-input" rows="3" placeholder="Type your answer…"></textarea>
+            </div>
+
+            <div class="df-other-wrap" id="df-other-wrap" hidden>
+              <label class="field-label" for="df-other-input">Tell us more</label>
+              <input type="text" id="df-other-input" placeholder="Type your own answer…">
+            </div>
+          </div>
+
+          <div class="df-nav-row">
+            <button class="btn btn-ghost" id="df-btn-back">← Back</button>
+            <button class="btn btn-ghost" id="df-btn-to-review" hidden>↩ Back to review</button>
+            <span class="df-nav-spacer"></span>
+            <button class="btn btn-primary" id="df-btn-continue" hidden>Continue →</button>
+          </div>
+        </div>
+
+        <!-- Review / confirmation screen -->
+        <div id="discovery-review" hidden>
+          <h3 class="df-review-title">Review your product idea</h3>
+          <p class="df-review-sub">These answers will be used by the AI agents to generate your product requirements, user stories, architecture recommendations, and other project documentation.</p>
+          <div id="df-review-groups"></div>
+          <div class="df-review-ready">
+            <div class="df-review-ready-title">Ready to generate?</div>
+            <div class="df-review-ready-body">Multiple AI agents will analyze these answers to produce your 5-document handoff package.</div>
+          </div>
+          <div class="df-review-actions">
+            <button class="btn btn-ghost" id="df-btn-review-back">← Back</button>
+            <button class="btn btn-primary" id="btn-run-agents">Run AI Agents →</button>
+          </div>
+        </div>
       </div>
     </section>
 

@@ -5,6 +5,13 @@ let projectId = null;
 let questions = [];
 let agentMeta = [];
 
+// Conversational discovery flow state
+let dfAnswers = {};       // question_id -> answer text
+let dfIndex = 0;          // index of the question currently on screen
+let dfShowingReview = false;
+let dfReturnToReview = false; // true when we jumped here via "Edit" from the review screen
+const OTHER_LABEL = 'Something else';
+
 const NODE_X_START = 70;
 const NODE_X_GAP = 150;
 const NODE_Y = 70;
@@ -243,9 +250,12 @@ $('#btn-submit-idea').addEventListener('click', async () => {
     await refreshDomainCount();
     if (data.learned_new_domain) $('#learned-banner').hidden = false;
 
-    renderQuestions();
+    dfAnswers = {};
+    dfIndex = 0;
+    dfShowingReview = false;
+    dfReturnToReview = false;
     unlock('#panel-discovery');
-    $('#discovery-status').textContent = `0 / ${questions.length} answered`;
+    showDiscoveryQuestion(0);
   } catch (e) {
     alert('Something went wrong: ' + e.message);
   } finally {
@@ -254,51 +264,259 @@ $('#btn-submit-idea').addEventListener('click', async () => {
 });
 
 // ============================================================
-// SHEET 02 — Discovery
+// SHEET 02 — Discovery: sequential, conversational question flow
 // ============================================================
-function renderQuestions() {
-  const list = $('#questions-list');
-  list.innerHTML = '';
-  questions.forEach(q => {
-    const row = el('div', { class: 'question-row', id: `q-row-${q.id}` }, [
-      el('div', { class: 'question-cat', text: q.category.toUpperCase() }),
-      el('div', { class: 'question-text', text: q.text }),
-      el('div', { class: 'question-answer-row' }, [
-        el('input', { type: 'text', id: `q-input-${q.id}`, placeholder: 'Type an answer…' }),
-        el('button', { class: 'btn', text: 'Answer' }),
-      ]),
-      el('div', { class: 'answered-tag', id: `q-tag-${q.id}` }, []),
-    ]);
-    const answerBtn = row.querySelector('.question-answer-row .btn');
-    const input = row.querySelector('input');
-    const submit = () => submitAnswer(q.id, input.value.trim());
-    answerBtn.addEventListener('click', submit);
-    input.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
-    list.appendChild(row);
-  });
+const DF_MICROCOPY = {
+  first: "Let's shape your idea into a plan.",
+  penultimate: 'A few more details.',
+  last: 'Almost there — last question.',
+};
+
+function microcopyFor(i, total) {
+  if (total <= 1) return DF_MICROCOPY.first;
+  if (i === 0) return DF_MICROCOPY.first;
+  if (i === total - 1) return DF_MICROCOPY.last;
+  if (i === total - 2) return DF_MICROCOPY.penultimate;
+  if (i > 0 && i % 3 === 0) return "Let's narrow this down.";
+  return '';
 }
 
-async function submitAnswer(questionId, answerText) {
-  if (!answerText) return;
-  try {
-    const data = await api(`/api/project/${projectId}/answer`, { method: 'POST', body: JSON.stringify({ question_id: questionId, answer: answerText }) });
-    const row = $(`#q-row-${questionId}`);
-    row.classList.add('answered');
-    $(`#q-tag-${questionId}`).textContent = `✓ ${answerText}`;
+function humanizeCategory(cat) {
+  return (cat || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
 
-    const answeredCount = questions.filter(q => $(`#q-row-${q.id}`).classList.contains('answered')).length;
-    $('#discovery-status').textContent = `${answeredCount} / ${questions.length} answered`;
+function updateDiscoveryStatus() {
+  const answeredCount = questions.filter(q => dfAnswers[q.id]).length;
+  if (dfShowingReview) { $('#discovery-status').textContent = 'reviewing'; return; }
+  $('#discovery-status').textContent = answeredCount >= questions.length
+    ? 'complete'
+    : `${answeredCount} / ${questions.length} answered`;
+}
 
-    if (data.discovery_complete) {
-      $('#discovery-status').textContent = 'complete';
-      $('#btn-run-agents').hidden = false;
+function showDiscoveryQuestion(index) {
+  dfIndex = Math.max(0, Math.min(index, questions.length - 1));
+  dfShowingReview = false;
+  $('#discovery-review').hidden = true;
+  $('#discovery-flow').hidden = false;
+  renderCurrentQuestion();
+  updateDiscoveryStatus();
+}
+
+// Jump to a specific question from the review screen. Continuing from here
+// returns straight to the review instead of marching through every
+// remaining question, and answering it doesn't touch any other answer.
+function editFromReview(index) {
+  dfReturnToReview = true;
+  showDiscoveryQuestion(index);
+}
+
+function renderCurrentQuestion() {
+  const q = questions[dfIndex];
+  const total = questions.length;
+
+  // Progress
+  $('#df-progress-fill').style.width = `${((dfIndex) / total) * 100 + (100 / total) * 0.15}%`;
+  $('#df-progress-label').textContent = `Question ${dfIndex + 1} of ${total}`;
+
+  // Copy
+  $('#df-microcopy').textContent = microcopyFor(dfIndex, total);
+  $('#df-category').textContent = humanizeCategory(q.category);
+  $('#df-question').textContent = q.text;
+
+  // Nav
+  $('#df-btn-back').hidden = dfIndex === 0;
+  $('#df-btn-to-review').hidden = !dfReturnToReview;
+  $('#df-btn-continue').textContent = dfReturnToReview ? 'Save & return to review →' : 'Continue →';
+
+  const existingAnswer = dfAnswers[q.id] || '';
+  const optionsWrap = $('#df-options');
+  const freetextWrap = $('#df-freetext');
+  const freetextInput = $('#df-freetext-input');
+  const otherWrap = $('#df-other-wrap');
+  const otherInput = $('#df-other-input');
+  const continueBtn = $('#df-btn-continue');
+
+  optionsWrap.innerHTML = '';
+  otherWrap.hidden = true;
+  otherInput.value = '';
+
+  if (q.options && q.options.length) {
+    freetextWrap.hidden = true;
+    const allOptions = [...q.options, OTHER_LABEL];
+    const matchedOption = allOptions.includes(existingAnswer) ? existingAnswer : (existingAnswer ? OTHER_LABEL : '');
+
+    allOptions.forEach(opt => {
+      const isOther = opt === OTHER_LABEL;
+      const card = el('button', {
+        type: 'button',
+        class: 'df-option' + (opt === matchedOption ? ' selected' : ''),
+        role: 'radio',
+        'aria-checked': opt === matchedOption ? 'true' : 'false',
+      }, [
+        el('span', { class: 'df-option-label', text: opt }),
+      ]);
+      if (isOther) {
+        card.appendChild(el('span', { class: 'df-option-hint', text: 'Write your own answer' }));
+      }
+      card.addEventListener('click', () => selectOption(q, opt, card));
+      optionsWrap.appendChild(card);
+    });
+
+    if (matchedOption === OTHER_LABEL) {
+      otherWrap.hidden = false;
+      otherInput.value = existingAnswer;
     }
+
+    continueBtn.hidden = !matchedOption;
+    continueBtn.disabled = matchedOption === OTHER_LABEL && !existingAnswer.trim();
+  } else {
+    freetextWrap.hidden = false;
+    freetextInput.value = existingAnswer;
+    continueBtn.hidden = false;
+    continueBtn.disabled = !existingAnswer.trim();
+    setTimeout(() => freetextInput.focus(), 50);
+  }
+
+  otherInput.oninput = () => {
+    continueBtn.disabled = !otherInput.value.trim();
+  };
+  freetextInput.oninput = () => {
+    continueBtn.disabled = !freetextInput.value.trim();
+  };
+}
+
+async function selectOption(q, optionLabel, cardEl) {
+  document.querySelectorAll('#df-options .df-option').forEach(c => {
+    c.classList.remove('selected'); c.setAttribute('aria-checked', 'false');
+  });
+  cardEl.classList.add('selected');
+  cardEl.setAttribute('aria-checked', 'true');
+
+  const continueBtn = $('#df-btn-continue');
+  const otherWrap = $('#df-other-wrap');
+  const otherInput = $('#df-other-input');
+
+  if (optionLabel === OTHER_LABEL) {
+    otherWrap.hidden = false;
+    otherInput.value = dfAnswers[q.id] && !q.options.includes(dfAnswers[q.id]) ? dfAnswers[q.id] : '';
+    continueBtn.hidden = false;
+    continueBtn.disabled = !otherInput.value.trim();
+    otherInput.focus();
+    return;
+  }
+
+  otherWrap.hidden = true;
+  continueBtn.hidden = false;
+  continueBtn.disabled = false;
+  await saveAnswer(q.id, optionLabel);
+  // Conversational feel: auto-advance shortly after a tap.
+  setTimeout(() => { if (dfAnswers[q.id] === optionLabel) goToNextQuestion(); }, 350);
+}
+
+async function saveAnswer(questionId, answerText) {
+  answerText = (answerText || '').trim();
+  if (!answerText) return;
+  dfAnswers[questionId] = answerText;
+  updateDiscoveryStatus();
+  try {
+    await api(`/api/project/${projectId}/answer`, { method: 'POST', body: JSON.stringify({ question_id: questionId, answer: answerText }) });
   } catch (e) {
     alert('Could not save answer: ' + e.message);
   }
 }
 
+async function confirmCurrentAnswerAndAdvance() {
+  const q = questions[dfIndex];
+  if (q.options && q.options.length) {
+    const otherWrap = $('#df-other-wrap');
+    if (!otherWrap.hidden) {
+      const val = $('#df-other-input').value.trim();
+      if (!val) return;
+      await saveAnswer(q.id, val);
+    } else if (!dfAnswers[q.id]) {
+      return; // nothing selected yet
+    }
+  } else {
+    const val = $('#df-freetext-input').value.trim();
+    if (!val) return;
+    await saveAnswer(q.id, val);
+  }
+  goToNextQuestion();
+}
+
+function goToNextQuestion() {
+  if (dfReturnToReview) {
+    dfReturnToReview = false;
+    showDiscoveryReview();
+    return;
+  }
+  if (dfIndex < questions.length - 1) {
+    showDiscoveryQuestion(dfIndex + 1);
+  } else {
+    showDiscoveryReview();
+  }
+}
+
+$('#df-btn-continue').addEventListener('click', confirmCurrentAnswerAndAdvance);
+$('#df-freetext-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) confirmCurrentAnswerAndAdvance();
+});
+$('#df-other-input').addEventListener('keydown', e => { if (e.key === 'Enter') confirmCurrentAnswerAndAdvance(); });
+$('#df-btn-back').addEventListener('click', () => {
+  if (dfIndex > 0) showDiscoveryQuestion(dfIndex - 1);
+});
+$('#df-btn-to-review').addEventListener('click', () => {
+  dfReturnToReview = false;
+  showDiscoveryReview();
+});
+
+// ---- Review / confirmation screen ----
+function showDiscoveryReview() {
+  dfShowingReview = true;
+  dfReturnToReview = false;
+  $('#discovery-flow').hidden = true;
+  $('#discovery-review').hidden = false;
+  updateDiscoveryStatus();
+  renderReview();
+}
+
+function renderReview() {
+  const container = $('#df-review-groups');
+  container.innerHTML = '';
+
+  const seenCategories = [];
+  const byCategory = {};
+  questions.forEach(q => {
+    if (!byCategory[q.category]) { byCategory[q.category] = []; seenCategories.push(q.category); }
+    byCategory[q.category].push(q);
+  });
+
+  seenCategories.forEach(cat => {
+    const section = el('div', { class: 'df-review-section' }, [
+      el('div', { class: 'df-review-section-title', text: humanizeCategory(cat) }),
+    ]);
+    byCategory[cat].forEach(q => {
+      const idx = questions.indexOf(q);
+      const answer = dfAnswers[q.id] || '(not answered)';
+      const editBtn = el('button', { type: 'button', class: 'df-review-edit', text: 'Edit' });
+      editBtn.addEventListener('click', () => editFromReview(idx));
+      section.appendChild(el('div', { class: 'df-review-item' }, [
+        el('div', { class: 'df-review-item-body' }, [
+          el('p', { class: 'df-review-q', text: q.text }),
+          el('p', { class: 'df-review-a', text: answer }),
+        ]),
+        editBtn,
+      ]));
+    });
+    container.appendChild(section);
+  });
+}
+
+$('#df-btn-review-back').addEventListener('click', () => showDiscoveryQuestion(questions.length - 1));
+
 $('#btn-run-agents').addEventListener('click', async () => {
+  const allAnswered = questions.every(q => dfAnswers[q.id]);
+  if (!allAnswered) { alert('A few questions still need an answer.'); return; }
   unlock('#panel-agents');
   await loadAgentMeta();
   drawSchematic();

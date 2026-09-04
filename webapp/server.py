@@ -96,7 +96,7 @@ def create_project():
         "confidence": ctx.domain_confidence,
         "learned_new_domain": learned,
         "questions": [
-            {"id": q.id, "text": q.text, "category": q.category, "status": q.status.value}
+            {"id": q.id, "text": q.text, "category": q.category, "status": q.status.value, "options": q.options}
             for q in ctx.discovery_questions
         ],
     })

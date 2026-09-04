@@ -32,8 +32,13 @@ def _live_learn(client, idea_text: str, proposed_name: str) -> dict:
 Propose a new domain category: a name, a short description, typical
 functional modules, and 3-5 baseline discovery questions.
 
+For each question, also propose 3-6 short tappable answer options
+(a few words each) when the question naturally has a small set of likely
+answers. If a question genuinely needs a free-text/numeric answer, use an
+empty options array for it.
+
 Respond ONLY with JSON:
-{{"name": "Short Domain Name", "description": "...", "typical_modules": ["..."], "seed_questions": [{{"id": "short_id", "text": "...", "category": "..."}}]}}"""
+{{"name": "Short Domain Name", "description": "...", "typical_modules": ["..."], "seed_questions": [{{"id": "short_id", "text": "...", "category": "...", "options": ["..."]}}]}}"""
     raw = call_llm(client, prompt, max_tokens=600)
     return json.loads(raw)
 
@@ -45,9 +50,12 @@ def _mock_learn(idea_text: str, proposed_name: str) -> dict:
         "description": f"A newly-learned domain, inferred from an idea that didn't match existing domains: \"{idea_text}\"",
         "typical_modules": ["core workflow", "user accounts", "notifications"],
         "seed_questions": [
-            {"id": f"{slug}_users", "text": "Who are the primary users of this platform?", "category": "users"},
-            {"id": f"{slug}_value", "text": "What's the core value this delivers to those users?", "category": "value_proposition"},
-            {"id": f"{slug}_scale", "text": "Roughly how many users/transactions do you expect early on?", "category": "scale"},
+            {"id": f"{slug}_users", "text": "Who are the primary users of this platform?", "category": "users",
+             "options": ["Individual consumers", "Small businesses", "Enterprise teams", "Multiple user types"]},
+            {"id": f"{slug}_value", "text": "What's the core value this delivers to those users?", "category": "value_proposition",
+             "options": []},
+            {"id": f"{slug}_scale", "text": "Roughly how many users/transactions do you expect early on?", "category": "scale",
+             "options": ["Under 100", "100–1,000", "1,000–10,000", "10,000+"]},
         ],
     }
 
