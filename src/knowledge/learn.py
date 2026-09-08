@@ -35,10 +35,12 @@ functional modules, and 3-5 baseline discovery questions.
 For each question, also propose 3-6 short tappable answer options
 (a few words each) when the question naturally has a small set of likely
 answers. If a question genuinely needs a free-text/numeric answer, use an
-empty options array for it.
+empty options array for it. For questions with options, set
+"multi_select": true if more than one option could reasonably apply at
+once, false if exactly one applies.
 
 Respond ONLY with JSON:
-{{"name": "Short Domain Name", "description": "...", "typical_modules": ["..."], "seed_questions": [{{"id": "short_id", "text": "...", "category": "...", "options": ["..."]}}]}}"""
+{{"name": "Short Domain Name", "description": "...", "typical_modules": ["..."], "seed_questions": [{{"id": "short_id", "text": "...", "category": "...", "options": ["..."], "multi_select": false}}]}}"""
     raw = call_llm(client, prompt, max_tokens=600)
     return json.loads(raw)
 

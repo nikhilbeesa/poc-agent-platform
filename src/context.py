@@ -46,6 +46,11 @@ class DiscoveryQuestion(BaseModel):
     # this question genuinely needs a free-text answer. The frontend always
     # appends its own "Other / something else" option when options is non-empty.
     options: list[str] = Field(default_factory=list)
+    # When true, the question allows selecting more than one option
+    # (checkboxes). When false, it's a single-select (radio-style) choice.
+    # Stored answers for multi-select questions join the chosen labels with
+    # "; ".
+    multi_select: bool = False
 
 
 class AgentContribution(BaseModel):

@@ -95,7 +95,7 @@ def generate_discovery_questions(context: ProjectContext) -> ProjectContext:
         questions = _live_dynamic_questions(client, context, domain_info)
     for q in questions:
         if not q.options:
-            q.options = _infer_options(q.category, q.text)
+            q.options, q.multi_select = _infer_options(q.category, q.text)
     context.discovery_questions = questions
     log_agent_call(logger, context.project_id, "discovery_engine", "completed", {"step": "generate_questions", "count": len(questions)})
     return context
@@ -104,36 +104,58 @@ def generate_discovery_questions(context: ProjectContext) -> ProjectContext:
 # Fallback heuristic used whenever a question (mock or LLM-generated) doesn't
 # already carry its own options, so choice-based UI degrades gracefully
 # instead of falling back to a free-text box more often than necessary.
-_OPTION_BANK: list[tuple[tuple[str, ...], list[str]]] = [
-    (("user", "audience", "customer"), ["Individual consumers", "Small businesses", "Enterprise teams", "Multiple user types"]),
-    (("payment", "pricing", "monetiz", "revenue", "business_model"), ["Commission on transactions", "Subscription fees", "One-time/listing fees", "Not decided yet"]),
-    (("cancel", "refund", "policy", "return"), ["Flexible — full refunds", "Strict — limited or no refunds", "Case-by-case", "Haven't decided yet"]),
-    (("trust", "safety", "verif", "fraud"), ["Verified profiles / ID checks", "Ratings & reviews", "Secure/escrow payments", "Not sure yet"]),
-    (("discover", "search", "match", "recommend"), ["Search & filters", "Algorithmic recommendations", "Browsing categories", "A mix of these"]),
-    (("scale", "volume", "how many"), ["Under 100", "100–1,000", "1,000–10,000", "10,000+"]),
-    (("platform", "web", "mobile", "device"), ["Web app", "Mobile app", "Both web & mobile", "Not sure yet"]),
-    (("catalog", "inventory", "product count"), ["Fewer than 50", "50–500", "500+", "Not sure yet"]),
-    (("fulfil", "shipping", "logistics", "deliver"), ["We handle it ourselves", "A third-party partner", "Dropshipping", "Not decided yet"]),
-    (("schedul", "availab"), ["Set by each provider", "Assigned centrally", "A mix of both", "Not sure yet"]),
-    (("onboard", "vett", "signup"), ["Open self-signup", "Self-signup with review", "Fully vetted/curated", "Not decided yet"]),
-    (("compet", "alternative"), ["Yes, a few direct competitors", "Only indirect alternatives", "No real competitors yet", "Not sure yet"]),
-    (("legal", "complian", "regulat", "privacy"), ["Standard consumer terms/privacy", "Industry-specific regulation applies", "Not sure yet", "Need legal review"]),
-    (("team", "resourc", "budget"), ["Solo founder", "Small team (2–5)", "Funded team (6+)", "Not sure yet"]),
-    (("timeline", "launch", "when"), ["Within 3 months", "3–6 months", "6–12 months", "No fixed timeline"]),
+# Each entry: (keywords, options, multi_select). Checked in order — more
+# specific entries (e.g. "payment methods") are listed before more general
+# ones (e.g. "payment") so they win the match.
+_OPTION_BANK: list[tuple[tuple[str, ...], list[str], bool]] = [
+    (("payment method", "payment option", "which payments", "payment types"),
+     ["Credit/debit cards", "Digital wallets (Apple/Google Pay)", "Buy-now-pay-later", "Bank transfer"], True),
+    (("user", "audience", "customer"),
+     ["Individual consumers", "Small businesses", "Enterprise teams", "Both individuals and businesses"], False),
+    (("monetiz", "revenue", "business_model", "make money"),
+     ["Commission on transactions", "Subscription fees", "One-time/listing fees", "Advertising", "Not decided yet"], True),
+    (("payment",),
+     ["At time of booking/order", "After service/delivery", "Split — deposit then balance", "Not decided yet"], False),
+    (("cancel", "refund", "policy", "return"),
+     ["Flexible — full refunds", "Strict — limited or no refunds", "Case-by-case", "Haven't decided yet"], False),
+    (("trust", "safety", "verif", "fraud"),
+     ["Verified profiles / ID checks", "Ratings & reviews", "Secure/escrow payments", "Background checks", "Not decided yet"], True),
+    (("discover", "search", "match", "recommend"),
+     ["Search & filters", "Algorithmic recommendations", "Browsing categories", "Direct messaging/referrals"], True),
+    (("scale", "volume", "how many"),
+     ["Under 100", "100–1,000", "1,000–10,000", "10,000+"], False),
+    (("platform", "web", "mobile", "device"),
+     ["Web app", "Mobile app", "Both web & mobile", "Not sure yet"], False),
+    (("catalog", "inventory", "product count"),
+     ["Fewer than 50", "50–500", "500+", "Not sure yet"], False),
+    (("fulfil", "shipping", "logistics", "deliver"),
+     ["We handle it ourselves", "A third-party partner", "Dropshipping", "Not decided yet"], False),
+    (("schedul", "availab"),
+     ["Set by each provider", "Assigned centrally", "A mix of both", "Not sure yet"], False),
+    (("onboard", "vett", "signup"),
+     ["Open self-signup", "Self-signup with review", "Fully vetted/curated", "Not decided yet"], False),
+    (("compet", "alternative"),
+     ["Yes, a few direct competitors", "Only indirect alternatives", "No real competitors yet", "Not sure yet"], False),
+    (("legal", "complian", "regulat", "privacy"),
+     ["GDPR / data privacy", "Industry-specific regulation", "Payment/financial compliance (PCI-DSS)", "Not sure yet"], True),
+    (("team", "resourc", "budget"),
+     ["Solo founder", "Small team (2–5)", "Funded team (6+)", "Not sure yet"], False),
+    (("timeline", "launch", "when"),
+     ["Within 3 months", "3–6 months", "6–12 months", "No fixed timeline"], False),
 ]
 
 
 _FREE_TEXT_CATEGORIES = {"value_proposition", "differentiation", "vision", "risks", "naming"}
 
 
-def _infer_options(category: str, text: str) -> list[str]:
+def _infer_options(category: str, text: str) -> tuple[list[str], bool]:
     if category.lower() in _FREE_TEXT_CATEGORIES:
-        return []
+        return [], False
     haystack = f"{category} {text}".lower()
-    for keywords, options in _OPTION_BANK:
+    for keywords, options, multi_select in _OPTION_BANK:
         if any(k in haystack for k in keywords):
-            return options
-    return []
+            return options, multi_select
+    return [], False
 
 
 def _live_dynamic_questions(client, context: ProjectContext, domain_info: dict | None) -> list[DiscoveryQuestion]:
@@ -160,8 +182,14 @@ answers — this lets the user tap instead of type. If a question genuinely
 needs a free-text or numeric answer (e.g. a specific name, a precise
 number), give it an empty options array instead of forcing choices.
 
+For questions with options, also decide if MORE THAN ONE option could
+reasonably apply at once (e.g. "which payment methods", "how will you
+build trust" — several mechanisms are often combined) vs exactly one
+applies (e.g. mutually-exclusive ranges, a single either/or choice). Set
+"multi_select": true for the former, false for the latter.
+
 Respond ONLY with JSON, no other text:
-{{"questions": [{{"id": "short_id", "text": "...", "category": "...", "options": ["..."]}}]}}"""
+{{"questions": [{{"id": "short_id", "text": "...", "category": "...", "options": ["..."], "multi_select": false}}]}}"""
     text = client.generate(prompt, max_tokens=4000)
     data = json.loads(text)
     return [DiscoveryQuestion(**q) for q in data["questions"]]

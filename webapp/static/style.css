@@ -100,56 +100,87 @@ textarea:focus, input[type="text"]:focus, .btn:focus-visible, .chip:focus-visibl
 .chip { font-family: var(--mono); font-size: 11.5px; background: transparent; border: 1px solid var(--line-bright); color: var(--text-dim); padding: 6px 10px; cursor: pointer; transition: all 0.15s ease; }
 .chip:hover { border-color: var(--cyan); color: var(--cyan); }
 
-.btn { font-family: var(--mono); font-size: 13px; letter-spacing: 0.03em; padding: 11px 18px; border: 1px solid var(--cyan); background: transparent; color: var(--cyan); cursor: pointer; transition: all 0.15s ease; }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  font-family: var(--mono); font-size: 13px; letter-spacing: 0.03em;
+  height: 42px; padding: 0 18px; line-height: 1;
+  border: 1px solid var(--cyan); background: transparent; color: var(--cyan);
+  cursor: pointer; transition: all 0.15s ease; white-space: nowrap;
+}
 .btn:hover:not(:disabled) { background: var(--cyan); color: var(--bg); }
 .btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.btn-primary { display: block; }
 
 .hint { margin-top: 14px; padding: 10px 12px; border: 1px solid var(--amber); background: rgba(255, 184, 77, 0.08); font-size: 13px; color: var(--amber); }
 .hint-icon { margin-right: 4px; }
 
 /* ---------------- Discovery: conversational question flow ---------------- */
-.df-progress-row { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
-.df-progress-bar { flex: 1; height: 4px; background: var(--line); position: relative; overflow: hidden; }
+.df-progress-row { display: flex; align-items: center; gap: 14px; margin-bottom: 26px; }
+.df-progress-bar { flex: 1; height: 3px; background: var(--line); position: relative; overflow: hidden; }
 .df-progress-fill { height: 100%; background: var(--cyan); width: 0%; transition: width 0.35s ease; }
 .df-progress-label { font-family: var(--mono); font-size: 11px; color: var(--text-faint); white-space: nowrap; letter-spacing: 0.04em; }
 
 .df-card {
   position: relative;
-  max-width: 640px;
+  max-width: 600px;
   margin: 0 auto;
-  padding: 8px 4px 4px;
+  padding: 10px 4px 4px;
   animation: df-card-in 0.28s ease;
 }
 @keyframes df-card-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
-.df-microcopy { font-family: var(--mono); font-size: 12px; color: var(--cyan-dim); margin-bottom: 10px; min-height: 15px; }
-.df-category { font-family: var(--mono); font-size: 10px; letter-spacing: 0.08em; color: var(--text-faint); margin-bottom: 6px; }
-.df-question { margin: 0 0 20px; font-size: 21px; font-weight: 600; line-height: 1.35; color: var(--text); }
+.df-microcopy { font-family: var(--mono); font-size: 12px; color: var(--cyan-dim); margin-bottom: 12px; }
 
-.df-options { display: flex; flex-direction: column; gap: 10px; margin-bottom: 4px; }
+.df-meta-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.df-category { font-family: var(--mono); font-size: 10px; letter-spacing: 0.09em; color: var(--text-faint); text-transform: uppercase; }
+.df-select-hint { font-family: var(--mono); font-size: 10px; letter-spacing: 0.04em; color: var(--cyan-dim); border: 1px solid var(--line-bright); padding: 2px 8px; }
+
+.df-question { margin: 0 0 22px; font-size: 21px; font-weight: 600; line-height: 1.35; color: var(--text); }
+
+.df-options { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
 .df-option {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 3px;
+  display: flex; align-items: center; gap: 12px;
   width: 100%; text-align: left; cursor: pointer;
   background: var(--bg); border: 1px solid var(--line-bright); color: var(--text);
-  padding: 13px 16px; font-family: var(--sans); font-size: 14.5px;
-  transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+  padding: 12px 14px; font-family: var(--sans); font-size: 14.5px;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 .df-option:hover { border-color: var(--cyan); background: var(--bg-panel-raised); }
-.df-option:active { transform: scale(0.995); }
+.df-option:active { transform: scale(0.997); }
 .df-option:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
-.df-option.selected { border-color: var(--cyan); background: rgba(111, 199, 255, 0.09); }
+.df-option.selected { border-color: var(--cyan); background: rgba(111, 199, 255, 0.08); }
 .df-option.selected .df-option-label { color: var(--cyan); }
-.df-option-label { font-weight: 500; }
-.df-option-hint { font-family: var(--mono); font-size: 11px; color: var(--text-faint); }
+
+.df-option-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.df-option-label { font-weight: 500; line-height: 1.3; }
+.df-option-hint { font-family: var(--mono); font-size: 10.5px; color: var(--text-faint); }
 .df-option.selected .df-option-hint { color: var(--cyan-dim); }
 
-.df-freetext, .df-other-wrap { margin-top: 6px; }
-.df-freetext textarea, .df-other-wrap input { font-size: 14.5px; }
+/* Radio / checkbox indicators — flex-shrink:0 keeps them a fixed size
+   regardless of label length, and the same visual language (a filled
+   cyan mark) makes the two modes read as related but distinct. */
+.df-option-indicator { flex: 0 0 auto; width: 17px; height: 17px; border: 1.5px solid var(--line-bright); position: relative; transition: border-color 0.15s ease; }
+.df-option-indicator-radio { border-radius: 50%; }
+.df-option-indicator-checkbox { border-radius: 3px; }
+.df-option.selected .df-option-indicator { border-color: var(--cyan); }
+.df-option-indicator-radio::after {
+  content: ''; position: absolute; inset: 3px; border-radius: 50%; background: var(--cyan);
+  opacity: 0; transition: opacity 0.12s ease;
+}
+.df-option.selected .df-option-indicator-radio::after { opacity: 1; }
+.df-option-indicator-checkbox::after {
+  content: ''; position: absolute; left: 4.5px; top: 1px; width: 5px; height: 9px;
+  border-right: 2px solid var(--cyan); border-bottom: 2px solid var(--cyan); transform: rotate(40deg);
+  opacity: 0; transition: opacity 0.12s ease;
+}
+.df-option.selected .df-option-indicator-checkbox::after { opacity: 1; }
 
-.df-nav-row { display: flex; align-items: center; gap: 10px; max-width: 640px; margin: 22px auto 0; }
+.df-freetext, .df-other-wrap { margin-top: 10px; }
+.df-freetext textarea, .df-other-wrap input { font-size: 14.5px; }
+.df-other-wrap .field-label { display: block; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.05em; color: var(--text-faint); margin-bottom: 6px; }
+
+.df-nav-row { display: flex; align-items: center; gap: 10px; max-width: 600px; margin: 24px auto 0; }
 .df-nav-spacer { flex: 1; }
-.df-nav-row .btn { padding: 10px 16px; font-size: 12.5px; }
+.df-nav-row .btn { height: 38px; padding: 0 15px; font-size: 12.5px; }
 
 /* ---------------- Discovery: review screen ---------------- */
 .df-review-title { margin: 0 0 6px; font-size: 19px; font-weight: 600; color: var(--text); }
@@ -169,7 +200,8 @@ textarea:focus, input[type="text"]:focus, .btn:focus-visible, .chip:focus-visibl
 .df-review-ready-title { font-weight: 600; font-size: 14px; color: var(--text); margin-bottom: 4px; }
 .df-review-ready-body { font-size: 13px; color: var(--text-dim); }
 
-.df-review-actions { display: flex; gap: 10px; margin-top: 18px; }
+.df-review-actions { display: flex; align-items: stretch; gap: 10px; margin-top: 18px; }
+.df-review-actions .btn { flex: 0 0 auto; }
 
 @media (max-width: 640px) {
   .df-question { font-size: 18px; }

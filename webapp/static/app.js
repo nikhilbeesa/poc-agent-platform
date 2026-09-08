@@ -319,8 +319,12 @@ function renderCurrentQuestion() {
   $('#df-progress-label').textContent = `Question ${dfIndex + 1} of ${total}`;
 
   // Copy
-  $('#df-microcopy').textContent = microcopyFor(dfIndex, total);
+  const microcopyEl = $('#df-microcopy');
+  const microcopyText = microcopyFor(dfIndex, total);
+  microcopyEl.textContent = microcopyText;
+  microcopyEl.hidden = !microcopyText;
   $('#df-category').textContent = humanizeCategory(q.category);
+  $('#df-select-hint').hidden = !q.multi_select;
   $('#df-question').textContent = q.text;
 
   // Nav
@@ -337,38 +341,57 @@ function renderCurrentQuestion() {
   const continueBtn = $('#df-btn-continue');
 
   optionsWrap.innerHTML = '';
+  optionsWrap.setAttribute('role', q.multi_select ? 'group' : 'radiogroup');
   otherWrap.hidden = true;
   otherInput.value = '';
 
   if (q.options && q.options.length) {
     freetextWrap.hidden = true;
-    const allOptions = [...q.options, OTHER_LABEL];
-    const matchedOption = allOptions.includes(existingAnswer) ? existingAnswer : (existingAnswer ? OTHER_LABEL : '');
 
-    allOptions.forEach(opt => {
-      const isOther = opt === OTHER_LABEL;
-      const card = el('button', {
-        type: 'button',
-        class: 'df-option' + (opt === matchedOption ? ' selected' : ''),
-        role: 'radio',
-        'aria-checked': opt === matchedOption ? 'true' : 'false',
-      }, [
-        el('span', { class: 'df-option-label', text: opt }),
-      ]);
-      if (isOther) {
-        card.appendChild(el('span', { class: 'df-option-hint', text: 'Write your own answer' }));
+    if (q.multi_select) {
+      // ---- Checkbox mode: several options may apply at once ----
+      const parts = existingAnswer ? existingAnswer.split(' | ').map(p => p.trim()).filter(Boolean) : [];
+      const selected = new Set(parts.filter(p => q.options.includes(p)));
+      const otherText = parts.find(p => !q.options.includes(p)) || '';
+      if (otherText) selected.add(OTHER_LABEL);
+
+      const allOptions = q.options.includes(OTHER_LABEL) ? q.options : [...q.options, OTHER_LABEL];
+      allOptions.forEach(opt => {
+        const isSelected = selected.has(opt);
+        const card = buildOptionCard(opt, isSelected, 'checkbox', opt === OTHER_LABEL);
+        card.addEventListener('click', () => toggleMultiOption(q, opt, card));
+        optionsWrap.appendChild(card);
+      });
+
+      if (selected.has(OTHER_LABEL)) {
+        otherWrap.hidden = false;
+        otherInput.value = otherText;
       }
-      card.addEventListener('click', () => selectOption(q, opt, card));
-      optionsWrap.appendChild(card);
-    });
 
-    if (matchedOption === OTHER_LABEL) {
-      otherWrap.hidden = false;
-      otherInput.value = existingAnswer;
+      continueBtn.hidden = selected.size === 0;
+      continueBtn.disabled = selected.has(OTHER_LABEL) && !otherInput.value.trim();
+    } else {
+      // ---- Radio mode: exactly one option applies ----
+      const allOptions = q.options.includes(OTHER_LABEL) ? q.options : [...q.options, OTHER_LABEL];
+      const matchedOption = allOptions.includes(existingAnswer) ? existingAnswer : (existingAnswer ? OTHER_LABEL : '');
+
+      allOptions.forEach(opt => {
+        const card = buildOptionCard(opt, opt === matchedOption, 'radio', opt === OTHER_LABEL);
+        card.addEventListener('click', () => selectSingleOption(q, opt, card));
+        optionsWrap.appendChild(card);
+      });
+
+      if (matchedOption === OTHER_LABEL) {
+        otherWrap.hidden = false;
+        otherInput.value = existingAnswer;
+      }
+
+      // Continue is only shown when landing on an already-answered question
+      // (i.e. via Back / Edit) so the user can confirm without re-tapping.
+      // A fresh tap always advances straight away — see selectSingleOption.
+      continueBtn.hidden = !matchedOption;
+      continueBtn.disabled = matchedOption === OTHER_LABEL && !existingAnswer.trim();
     }
-
-    continueBtn.hidden = !matchedOption;
-    continueBtn.disabled = matchedOption === OTHER_LABEL && !existingAnswer.trim();
   } else {
     freetextWrap.hidden = false;
     freetextInput.value = existingAnswer;
@@ -378,6 +401,7 @@ function renderCurrentQuestion() {
   }
 
   otherInput.oninput = () => {
+    continueBtn.hidden = false;
     continueBtn.disabled = !otherInput.value.trim();
   };
   freetextInput.oninput = () => {
@@ -385,7 +409,24 @@ function renderCurrentQuestion() {
   };
 }
 
-async function selectOption(q, optionLabel, cardEl) {
+// Builds one tappable choice card with a radio dot or checkbox indicator.
+function buildOptionCard(label, isSelected, kind, isOther) {
+  const card = el('button', {
+    type: 'button',
+    class: 'df-option' + (isSelected ? ' selected' : ''),
+    role: kind,
+    'aria-checked': isSelected ? 'true' : 'false',
+  }, [
+    el('span', { class: `df-option-indicator df-option-indicator-${kind}` }),
+    el('span', { class: 'df-option-text' }, [
+      el('span', { class: 'df-option-label', text: label }),
+      ...(isOther ? [el('span', { class: 'df-option-hint', text: 'Write your own answer' })] : []),
+    ]),
+  ]);
+  return card;
+}
+
+async function selectSingleOption(q, optionLabel, cardEl) {
   document.querySelectorAll('#df-options .df-option').forEach(c => {
     c.classList.remove('selected'); c.setAttribute('aria-checked', 'false');
   });
@@ -405,12 +446,29 @@ async function selectOption(q, optionLabel, cardEl) {
     return;
   }
 
+  // A direct tap always advances on its own — no intermediate Continue flash.
   otherWrap.hidden = true;
-  continueBtn.hidden = false;
-  continueBtn.disabled = false;
+  continueBtn.hidden = true;
   await saveAnswer(q.id, optionLabel);
-  // Conversational feel: auto-advance shortly after a tap.
-  setTimeout(() => { if (dfAnswers[q.id] === optionLabel) goToNextQuestion(); }, 350);
+  setTimeout(() => { if (dfAnswers[q.id] === optionLabel) goToNextQuestion(); }, 320);
+}
+
+function toggleMultiOption(q, optionLabel, cardEl) {
+  const isSelected = cardEl.classList.toggle('selected');
+  cardEl.setAttribute('aria-checked', isSelected ? 'true' : 'false');
+
+  const otherWrap = $('#df-other-wrap');
+  const otherInput = $('#df-other-input');
+  const continueBtn = $('#df-btn-continue');
+
+  if (optionLabel === OTHER_LABEL) {
+    otherWrap.hidden = !isSelected;
+    if (isSelected) otherInput.focus(); else otherInput.value = '';
+  }
+
+  const anySelected = document.querySelectorAll('#df-options .df-option.selected').length > 0;
+  continueBtn.hidden = !anySelected;
+  continueBtn.disabled = !otherWrap.hidden && !otherInput.value.trim();
 }
 
 async function saveAnswer(questionId, answerText) {
@@ -428,13 +486,31 @@ async function saveAnswer(questionId, answerText) {
 async function confirmCurrentAnswerAndAdvance() {
   const q = questions[dfIndex];
   if (q.options && q.options.length) {
-    const otherWrap = $('#df-other-wrap');
-    if (!otherWrap.hidden) {
-      const val = $('#df-other-input').value.trim();
-      if (!val) return;
-      await saveAnswer(q.id, val);
-    } else if (!dfAnswers[q.id]) {
-      return; // nothing selected yet
+    if (q.multi_select) {
+      const selectedCards = [...document.querySelectorAll('#df-options .df-option.selected')];
+      if (!selectedCards.length) return;
+      const otherWrap = $('#df-other-wrap');
+      const parts = [];
+      selectedCards.forEach(card => {
+        const label = card.querySelector('.df-option-label').textContent;
+        if (label === OTHER_LABEL) {
+          const val = $('#df-other-input').value.trim();
+          if (val) parts.push(val);
+        } else {
+          parts.push(label);
+        }
+      });
+      if (!parts.length) return;
+      await saveAnswer(q.id, parts.join(' | '));
+    } else {
+      const otherWrap = $('#df-other-wrap');
+      if (!otherWrap.hidden) {
+        const val = $('#df-other-input').value.trim();
+        if (!val) return;
+        await saveAnswer(q.id, val);
+      } else if (!dfAnswers[q.id]) {
+        return; // nothing selected yet
+      }
     }
   } else {
     const val = $('#df-freetext-input').value.trim();
@@ -497,7 +573,8 @@ function renderReview() {
     ]);
     byCategory[cat].forEach(q => {
       const idx = questions.indexOf(q);
-      const answer = dfAnswers[q.id] || '(not answered)';
+      const rawAnswer = dfAnswers[q.id] || '(not answered)';
+      const answer = rawAnswer.includes(' | ') ? rawAnswer.split(' | ').join(', ') : rawAnswer;
       const editBtn = el('button', { type: 'button', class: 'df-review-edit', text: 'Edit' });
       editBtn.addEventListener('click', () => editFromReview(idx));
       section.appendChild(el('div', { class: 'df-review-item' }, [
