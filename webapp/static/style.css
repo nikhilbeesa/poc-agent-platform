@@ -233,7 +233,7 @@ textarea:focus, input[type="text"]:focus, .btn:focus-visible, .chip:focus-visibl
 .qa-verdict.status-not-ready { border-color: var(--red); color: var(--red); }
 .qa-verdict ul { margin: 8px 0 0; padding-left: 18px; color: var(--text-dim); }
 
-#btn-export, #btn-run-agents { margin-top: 16px; }
+#btn-export { margin-top: 16px; }
 
 /* ---------------- Dashboard ---------------- */
 #btn-open-new-project { margin-bottom: 22px; }
