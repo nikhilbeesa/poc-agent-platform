@@ -117,7 +117,7 @@ Respond ONLY with JSON in exactly this shape:
             br_ids = {r.get("id") for r in ba.output.get("requirements", []) if isinstance(r, dict)}
             referenced_br_ids = set()
             for s in pm.output.get("stories", []):
-                referenced_br_ids.update(s.get("related_br_ids", []))
+                referenced_br_ids.update(s.get("related_fr_ids", []))
             unreferenced = br_ids - referenced_br_ids
             if unreferenced:
                 conflict_n += 1

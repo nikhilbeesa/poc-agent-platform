@@ -58,6 +58,20 @@ def _kv_block(d: dict) -> str:
     return "\n".join(lines)
 
 
+def _table(headers: list, rows: list) -> str:
+    """Render a GitHub-flavored Markdown table from a list of header
+    strings and a list of row tuples/lists (each cell stringified and
+    pipe-escaped)."""
+    if not rows:
+        return "*None specified.*"
+    def esc(cell):
+        return str(cell).replace("\n", " ").replace("|", "\\|")
+    header_row = "| " + " | ".join(headers) + " |"
+    sep_row = "|" + "|".join(["---"] * len(headers)) + "|"
+    body = "\n".join("| " + " | ".join(esc(c) for c in row) + " |" for row in rows)
+    return f"{header_row}\n{sep_row}\n{body}"
+
+
 # ---------------------------------------------------------------------------
 # 1. Business Requirements Document
 # ---------------------------------------------------------------------------
@@ -67,39 +81,188 @@ def export_business_requirements(context: ProjectContext) -> Artefact:
     o = ba.output if ba else {}
     template = (TEMPLATE_DIR / "business_requirements.md").read_text()
 
-    personas = o.get("user_personas", [])
-    personas_text = "\n".join(
-        f"- **{p.get('name', '?')}** ({p.get('role', '?')}) — Goals: {p.get('goals', 'N/A')}; Pain points: {p.get('pain_points', 'N/A')}"
-        for p in personas
-    ) or "- None specified"
+    exec_sum = o.get("executive_summary", {})
+    executive_summary = (
+        f"**Product:** {exec_sum.get('product', 'Not specified')}\n\n"
+        f"**Target users:** {exec_sum.get('target_users', 'Not specified')}\n\n"
+        f"**Business opportunity / problem:** {exec_sum.get('opportunity', 'Not specified')}\n\n"
+        f"**Proposed solution:** {exec_sum.get('solution', 'Not specified')}\n\n"
+        f"**Expected business value:** {exec_sum.get('business_value', 'Not specified')}\n\n"
+        f"**High-level capabilities:**\n" + _bullets(exec_sum.get("capabilities", []))
+    )
 
-    requirements = o.get("requirements", [])
-    requirements_text = "\n".join(
-        f"- **{r.get('id', '?')}** [{r.get('category', 'general')}]: {r.get('text', '')}"
-        for r in requirements
-    ) or "- None specified"
+    bg = o.get("business_background", {})
+    business_background = "\n\n".join(
+        f"**{label}:** {bg.get(key, 'Not specified')}"
+        for key, label in [
+            ("current_context", "Current business context"), ("existing_process", "Existing process"),
+            ("market_situation", "Market / business situation"), ("why_needed", "Why the product is needed"),
+            ("current_limitations", "Current limitations"), ("business_opportunity", "Business opportunity"),
+        ]
+    )
+
+    problem_statement = _table(["Problem Area", "Current Pain Point", "Business Impact"],
+                                [[p.get("area", ""), p.get("pain_point", ""), p.get("impact", "")] for p in o.get("problem_statement", [])])
+
+    pv = o.get("product_vision", {})
+    product_vision = "\n\n".join(
+        f"**{label}:** {pv.get(key, 'Not specified')}"
+        for key, label in [("vision", "Product vision"), ("future_state", "Desired future state"),
+                             ("long_term_direction", "Long-term business direction"), ("value_proposition", "Core value proposition")]
+    )
+
+    kpis = _table(["KPI", "Definition", "Target", "Measurement Method"],
+                  [[k.get("kpi", ""), k.get("definition", ""), k.get("target", "TBD"), k.get("measurement", "")] for k in o.get("kpis", [])])
+
+    stakeholders = _table(["Stakeholder", "Responsibility / Interest", "Decision Authority"],
+                           [[s.get("stakeholder", ""), s.get("interest", ""), s.get("authority", "")] for s in o.get("stakeholders", [])])
+
+    def _render_role(r: dict) -> str:
+        return (f"#### {r.get('role', '?')}\n"
+                f"- **Purpose:** {r.get('purpose', 'N/A')}\n- **Responsibilities:** {r.get('responsibilities', 'N/A')}\n"
+                f"- **Main capabilities:** {r.get('capabilities', 'N/A')}\n- **Permissions:** {r.get('permissions', 'N/A')}\n"
+                f"- **Restricted actions:** {r.get('restricted', 'N/A')}\n")
+    roles_list = o.get("roles", [])
+    roles_text = "\n".join(_render_role(r) for r in roles_list) or "*None specified.*"
+    roles_table = _table(["Role", "Core Permissions"], [[r.get("role", ""), r.get("permissions", "")] for r in roles_list])
+    roles = f"{roles_text}\n\n{roles_table}"
+
+    def _render_persona(p: dict) -> str:
+        return (f"#### {p.get('name', '?')}\n"
+                f"- **Role:** {p.get('role', 'N/A')}\n- **Occupation:** {p.get('occupation', 'N/A')}\n"
+                f"- **Goals:** {p.get('goals', 'N/A')}\n- **Needs:** {p.get('needs', 'N/A')}\n"
+                f"- **Pain points:** {p.get('pain_points', 'N/A')}\n- **Behaviors:** {p.get('behaviors', 'N/A')}\n"
+                f"- **Expectations:** {p.get('expectations', 'N/A')}\n")
+    user_personas = "\n".join(_render_persona(p) for p in o.get("user_personas", [])) or "*None specified.*"
+
+    user_journeys = "\n\n".join(f"**{name}:** {desc}" for name, desc in o.get("user_journeys", {}).items()) or "*None specified.*"
+
+    modules = _table(["Module ID", "Module", "Purpose"], [[m.get("id", ""), m.get("name", ""), m.get("purpose", "")] for m in o.get("modules", [])])
+
+    requirements = _table(["ID", "Requirement Name", "Description", "Primary Actor", "Priority"],
+                           [[r.get("id", ""), r.get("name", ""), r.get("description", ""), r.get("actor") or r.get("module", ""), r.get("priority", "")] for r in o.get("requirements", [])])
+
+    def _render_module_detail(m: dict) -> str:
+        return (f"#### {m.get('module', '?')}\n"
+                f"- **Purpose:** {m.get('purpose', 'N/A')}\n- **Actors:** {m.get('actors', 'N/A')}\n"
+                f"- **Inputs:** {m.get('inputs', 'N/A')}\n- **Processing:** {m.get('processing', 'N/A')}\n"
+                f"- **Outputs:** {m.get('outputs', 'N/A')}\n- **Business rules:** {m.get('business_rules', 'N/A')}\n"
+                f"- **Dependencies:** {m.get('dependencies', 'N/A')}\n- **Priority:** {m.get('priority', 'N/A')}\n")
+    module_details = "\n".join(_render_module_detail(m) for m in o.get("module_details", [])) or "*None specified.*"
+
+    business_rules = _table(["Rule ID", "Business Rule"], [[b.get("id", ""), b.get("rule", "")] for b in o.get("business_rules", [])])
+
+    nfrs = _table(["ID", "Category", "Requirement", "Priority"],
+                   [[n.get("id", ""), n.get("category", ""), n.get("requirement", ""), n.get("priority", "")] for n in o.get("nfrs", [])])
+
+    def _render_entity(e: dict) -> str:
+        return f"**{e.get('entity', '?')}:**\n" + _bullets(e.get("fields", []))
+    data_entities = "\n\n".join(_render_entity(e) for e in o.get("data_entities", [])) or "*None specified.*"
+    data_relationships = _bullets(o.get("data_relationships", []))
+
+    data_classification = _table(["Classification", "Examples", "Access Requirements"],
+                                  [[d.get("level", ""), d.get("examples", ""), d.get("access", "")] for d in o.get("data_classification", [])])
+
+    notifications_matrix = _table(["Event", "Customer", "Provider", "Admin/Support", "Channel"],
+                                   [[n.get("event", ""), n.get("customer", n.get("buyer", "")), n.get("provider", n.get("seller", "")), n.get("admin", ""), n.get("channel", "")] for n in o.get("notifications_matrix", [])])
+
+    pr = o.get("payment_requirements")
+    payment_requirements = (_kv_block(pr) if pr else "*Not applicable — this product does not currently involve direct payment processing per the discovery answers.*")
+
+    admin_operations = _kv_block(o.get("admin_operations", {}))
+
+    reporting_groups = o.get("reporting", [])
+    reporting = "\n".join(f"**{g.get('group', '?')}:** " + ", ".join(g.get("reports", [])) for g in reporting_groups) or "*None specified.*"
+    analytics_events = _bullets(o.get("analytics_events", []))
+
+    security_requirements = _bullets(o.get("security_requirements", []))
+    threats = _table(["Threat", "Example Control"], [[t.get("threat", ""), t.get("control", "")] for t in o.get("threats", [])])
+    security_requirements = f"{security_requirements}\n\n**Threats & controls:**\n\n{threats}"
+
+    integrations = _table(["Integration", "Purpose", "Key Requirements"],
+                           [[i.get("integration", ""), i.get("purpose", ""), i.get("requirements", "")] for i in o.get("integrations", [])])
+
+    mvp = o.get("mvp_prioritization", {})
+    mvp_rows = []
+    for tier, label in [("P0", "P0 — Critical"), ("P1", "P1 — Must Have"), ("P2", "P2 — Should Have"), ("P3", "P3 — Could Have"), ("out_of_scope", "Out of Scope")]:
+        for item in mvp.get(tier, []):
+            mvp_rows.append([label, item])
+    mvp_prioritization = _table(["Tier", "Capability"], mvp_rows)
+
+    user_stories_summary = _table(["ID", "Title", "Actor", "Story", "Priority", "Related FR"],
+                                   [[s.get("id", ""), s.get("title", ""), s.get("actor", ""), s.get("story", ""), s.get("priority", ""), s.get("related_fr", "")] for s in o.get("user_stories_summary", [])])
+
+    def _render_ac(a: dict) -> str:
+        return f"**{a.get('capability', '?')}**\n" + _bullets(a.get("criteria", []))
+    acceptance_criteria_summary = "\n\n".join(_render_ac(a) for a in o.get("acceptance_criteria_summary", [])) or "*See the User Stories document for full acceptance criteria.*"
+
+    traceability_matrix = _table(["BRD Area", "Functional Requirement", "User Story", "Module", "QA Reference", "Priority"],
+                                  [[t.get("brd_area", ""), t.get("fr", ""), t.get("user_story", ""), t.get("module", ""), t.get("qa_reference", ""), t.get("priority", "")] for t in o.get("traceability_matrix", [])])
+
+    release_strategy = "\n".join(
+        f"**{r.get('phase', '?')}:** {r.get('description', '')}  \n*Exit criteria: {r.get('exit_criteria', '')}*\n"
+        for r in o.get("release_strategy", [])
+    ) or "*None specified.*"
+
+    glossary = _table(["Term", "Definition"], [[g.get("term", ""), g.get("definition", "")] for g in o.get("glossary", [])])
+
+    document_control = _kv_block({
+        "status": "Draft — generated by AI Business Analyst Agent",
+        "version": "1.0",
+        "prepared_for": "Downstream Product, UX, and Design AI agents",
+    })
 
     values = {
         "project_name": _project_name(context),
         "domain_classification": context.domain_classification or "Unclassified",
         "generated_date": _date(),
-        "project_overview": o.get("project_overview", "Not specified"),
-        "problem_statement": o.get("problem_statement", "Not specified"),
-        "target_users": o.get("target_users", "Not specified"),
-        "user_personas": personas_text,
-        "stakeholders": o.get("stakeholders", []),
-        "user_pain_points": o.get("user_pain_points", []),
+        "document_control": document_control,
+        "executive_summary": executive_summary,
+        "business_background": business_background,
+        "problem_statement": problem_statement,
+        "product_vision": product_vision,
         "business_objectives": o.get("business_objectives", []),
-        "expected_business_outcomes": o.get("expected_business_outcomes", []),
-        "success_metrics": o.get("success_metrics", []),
+        "kpis": kpis,
         "scope_in": o.get("scope_in", []),
         "scope_out": o.get("scope_out", []),
-        "requirements": requirements_text,
-        "business_rules": o.get("business_rules", []),
-        "constraints": o.get("constraints", []),
+        "non_goals": o.get("non_goals", []),
+        "stakeholders": stakeholders,
+        "roles": roles,
+        "user_personas": user_personas,
+        "current_state_process": o.get("current_state_process", "Not specified"),
+        "current_state_flow": o.get("current_state_flow", "Not specified"),
+        "future_state_process": o.get("future_state_process", "Not specified"),
+        "future_state_flow": o.get("future_state_flow", "Not specified"),
+        "user_journeys": user_journeys,
+        "modules": modules,
+        "requirements": requirements,
+        "module_details": module_details,
+        "business_rules": business_rules,
+        "nfrs": nfrs,
+        "data_entities": data_entities,
+        "data_relationships": data_relationships,
+        "data_classification": data_classification,
+        "notifications_matrix": notifications_matrix,
+        "payment_requirements": payment_requirements,
+        "admin_operations": admin_operations,
+        "reporting": reporting,
+        "analytics_events": analytics_events,
+        "security_requirements": security_requirements,
+        "privacy_compliance": o.get("privacy_compliance", "Applicable privacy and regulatory requirements must be confirmed for the launch geography."),
+        "accessibility": o.get("accessibility", []),
+        "integrations": integrations,
         "assumptions": o.get("assumptions", []),
+        "constraints": o.get("constraints", []),
         "dependencies": o.get("dependencies", []),
-        "risks": o.get("risks", []),
+        "risks": _table(["Risk", "Impact", "Consequence", "Mitigation"],
+                         [[r.get("risk", ""), r.get("impact", ""), r.get("consequence", ""), r.get("mitigation", "")] for r in o.get("risks", [])]),
+        "mvp_prioritization": mvp_prioritization,
+        "user_stories_summary": user_stories_summary,
+        "acceptance_criteria_summary": acceptance_criteria_summary,
+        "traceability_matrix": traceability_matrix,
+        "release_strategy": release_strategy,
+        "future_enhancements": o.get("future_enhancements", []),
+        "glossary": glossary,
         "open_questions": o.get("open_questions", []),
     }
     content = _fill_template(template, values)
@@ -122,7 +285,7 @@ def export_user_stories(context: ProjectContext) -> Artefact:
     def _render_story(s: dict) -> str:
         lines = [
             f"### {s.get('id', '?')} — {s.get('feature', 'Untitled')}",
-            f"*Epic: {s.get('epic_id', '-')}  |  Role: {s.get('role', '-')}  |  Related: {', '.join(s.get('related_br_ids', [])) or 'N/A'}*",
+            f"*Epic: {s.get('epic_id', '-')}  |  Role: {s.get('role', '-')}  |  Related requirement(s): {', '.join(s.get('related_fr_ids', [])) or 'N/A'}*",
             "",
             f"**Story:** {s.get('story', '')}",
             f"**Business value:** {s.get('business_value', 'Not specified')}",
