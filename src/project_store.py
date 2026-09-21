@@ -5,10 +5,13 @@ Supabase, chosen automatically via env vars.
 """
 
 import json
+import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
 import requests
+
+logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(__file__).resolve().parent / "knowledge" / "data" / "projects"
 
@@ -76,7 +79,48 @@ class SupabaseProjectStore:
         return rows[0] if rows else None
 
 
+_project_store_singleton = None
+
+
 def get_project_store():
-    if os.environ.get("SUPABASE_URL") and os.environ.get("SUPABASE_KEY"):
-        return SupabaseProjectStore()
-    return ProjectStore()
+    global _project_store_singleton
+    if _project_store_singleton is None:
+        if os.environ.get("SUPABASE_URL") and os.environ.get("SUPABASE_KEY"):
+            _project_store_singleton = ResilientProjectStore(SupabaseProjectStore(), ProjectStore())
+        else:
+            _project_store_singleton = ProjectStore()
+    return _project_store_singleton
+
+
+class ResilientProjectStore:
+    """Wraps a primary store (normally Supabase) with a local-file
+    fallback — see ResilientKnowledgeStore in knowledge/store.py for the
+    full rationale. Degrades transparently on connection failure instead
+    of taking down the request."""
+
+    def __init__(self, primary, fallback):
+        self.primary = primary
+        self.fallback = fallback
+        self._primary_down = False
+
+    def _call(self, method_name: str, *args, **kwargs):
+        if not self._primary_down:
+            try:
+                return getattr(self.primary, method_name)(*args, **kwargs)
+            except requests.exceptions.RequestException as e:
+                self._primary_down = True
+                logger.warning(
+                    "Project store primary backend (Supabase) unreachable — "
+                    "falling back to local storage for the rest of this process. "
+                    "Check SUPABASE_URL/SUPABASE_KEY. Error: %s", e,
+                )
+        return getattr(self.fallback, method_name)(*args, **kwargs)
+
+    def save(self, record: dict) -> None:
+        return self._call("save", record)
+
+    def list_summaries(self, limit: int = 50) -> list:
+        return self._call("list_summaries", limit)
+
+    def get(self, project_id: str):
+        return self._call("get", project_id)
