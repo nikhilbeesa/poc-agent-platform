@@ -19,7 +19,7 @@ from export import export_all_artefacts  # noqa: E402
 from knowledge.bootstrap_seed_data import bootstrap  # noqa: E402
 from knowledge.store import get_knowledge_store  # noqa: E402
 from llm_client import get_client  # noqa: E402
-from orchestrator import AGENT_PIPELINE  # noqa: E402
+from orchestrator import AGENT_PIPELINE, resolve_handoff_issues  # noqa: E402
 from project_store import get_project_store  # noqa: E402
 
 app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "static"))
@@ -194,6 +194,57 @@ def export(project_id):
             {"type": a.type, "title": a.title, "content_markdown": a.content_markdown}
             for a in ctx.artefacts
         ]
+    })
+
+
+@app.route("/api/project/<project_id>/resolve", methods=["POST"])
+def resolve_issues(project_id):
+    """Re-runs exactly the agent(s) implicated by the latest AI Handoff
+    Validation's conflicts/missing-information (plus anything downstream
+    of them), re-validates, and regenerates the 5 documents so the
+    person gets a corrected package rather than just an updated warning
+    list."""
+    ctx = PROJECTS.get(project_id)
+    if not ctx:
+        return jsonify({"error": "unknown project"}), 404
+    if len(ctx.agent_contributions) < len(AGENT_PIPELINE):
+        return jsonify({"error": "agent pipeline is not complete yet"}), 400
+
+    _demo_pace()
+    result = resolve_handoff_issues(ctx)
+    if not result.get("resolved"):
+        return jsonify(result)
+
+    ctx = export_all_artefacts(ctx)
+    val = ctx.get_contribution(AgentRole.AI_HANDOFF_VALIDATION)
+
+    store = get_project_store()
+    store.save({
+        "id": ctx.project_id,
+        "business_idea": ctx.business_idea_raw,
+        "domain": ctx.domain_classification,
+        "domain_confidence": ctx.domain_confidence,
+        "stage": ctx.stage.value,
+        "handoff_status": val.output.get("final_handoff_status") if val else None,
+        "consistency_notes": ctx.consistency_notes,
+        "artefacts": [
+            {"type": a.type, "title": a.title, "content_markdown": a.content_markdown}
+            for a in ctx.artefacts
+        ],
+    })
+
+    return jsonify({
+        **result,
+        "validation_output": val.output if val else None,
+        "consistency_notes": ctx.consistency_notes,
+        "agents": [
+            {"agent": c.agent.value, "summary": c.summary}
+            for c in ctx.agent_contributions
+        ],
+        "artefacts": [
+            {"type": a.type, "title": a.title, "content_markdown": a.content_markdown}
+            for a in ctx.artefacts
+        ],
     })
 
 

@@ -223,7 +223,12 @@ Respond ONLY with JSON in exactly this shape:
 
     def run(self, context: ProjectContext) -> AgentContribution:
         contribution = super().run(context)
-        context.consistency_notes.extend(contribution.output.get("consistency_notes", []))
+        # Reset rather than extend: this list reflects the CURRENT
+        # validation state for display purposes. If we extended instead,
+        # re-running validation during a "Resolve Issues" pass would show
+        # stale notes about issues that were just fixed alongside the
+        # fresh ones, which is actively misleading.
+        context.consistency_notes = list(contribution.output.get("consistency_notes", []))
         for conflict in contribution.output.get("conflicts_found", []):
             context.consistency_notes.append(
                 f"{conflict.get('id', 'CONFLICT')} [{', '.join(conflict.get('documents_involved', []))}]: {conflict.get('conflicting_information', '')}"

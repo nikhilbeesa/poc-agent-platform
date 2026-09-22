@@ -24,7 +24,7 @@ class BusinessAnalystAgent(BaseAgent):
 
     def build_prompt(self, context: ProjectContext) -> str:
         answered = "\n".join(f"- {q.text} -> {q.answer}" for q in context.discovery_questions if q.answer)
-        return f"""You are a senior business analyst producing a
+        return f"""{self.resolution_notes_block(context)}You are a senior business analyst producing a
 comprehensive, enterprise-grade Business Requirements Document (BRD) —
 the kind of document that runs 60-80 pages in Word, not a 3-page summary.
 This document will be read by other AI agents downstream (not just

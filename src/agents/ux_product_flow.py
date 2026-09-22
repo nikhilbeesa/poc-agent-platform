@@ -25,7 +25,7 @@ class UXProductFlowAgent(BaseAgent):
         pm_output = pm.output if pm else {}
         prd_output = prd.output if prd else {}
 
-        return f"""You are a senior UX designer producing the UX / Product
+        return f"""{self.resolution_notes_block(context)}You are a senior UX designer producing the UX / Product
 Flow Specification — the primary handoff document to the Design AI
 Agent. It must be comprehensive: a dedicated screen for every module,
 a dedicated flow for every user story, explicit states, forms, and

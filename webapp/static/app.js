@@ -742,6 +742,8 @@ function showQaVerdict(data) {
   const notes = data.consistency_notes || [];
   const notesHtml = notes.length ? '<ul>' + notes.map(n => `<li>${escapeHtml(n)}</li>`).join('') + '</ul>' : '';
   box.innerHTML = `HANDOFF STATUS: ${escapeHtml(status)}` + notesHtml;
+
+  $('#btn-resolve-issues').hidden = status === 'READY FOR DESIGN AGENT';
 }
 
 // ============================================================
@@ -761,6 +763,31 @@ $('#btn-export').addEventListener('click', async () => {
     alert('Export failed: ' + e.message);
   } finally {
     btn.disabled = false; btn.textContent = 'Export 5-document package →';
+  }
+});
+
+$('#btn-resolve-issues').addEventListener('click', async () => {
+  const btn = $('#btn-resolve-issues');
+  btn.disabled = true; btn.textContent = 'Resolving…';
+  try {
+    const data = await api(`/api/project/${projectId}/resolve`, { method: 'POST' });
+    if (!data.resolved) {
+      alert(data.reason || 'Nothing to resolve.');
+      return;
+    }
+    logLine(`↻ Resolved ${data.issues_addressed} issue(s) — re-ran: ${data.agents_rerun.join(', ')}`, true);
+    showQaVerdict({ output: data.validation_output, consistency_notes: data.consistency_notes });
+    if (data.agents) {
+      data.agents.forEach((a, i) => { if (agentMeta[i]) logLine(`✓ ${agentMeta[i].label} — ${a.summary}`); });
+    }
+    if (data.artefacts && data.artefacts.length) {
+      unlock('#panel-artefacts');
+      renderArtefacts(data.artefacts);
+    }
+  } catch (e) {
+    alert('Could not resolve issues: ' + e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '⚙ Resolve issues →';
   }
 });
 

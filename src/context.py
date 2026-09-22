@@ -84,6 +84,10 @@ class ProjectContext(BaseModel):
     agent_contributions: list[AgentContribution] = Field(default_factory=list)
 
     consistency_notes: list[str] = Field(default_factory=list)
+    # Populated transiently during a "Resolve Issues" pass: specific
+    # conflicts/gaps the next agent run(s) should fix. Agents read this
+    # in build_prompt() (LIVE mode only) and it's cleared once consumed.
+    resolution_notes: list[str] = Field(default_factory=list)
 
     artefacts: list[Artefact] = Field(default_factory=list)
 
@@ -104,6 +108,12 @@ class ProjectContext(BaseModel):
         raise ValueError(f"No question with id {question_id}")
 
     def add_contribution(self, contribution: AgentContribution) -> None:
+        """Replaces any existing contribution from the same agent role
+        rather than appending a duplicate, so re-running an agent (e.g.
+        during conflict resolution) updates its output in place instead
+        of leaving a stale first-run copy that get_contribution() would
+        keep returning."""
+        self.agent_contributions = [c for c in self.agent_contributions if c.agent != contribution.agent]
         self.agent_contributions.append(contribution)
 
     def get_contribution(self, agent: AgentRole) -> Optional[AgentContribution]:

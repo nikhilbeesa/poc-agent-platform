@@ -18,6 +18,27 @@ class BaseAgent:
     def build_prompt(self, context: ProjectContext) -> str:
         raise NotImplementedError
 
+    def resolution_notes_block(self, context: ProjectContext) -> str:
+        """Formats any pending conflict-resolution notes (set by a
+        "Resolve Issues" pass) into a prompt block. Subclasses call this
+        from build_prompt() and splice the result in near the top of the
+        prompt, ahead of the normal instructions, so the model treats
+        fixing these specific issues as a hard requirement rather than
+        an afterthought. Returns "" when there's nothing to fix."""
+        if not context.resolution_notes:
+            return ""
+        notes = "\n".join(f"- {n}" for n in context.resolution_notes)
+        return f"""
+IMPORTANT — this is a revision pass. A validation step already reviewed
+the full document package and found the specific issues below. Your
+output MUST resolve every one of them that is relevant to this
+document, while keeping everything else consistent with what the other
+documents already say. Do not introduce new inconsistencies while fixing
+these:
+{notes}
+
+"""
+
     def mock_response(self, context: ProjectContext) -> dict:
         raise NotImplementedError
 

@@ -31,7 +31,7 @@ class ProductRequirementsAgent(BaseAgent):
         ba_output = ba.output if ba else {}
         pm_output = pm.output if pm else {}
 
-        return f"""You are a product manager writing the central Product
+        return f"""{self.resolution_notes_block(context)}You are a product manager writing the central Product
 Requirements Document (PRD) for this project — the primary detailed
 product specification, long and thorough (dozens of pages), not a short
 summary. It must absorb the relevant architecture and security context

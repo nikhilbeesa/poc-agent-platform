@@ -27,7 +27,7 @@ class ProductManagerAgent(BaseAgent):
         requirements = ba_out.get("requirements", [])
         req_text = "\n".join(f"- {r.get('id')}: {r.get('name')} — {r.get('description')} (actor: {r.get('actor')}, priority: {r.get('priority')})" for r in requirements)
         modules_text = "\n".join(f"- {m.get('id')}: {m.get('name')} — {m.get('purpose')}" for m in ba_out.get("modules", []))
-        return f"""You are a senior product manager converting a full set
+        return f"""{self.resolution_notes_block(context)}You are a senior product manager converting a full set
 of business requirements into a comprehensive, detailed user story
 backlog — the kind of document that runs dozens of pages, not 3 sample
 stories. Every functional requirement below must become its own user
