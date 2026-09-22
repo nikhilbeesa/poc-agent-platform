@@ -95,6 +95,14 @@ class ProjectContext(BaseModel):
                 return
         raise ValueError(f"No question with id {question_id}")
 
+    def skip_question(self, question_id: str) -> None:
+        for q in self.discovery_questions:
+            if q.id == question_id:
+                q.answer = None
+                q.status = QuestionStatus.SKIPPED
+                return
+        raise ValueError(f"No question with id {question_id}")
+
     def add_contribution(self, contribution: AgentContribution) -> None:
         self.agent_contributions.append(contribution)
 

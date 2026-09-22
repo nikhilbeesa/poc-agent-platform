@@ -117,6 +117,20 @@ def answer_question(project_id):
     return jsonify({"question_id": question_id, "status": "answered", "discovery_complete": is_discovery_complete(ctx)})
 
 
+@app.route("/api/project/<project_id>/skip", methods=["POST"])
+def skip_question(project_id):
+    ctx = PROJECTS.get(project_id)
+    if not ctx:
+        return jsonify({"error": "unknown project"}), 404
+    data = request.get_json(force=True)
+    question_id = data.get("question_id")
+    try:
+        ctx.skip_question(question_id)
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    return jsonify({"question_id": question_id, "status": "skipped", "discovery_complete": is_discovery_complete(ctx)})
+
+
 @app.route("/api/project/<project_id>/agents", methods=["GET"])
 def list_agents(project_id):
     return jsonify({"agents": AGENT_META})

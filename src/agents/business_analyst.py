@@ -365,7 +365,10 @@ Respond ONLY with JSON in exactly this shape:
             "release_strategy": release_strategy,
             "future_enhancements": future_enhancements,
             "glossary": glossary,
-            "open_questions": [q.text for q in context.discovery_questions if q.status.value == "pending"] or ["None outstanding — all discovery questions were answered"],
+            "open_questions": (
+                [f"{q.text} — left unanswered by the user; treat as an open question requiring follow-up." for q in context.discovery_questions if q.status.value in ("pending", "skipped")]
+                or ["None outstanding — all discovery questions were answered"]
+            ),
             # Kept for backward compatibility with earlier/simpler consumers
             # (older export/template code, other agents' prompts, etc.).
             "project_overview": context.business_idea_raw,

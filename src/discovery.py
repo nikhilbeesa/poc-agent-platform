@@ -168,13 +168,25 @@ def _live_dynamic_questions(client, context: ProjectContext, domain_info: dict |
 {context_note}
 
 Generate ALL the discovery questions you genuinely need to fully
-understand this business idea before a team could start building it —
-don't stop at an arbitrary count. A simple idea might only need 5-6
-questions; a complex one might genuinely need 15-20+.
+understand this business idea in real depth before a team could start
+building detailed specification documents from it (a full business
+requirements document, user stories, a PRD, and a UX specification —
+each covering many functional modules). Do NOT stop at an arbitrary
+round number and do NOT cap the count artificially — the goal is
+thorough understanding, not brevity. A trivial idea might only need
+8-10 questions; a realistic product idea typically needs 20-35; a
+complex multi-sided or highly-regulated idea can reasonably need 40+.
+Err on the side of asking more, narrower questions rather than fewer,
+broader ones.
 
-Cover, wherever relevant: target users/segments, core operations,
-monetization/pricing, technical/platform requirements, competition,
-legal/compliance, growth plans, risks, and anything unique to THIS idea.
+Cover, wherever relevant, one or more questions each on: target users/
+segments, core operations and workflow, monetization/pricing, every
+major functional area implied by the idea (e.g. search/discovery,
+onboarding, scheduling, payments, fulfilment, trust & safety, reviews,
+notifications, admin/operations — only the ones actually relevant to
+THIS idea), technical/platform requirements, competition, legal/
+compliance, growth plans, risks, and anything unique to THIS idea that
+a generic checklist wouldn't surface.
 
 For each question, also propose 3-6 short tappable answer options (a few
 words each) whenever the question naturally has a small set of likely
@@ -190,7 +202,7 @@ applies (e.g. mutually-exclusive ranges, a single either/or choice). Set
 
 Respond ONLY with JSON, no other text:
 {{"questions": [{{"id": "short_id", "text": "...", "category": "...", "options": ["..."], "multi_select": false}}]}}"""
-    text = client.generate(prompt, max_tokens=4000)
+    text = client.generate(prompt, max_tokens=8000)
     data = json.loads(text)
     return [DiscoveryQuestion(**q) for q in data["questions"]]
 

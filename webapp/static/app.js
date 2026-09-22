@@ -7,6 +7,7 @@ let agentMeta = [];
 
 // Conversational discovery flow state
 let dfAnswers = {};       // question_id -> answer text
+let dfSkipped = {};       // question_id -> true, for questions explicitly skipped
 let dfIndex = 0;          // index of the question currently on screen
 let dfShowingReview = false;
 let dfReturnToReview = false; // true when we jumped here via "Edit" from the review screen
@@ -251,6 +252,7 @@ $('#btn-submit-idea').addEventListener('click', async () => {
     if (data.learned_new_domain) $('#learned-banner').hidden = false;
 
     dfAnswers = {};
+    dfSkipped = {};
     dfIndex = 0;
     dfShowingReview = false;
     dfReturnToReview = false;
@@ -287,10 +289,16 @@ function humanizeCategory(cat) {
 
 function updateDiscoveryStatus() {
   const answeredCount = questions.filter(q => dfAnswers[q.id]).length;
+  const skippedCount = questions.filter(q => dfSkipped[q.id]).length;
+  const doneCount = answeredCount + skippedCount;
   if (dfShowingReview) { $('#discovery-status').textContent = 'reviewing'; return; }
-  $('#discovery-status').textContent = answeredCount >= questions.length
-    ? 'complete'
-    : `${answeredCount} / ${questions.length} answered`;
+  if (doneCount >= questions.length) {
+    $('#discovery-status').textContent = skippedCount > 0 ? `complete (${skippedCount} skipped)` : 'complete';
+  } else {
+    $('#discovery-status').textContent = skippedCount > 0
+      ? `${answeredCount} answered, ${skippedCount} skipped / ${questions.length}`
+      : `${answeredCount} / ${questions.length} answered`;
+  }
 }
 
 function showDiscoveryQuestion(index) {
@@ -326,6 +334,7 @@ function renderCurrentQuestion() {
   $('#df-category').textContent = humanizeCategory(q.category);
   $('#df-select-hint').hidden = !q.multi_select;
   $('#df-question').textContent = q.text;
+  $('#df-skipped-note').hidden = !dfSkipped[q.id];
 
   // Nav
   $('#df-btn-back').hidden = dfIndex === 0;
@@ -475,12 +484,27 @@ async function saveAnswer(questionId, answerText) {
   answerText = (answerText || '').trim();
   if (!answerText) return;
   dfAnswers[questionId] = answerText;
+  delete dfSkipped[questionId];
   updateDiscoveryStatus();
   try {
     await api(`/api/project/${projectId}/answer`, { method: 'POST', body: JSON.stringify({ question_id: questionId, answer: answerText }) });
   } catch (e) {
     alert('Could not save answer: ' + e.message);
   }
+}
+
+async function skipCurrentQuestion() {
+  const q = questions[dfIndex];
+  delete dfAnswers[q.id];
+  dfSkipped[q.id] = true;
+  updateDiscoveryStatus();
+  try {
+    await api(`/api/project/${projectId}/skip`, { method: 'POST', body: JSON.stringify({ question_id: q.id }) });
+  } catch (e) {
+    alert('Could not skip question: ' + e.message);
+    return;
+  }
+  goToNextQuestion();
 }
 
 async function confirmCurrentAnswerAndAdvance() {
@@ -545,6 +569,7 @@ $('#df-btn-to-review').addEventListener('click', () => {
   dfReturnToReview = false;
   showDiscoveryReview();
 });
+$('#df-btn-skip').addEventListener('click', skipCurrentQuestion);
 
 // ---- Review / confirmation screen ----
 function showDiscoveryReview() {
@@ -573,14 +598,15 @@ function renderReview() {
     ]);
     byCategory[cat].forEach(q => {
       const idx = questions.indexOf(q);
-      const rawAnswer = dfAnswers[q.id] || '(not answered)';
+      const isSkipped = !!dfSkipped[q.id];
+      const rawAnswer = dfAnswers[q.id] || (isSkipped ? 'Skipped' : '(not answered)');
       const answer = rawAnswer.includes(' | ') ? rawAnswer.split(' | ').join(', ') : rawAnswer;
-      const editBtn = el('button', { type: 'button', class: 'df-review-edit', text: 'Edit' });
+      const editBtn = el('button', { type: 'button', class: 'df-review-edit', text: isSkipped ? 'Answer' : 'Edit' });
       editBtn.addEventListener('click', () => editFromReview(idx));
       section.appendChild(el('div', { class: 'df-review-item' }, [
         el('div', { class: 'df-review-item-body' }, [
           el('p', { class: 'df-review-q', text: q.text }),
-          el('p', { class: 'df-review-a', text: answer }),
+          el('p', { class: 'df-review-a' + (isSkipped ? ' df-review-a-skipped' : ''), text: answer }),
         ]),
         editBtn,
       ]));
@@ -592,8 +618,8 @@ function renderReview() {
 $('#df-btn-review-back').addEventListener('click', () => showDiscoveryQuestion(questions.length - 1));
 
 $('#btn-run-agents').addEventListener('click', async () => {
-  const allAnswered = questions.every(q => dfAnswers[q.id]);
-  if (!allAnswered) { alert('A few questions still need an answer.'); return; }
+  const allHandled = questions.every(q => dfAnswers[q.id] || dfSkipped[q.id]);
+  if (!allHandled) { alert('A few questions still need an answer or a skip.'); return; }
   unlock('#panel-agents');
   await loadAgentMeta();
   drawSchematic();
