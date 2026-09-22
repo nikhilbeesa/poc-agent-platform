@@ -72,6 +72,13 @@ Be honest — do not automatically return "READY FOR DESIGN AGENT". If you
 find real gaps or conflicts, say so and choose "READY WITH WARNINGS" or
 "NOT READY FOR DESIGN AGENT" as appropriate.
 
+CRITICAL CONSISTENCY RULE: final_handoff_status must agree with your own
+conflicts_found and missing_information lists. If either list is
+non-empty, final_handoff_status CANNOT be "READY FOR DESIGN AGENT" — it
+must be at least "READY WITH WARNINGS" (or "NOT READY FOR DESIGN AGENT"
+if the issues are numerous or severe). Only return "READY FOR DESIGN
+AGENT" when conflicts_found and missing_information are BOTH empty.
+
 Respond ONLY with JSON in exactly this shape:
 {{
   "summary": "one sentence overview",
@@ -223,6 +230,7 @@ Respond ONLY with JSON in exactly this shape:
 
     def run(self, context: ProjectContext) -> AgentContribution:
         contribution = super().run(context)
+        self._enforce_status_consistency(contribution)
         # Reset rather than extend: this list reflects the CURRENT
         # validation state for display purposes. If we extended instead,
         # re-running validation during a "Resolve Issues" pass would show
@@ -234,6 +242,41 @@ Respond ONLY with JSON in exactly this shape:
                 f"{conflict.get('id', 'CONFLICT')} [{', '.join(conflict.get('documents_involved', []))}]: {conflict.get('conflicting_information', '')}"
             )
         return contribution
+
+    @staticmethod
+    def _enforce_status_consistency(contribution: AgentContribution) -> None:
+        """Server-side guardrail on top of whatever final_handoff_status
+        the model (LIVE mode) wrote.
+
+        The model is asked to keep final_handoff_status consistent with
+        its own conflicts_found/missing_information lists, but nothing
+        stops it from writing "READY FOR DESIGN AGENT" while also listing
+        a real conflict — LLM output isn't guaranteed self-consistent just
+        because the prompt asked for it. MOCK mode already computes status
+        deterministically from these same two lists and can't hit this;
+        this makes LIVE mode hold to the same invariant instead of trusting
+        the model's own label at face value.
+        """
+        output = contribution.output
+        issue_count = len(output.get("conflicts_found", [])) + len(output.get("missing_information", []))
+        stated_status = output.get("final_handoff_status", "")
+
+        if issue_count == 0:
+            return  # nothing to override — model's status stands either way
+
+        minimum_status = "NOT READY FOR DESIGN AGENT" if issue_count > 2 else "READY WITH WARNINGS"
+        severity = {"READY FOR DESIGN AGENT": 0, "READY WITH WARNINGS": 1, "NOT READY FOR DESIGN AGENT": 2}
+        if severity.get(stated_status, 0) < severity[minimum_status]:
+            output["final_handoff_status"] = minimum_status
+            output.setdefault("consistency_notes", []).append(
+                f"[Auto-corrected] Status was reported as \"{stated_status}\" but {issue_count} "
+                f"conflict(s)/missing item(s) were also listed — that cannot be fully ready, so the "
+                f"status was corrected to \"{minimum_status}\"."
+            )
+            if minimum_status == "READY WITH WARNINGS":
+                output["recommendation"] = "Resolve the flagged conflicts/gaps before treating this package as final."
+            else:
+                output["recommendation"] = "Significant gaps found — re-run the affected agent(s) before handing this package off."
 
 
 if __name__ == "__main__":
