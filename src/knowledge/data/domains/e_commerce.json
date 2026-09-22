@@ -1,0 +1,59 @@
+{
+  "name": "E-Commerce",
+  "description": "A platform for browsing and purchasing physical or digital products online.",
+  "typical_modules": [
+    "product catalog",
+    "cart & checkout",
+    "payments",
+    "inventory management",
+    "shipping/fulfilment",
+    "order tracking"
+  ],
+  "seed_questions": [
+    {
+      "id": "ec_catalog_size",
+      "text": "Roughly how many products, and do you manage your own inventory?",
+      "category": "catalog",
+      "options": [
+        "Fewer than 50 products",
+        "50\u2013500 products",
+        "500+ products",
+        "Not sure yet"
+      ]
+    },
+    {
+      "id": "ec_fulfilment",
+      "text": "Who handles shipping \u2014 you, a third party, or dropshipping?",
+      "category": "fulfilment",
+      "options": [
+        "We handle it ourselves",
+        "A third-party logistics partner",
+        "Dropshipping",
+        "Not decided yet"
+      ]
+    },
+    {
+      "id": "ec_payment",
+      "text": "What payment methods do you need to support?",
+      "category": "payments",
+      "multi_select": true,
+      "options": [
+        "Credit/debit cards",
+        "Digital wallets (Apple/Google Pay)",
+        "Buy-now-pay-later",
+        "Bank transfer"
+      ]
+    },
+    {
+      "id": "ec_returns",
+      "text": "What's your returns/refunds process?",
+      "category": "policy",
+      "options": [
+        "Flexible \u2014 full refunds",
+        "Strict \u2014 limited or no refunds",
+        "Store credit / exchange only",
+        "Haven't decided yet"
+      ]
+    }
+  ]
+}

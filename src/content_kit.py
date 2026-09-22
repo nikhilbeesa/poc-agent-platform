@@ -754,6 +754,26 @@ def build_stories(frs, modules, context) -> list[dict]:
             ],
             "related_fr_ids": [fr["id"]],
         })
+
+    # Second pass: derive cross-story dependencies for backlog planning.
+    # ASSUMPTION: every story's own preconditions already require an
+    # authenticated actor, so — beyond that module's own stories — every
+    # story depends on the authentication module's "Login" story being
+    # completed first. This is the one dependency we can derive reliably
+    # from the generated content itself; anything more specific (e.g. a
+    # payment story depending on a particular catalog story) would be an
+    # invented sequencing decision, so it is left for the team to confirm
+    # rather than guessed here.
+    login_story = next(
+        (s for s in stories
+         if s["epic_id"] == module_to_epic.get("authentication") and "login" in s["feature"].lower()),
+        None,
+    )
+    if login_story:
+        for s in stories:
+            if s["id"] != login_story["id"] and s["epic_id"] != login_story["epic_id"]:
+                s["dependencies"] = [login_story["id"]]
+
     return stories
 
 

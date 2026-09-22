@@ -1,0 +1,39 @@
+{
+  "name": "Small Farms",
+  "description": "A newly-learned domain, inferred from an idea that didn't match existing domains: \"A tool that helps small farms track crop yields and equipment maintenance\"",
+  "typical_modules": [
+    "core workflow",
+    "user accounts",
+    "notifications"
+  ],
+  "seed_questions": [
+    {
+      "id": "small_farms_users",
+      "text": "Who are the primary users of this platform?",
+      "category": "users",
+      "options": [
+        "Individual consumers",
+        "Small businesses",
+        "Enterprise teams",
+        "Multiple user types"
+      ]
+    },
+    {
+      "id": "small_farms_value",
+      "text": "What's the core value this delivers to those users?",
+      "category": "value_proposition",
+      "options": []
+    },
+    {
+      "id": "small_farms_scale",
+      "text": "Roughly how many users/transactions do you expect early on?",
+      "category": "scale",
+      "options": [
+        "Under 100",
+        "100\u20131,000",
+        "1,000\u201310,000",
+        "10,000+"
+      ]
+    }
+  ]
+}

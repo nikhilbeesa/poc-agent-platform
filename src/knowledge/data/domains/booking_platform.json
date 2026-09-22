@@ -1,0 +1,69 @@
+{
+  "name": "Booking Platform",
+  "description": "A service where customers schedule appointments or reservations with providers.",
+  "typical_modules": [
+    "provider/vendor profiles",
+    "availability & scheduling",
+    "booking & cancellation flow",
+    "payments",
+    "reviews & ratings",
+    "notifications/reminders"
+  ],
+  "seed_questions": [
+    {
+      "id": "bp_users",
+      "text": "Who books \u2014 individuals, businesses, or both?",
+      "category": "users",
+      "options": [
+        "Individual consumers",
+        "Small businesses",
+        "Enterprise teams",
+        "Both individuals and businesses"
+      ]
+    },
+    {
+      "id": "bp_providers",
+      "text": "How do service providers get onboarded \u2014 self-signup or vetted by you?",
+      "category": "operations",
+      "options": [
+        "Self-signup, no vetting",
+        "Self-signup with a review step",
+        "Fully vetted/curated by us",
+        "Not decided yet"
+      ]
+    },
+    {
+      "id": "bp_scheduling",
+      "text": "Do providers set their own availability, or is it assigned?",
+      "category": "scheduling",
+      "options": [
+        "Providers set their own availability",
+        "Availability is assigned centrally",
+        "A mix of both",
+        "Not sure yet"
+      ]
+    },
+    {
+      "id": "bp_payment",
+      "text": "Is payment taken at booking, after service, or both?",
+      "category": "payments",
+      "options": [
+        "At time of booking",
+        "After the service is completed",
+        "Split \u2014 deposit then balance",
+        "Not decided yet"
+      ]
+    },
+    {
+      "id": "bp_cancellation",
+      "text": "What's your cancellation/refund policy?",
+      "category": "policy",
+      "options": [
+        "Flexible \u2014 full refunds",
+        "Strict \u2014 limited or no refunds",
+        "Tiered based on notice given",
+        "Haven't decided yet"
+      ]
+    }
+  ]
+}

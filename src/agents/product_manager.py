@@ -47,10 +47,14 @@ For each user story include: a unique ID (US-001, US-002, ...), the epic
 it belongs to, the actor/role, a "As a ___, I want ___, so that ___"
 story statement, the business value, preconditions, trigger, a numbered
 main flow, alternative flow, exception flow, the relevant business
-rule(s), and 2+ Given/When/Then acceptance criteria. Also produce a
-priority table (High/Medium/Low with a short note) for every story, tied
-to the originating requirement's priority (P0/P1 -> High, P2 -> Medium,
-P3 -> Low).
+rule(s), 2+ Given/When/Then acceptance criteria, and a "dependencies"
+list of the story IDs that must be completed first (e.g. almost every
+story outside the authentication epic depends on the login/registration
+story, since its own preconditions require an authenticated actor —
+leave the list empty only if the story genuinely has no prerequisite).
+Also produce a priority table (High/Medium/Low with a short note) for
+every story, tied to the originating requirement's priority (P0/P1 ->
+High, P2 -> Medium, P3 -> Low).
 
 Respond ONLY with JSON in exactly this shape:
 {{

@@ -1,0 +1,62 @@
+{
+  "name": "Marketplace",
+  "description": "A two-sided platform connecting independent buyers and sellers.",
+  "typical_modules": [
+    "buyer & seller profiles",
+    "listing management",
+    "search & discovery",
+    "messaging between parties",
+    "payments & payouts",
+    "trust & safety"
+  ],
+  "seed_questions": [
+    {
+      "id": "mk_sides",
+      "text": "Who are the two sides of your marketplace?",
+      "category": "users",
+      "options": [
+        "Individuals & individuals (P2P)",
+        "Individuals & small businesses",
+        "Businesses & businesses (B2B)"
+      ]
+    },
+    {
+      "id": "mk_revenue",
+      "text": "How does the platform make money?",
+      "category": "business_model",
+      "multi_select": true,
+      "options": [
+        "Commission on transactions",
+        "Subscription fees",
+        "Listing/posting fees",
+        "Advertising",
+        "Not decided yet"
+      ]
+    },
+    {
+      "id": "mk_trust",
+      "text": "How will you build trust between strangers transacting?",
+      "category": "trust_safety",
+      "multi_select": true,
+      "options": [
+        "Verified profiles / ID checks",
+        "Ratings & reviews",
+        "Escrow / secure payments",
+        "Background checks",
+        "Not decided yet"
+      ]
+    },
+    {
+      "id": "mk_matching",
+      "text": "How do buyers and sellers find each other?",
+      "category": "discovery",
+      "multi_select": true,
+      "options": [
+        "Search & filters",
+        "Algorithmic recommendations",
+        "Browsing categories",
+        "Direct messaging/referrals"
+      ]
+    }
+  ]
+}
