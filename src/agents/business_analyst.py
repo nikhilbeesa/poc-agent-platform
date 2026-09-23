@@ -49,15 +49,20 @@ permissions, restrictions per role, plus a role/permission table);
 detailed user personas; current-state process narrative; future-state
 process narrative; user journeys per major role; a product modules table
 (module ID / name / purpose); a full functional-requirements list with
-IDs FR-001, FR-002, ... (name, description, primary actor, priority) —
-do not artificially limit the count, cover every module in real depth;
+IDs FR-001, FR-002, ... (name, description, primary actor, priority,
+business rationale tied to the business need, dependencies on other FR
+IDs where real, an acceptance consideration, source, and status) — do
+not artificially limit the count, cover every module in real depth;
 a detailed module-by-module breakdown (purpose, actors, inputs,
 processing, outputs, business rules, dependencies, priority) for every
 module; a business-rules table with IDs BR-001, BR-002, ...; a
 non-functional-requirements table with IDs NFR-001, NFR-002, ... across
 performance/scalability/availability/reliability/security/privacy/
 accessibility/usability/maintainability/compatibility/monitoring/
-logging/backup/disaster-recovery/localization; a data-requirements
+logging/backup/disaster-recovery/localization — for each NFR include not
+just the requirement and priority but how it would be measured, a
+concrete target (or explicitly TBD), how it would be verified, and the
+related module; a data-requirements
 section (entities and key fields, plus relationships); a data
 classification section (public/internal/confidential/restricted); a
 notifications matrix (event / customer / provider / admin / channel); a
@@ -105,10 +110,10 @@ Respond ONLY with JSON in exactly this shape:
   "future_state_process": "...", "future_state_flow": "Step 1 -> Step 2 -> ...",
   "user_journeys": {{"Customer Journey": "...", "Provider Journey": "...", "Admin Journey": "..."}},
   "modules": [{{"id": "MOD-01", "name": "...", "purpose": "..."}}],
-  "requirements": [{{"id": "FR-001", "name": "...", "description": "...", "actor": "...", "priority": "P0|P1|P2|P3", "module": "..."}}],
+  "requirements": [{{"id": "FR-001", "name": "...", "description": "...", "actor": "...", "priority": "P0|P1|P2|P3", "module": "...", "rationale": "why this requirement exists, tied to the business need", "dependencies": ["FR-00X", "..."], "acceptance_consideration": "one sentence on when this is considered met", "status": "Draft — pending stakeholder confirmation", "source": "discovery answer / assumption / TBD"}}],
   "module_details": [{{"module": "...", "purpose": "...", "actors": "...", "inputs": "...", "processing": "...", "outputs": "...", "business_rules": "...", "dependencies": "...", "priority": "..."}}],
   "business_rules": [{{"id": "BR-001", "rule": "...", "module": "..."}}],
-  "nfrs": [{{"id": "NFR-001", "category": "...", "requirement": "...", "priority": "..."}}],
+  "nfrs": [{{"id": "NFR-001", "category": "...", "requirement": "...", "description": "...", "priority": "...", "measurement": "how this would be measured", "target": "a concrete target, or 'TBD — Requires Business/Technical Confirmation'", "verification_method": "how this would be verified (e.g. load test, security review)", "related_module": "...", "dependencies": ["..."], "source": "...", "status": "Draft — pending confirmation"}}],
   "data_entities": [{{"entity": "...", "fields": ["...", "..."]}}],
   "data_relationships": ["...", "..."],
   "data_classification": [{{"level": "Public|Internal|Confidential|Restricted", "examples": "...", "access": "..."}}],

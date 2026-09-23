@@ -41,14 +41,22 @@ Functional requirements: {prd_output.get('functional_requirements', [])}
 User stories: {pm_output.get('stories', [])}
 Data entities: {ba_output.get('data_entities', [])}
 
-For every module, define at least one screen (id, name, purpose, primary
-role, entry/exit points, related story/requirement IDs, primary/secondary
-actions, navigation, information displayed, data required, UI elements
-required, permissions, business rules, dependencies). For every user
-story, define a corresponding user flow (id, name, actor, goal, starting
-point, preconditions, numbered main path, alternative paths, error
-paths, decision points, completion state, related screens/requirements/
-stories). Also define: information architecture; screen states (loading/
+For every module, break it into as many distinct screens as its actual
+requirements justify — a module that bundles browsing, creating/editing,
+viewing detail, admin moderation, and settings-type requirements needs a
+separate screen for each of those (e.g. "Listings — Browse & Search",
+"Listings — Create / Edit", "Listings — Admin / Moderation"), not one
+generic screen covering all of them. Only keep a single screen for a
+module whose requirements are genuinely all the same kind of action.
+Every screen (id, name, purpose, primary role, entry/exit points, related
+story/requirement IDs, primary/secondary actions, navigation, information
+displayed, data required, UI elements required, permissions, business
+rules, dependencies) must describe what that specific screen contains and
+what the user can do there — never a generic placeholder like "data
+relevant to this module". For every user story, define a corresponding
+user flow (id, name, actor, goal, starting point, preconditions, numbered
+main path, alternative paths, error paths, decision points, completion
+state, related screens/requirements/stories). Also define: information architecture; screen states (loading/
 empty/success/failure) for the key screens; key interactions; forms with
 full field-level detail (purpose, type, required, validation, default)
 for every data-entry screen; navigation structure; notifications &

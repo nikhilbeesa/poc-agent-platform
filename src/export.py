@@ -139,8 +139,10 @@ def export_business_requirements(context: ProjectContext) -> Artefact:
 
     modules = _table(["Module ID", "Module", "Purpose"], [[m.get("id", ""), m.get("name", ""), m.get("purpose", "")] for m in o.get("modules", [])])
 
-    requirements = _table(["ID", "Requirement Name", "Description", "Primary Actor", "Priority"],
-                           [[r.get("id", ""), r.get("name", ""), r.get("description", ""), r.get("actor") or r.get("module", ""), r.get("priority", "")] for r in o.get("requirements", [])])
+    requirements = _table(["ID", "Requirement Name", "Description", "Primary Actor", "Priority", "Rationale", "Dependencies", "Status"],
+                           [[r.get("id", ""), r.get("name", ""), r.get("description", ""), r.get("actor") or r.get("module", ""),
+                             r.get("priority", ""), r.get("rationale", ""), ", ".join(r.get("dependencies", []) or []) or "None",
+                             r.get("status", "Draft")] for r in o.get("requirements", [])])
 
     def _render_module_detail(m: dict) -> str:
         return (f"#### {m.get('module', '?')}\n"
@@ -152,8 +154,18 @@ def export_business_requirements(context: ProjectContext) -> Artefact:
 
     business_rules = _table(["Rule ID", "Business Rule"], [[b.get("id", ""), b.get("rule", "")] for b in o.get("business_rules", [])])
 
-    nfrs = _table(["ID", "Category", "Requirement", "Priority"],
-                   [[n.get("id", ""), n.get("category", ""), n.get("requirement", ""), n.get("priority", "")] for n in o.get("nfrs", [])])
+    nfrs = _table(["ID", "Category", "Requirement", "Priority", "Target", "Verification Method"],
+                   [[n.get("id", ""), n.get("category", ""), n.get("requirement", ""), n.get("priority", ""),
+                     n.get("target", "TBD"), n.get("verification_method", "TBD")] for n in o.get("nfrs", [])])
+    nfr_details = "\n".join(
+        f"**{n.get('id', '?')} — {n.get('category', '')}**  \n"
+        f"*Measurement:* {n.get('measurement', 'TBD')}  \n"
+        f"*Related module:* {n.get('related_module', 'All modules')}  \n"
+        f"*Dependencies:* {', '.join(n.get('dependencies', []) or []) or 'None'}  \n"
+        f"*Source:* {n.get('source', 'N/A')} | *Status:* {n.get('status', 'Draft')}\n"
+        for n in o.get("nfrs", [])
+    ) or "*None specified.*"
+    nfrs = f"{nfrs}\n\n**NFR detail:**\n\n{nfr_details}"
 
     def _render_entity(e: dict) -> str:
         return f"**{e.get('entity', '?')}:**\n" + _bullets(e.get("fields", []))

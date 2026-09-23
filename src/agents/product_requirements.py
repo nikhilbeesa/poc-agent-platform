@@ -128,9 +128,22 @@ Respond ONLY with JSON in exactly this shape:
         target_users = ba_output.get("target_users") or ck.target_users_phrase(context)
         has_payments = ba_output.get("payment_requirements") is not None
 
+        story_dep_to_fr = {s["id"]: (s.get("related_fr_ids") or [None])[0] for s in stories}
+
         functional_requirements = []
         for story in stories:
             fr_id = story.get("related_fr_ids", [None])[0] or story["id"].replace("US-", "FR-")
+            bucket = ck._classify_fr(story.get("feature", ""), story.get("business_value", ""))
+            dep_fr_ids = [d for d in (story_dep_to_fr.get(dep, dep) for dep in story.get("dependencies", [])) if d]
+            main_flow = story.get("main_flow", [])
+            inputs_desc = main_flow[1] if len(main_flow) > 1 else "Data captured in the corresponding user story's main flow"
+            business_rules_here = story.get("business_rules", [])
+            validation = ("Enforces: " + "; ".join(business_rules_here[:2])) if business_rules_here else "Required fields must be present and valid before submission"
+            error_scenarios = [
+                story.get("exception_flow", "System displays a clear, specific error message and preserves the user's input"),
+                "Query returns no results or the data source is temporarily unavailable" if bucket == "browse" else "Permission denied for the acting role",
+                "Required field missing or fails format validation",
+            ]
             functional_requirements.append({
                 "id": fr_id,
                 "feature": story.get("feature", story.get("story", "Core feature")),
@@ -138,13 +151,13 @@ Respond ONLY with JSON in exactly this shape:
                 "actor": story.get("role", target_users),
                 "trigger": story.get("trigger", "User initiates the action"),
                 "preconditions": story.get("preconditions", "User is authenticated"),
-                "inputs": ["Data captured in the corresponding user story's main flow"],
+                "inputs": [inputs_desc],
                 "expected_behavior": f"System performs: {story.get('feature', 'the core action')}. {story.get('business_value', '')}",
                 "outputs": ["Confirmation of the completed action", "Updated record state"],
                 "user_visible_result": "User sees a clear success confirmation and, where applicable, the updated record",
-                "validation": "Required fields must be present and valid before submission; see the related business rule(s) for domain-specific constraints",
-                "error_scenarios": ["Invalid or missing input", "Action fails server-side", "Permission denied for the acting role"],
-                "dependencies": story.get("related_fr_ids", []),
+                "validation": validation,
+                "error_scenarios": error_scenarios,
+                "dependencies": dep_fr_ids,
             })
 
         roles_and_permissions = [

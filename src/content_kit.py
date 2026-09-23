@@ -18,18 +18,23 @@ import re
 
 
 def _story_clause(fr_name: str, fr_description: str) -> str:
-    """Extract a natural first-person verb phrase for the user-story
-    sentence from an FR description ('The system shall allow a Buyer to
-    VERB...' -> 'VERB...'). Falls back to a generic, always-grammatical
-    phrasing built from the FR name when the description doesn't follow
-    that pattern (e.g. system-initiated capabilities like rate limiting)."""
+    """Extract a natural third-person verb phrase for the FR description
+    ('The system shall allow a Buyer to VERB...' -> 'VERB...'). Falls back
+    to a generic, always-grammatical phrasing built from the FR name when
+    the description doesn't follow that pattern (e.g. system-initiated
+    capabilities like rate limiting)."""
     m = re.search(r"shall (?:allow|enable)\b[^,.]*? to (.+?)(?:\.| within a| before | so | and shall | and will )", fr_description)
     if m:
-        clause = m.group(1).strip().rstrip(",. ")
-    else:
-        clause = f'make use of "{fr_name}"'
-    # The source description is written in third person ("...using their
-    # identifier..."); re-pronoun it for a first-person "I want to ..." story.
+        return m.group(1).strip().rstrip(",. ")
+    return f'make use of "{fr_name}"'
+
+
+def _first_person_clause(clause: str) -> str:
+    """Re-pronoun a third-person clause ('...using their identifier...')
+    into first person ('...using my identifier...') for an 'I want to ...'
+    user-story sentence. Keep the original third-person clause for anything
+    narrated about the actor from the outside (main/alternative/exception
+    flow steps), where 'they'/'their' is the grammatically correct form."""
     for src, dst in ((r"\btheir\b", "my"), (r"\bthey\b", "I"), (r"\bthem\b", "me"), (r"\bthemselves\b", "myself")):
         clause = re.sub(src, dst, clause, flags=re.IGNORECASE)
     return clause
@@ -37,6 +42,35 @@ def _story_clause(fr_name: str, fr_description: str) -> str:
 
 def _article(word: str) -> str:
     return "an" if word[:1].lower() in "aeiou" else "a"
+
+
+def _classify_fr(fr_name: str, fr_description: str) -> str:
+    """Classify a functional requirement into the kind of screen/behavior it
+    represents, so downstream builders (screens, story flows) can produce
+    content that actually differs by what the requirement does, instead of
+    reusing one generic template for every requirement regardless of module.
+    Buckets: create, edit, admin, browse, detail, settings."""
+    text = f"{fr_name} {fr_description}".lower()
+    if any(k in text for k in ("approve", "reject", "moderat", "overrid", "audit log", "admin ")):
+        return "admin"
+    if any(k in text for k in ("create", "add ", "new ", "post ", "upload", "submit", "register")):
+        return "create"
+    if any(k in text for k in ("edit", "update", "modify", "publish", "unpublish", "cancel", "reschedul")):
+        return "edit"
+    if any(k in text for k in ("search", "filter", "sort", "browse", "discover", "zero-result", "recent", "saved search")):
+        return "browse"
+    if any(k in text for k in ("preference", "setting", "deactivat", "notification")):
+        return "settings"
+    return "detail"
+
+
+def _module_primary_actor(m: dict, fallback: str) -> str:
+    """Pick a concrete, screen-appropriate actor for a module — 'All roles'
+    (used for cross-cutting requirements like security) isn't a usable UI
+    actor, so fall back to the caller-provided default (typically Admin,
+    since cross-cutting requirements are usually enforced/managed there)."""
+    actors = m.get("actors", [])
+    return actors[0] if actors and actors[0] != "All roles" else fallback
 
 
 # ---------------------------------------------------------------------------
@@ -570,11 +604,33 @@ def build_functional_requirements(modules) -> list[dict]:
     frs = []
     n = 1
     for m in modules:
+        module_actor = _module_primary_actor(m, "Admin")
+        prior_id_in_module = None
         for f in m["fr"]:
+            fr_id = f"FR-{n:03d}"
+            bucket = _classify_fr(f["name"], f["description"])
+            # Dependencies: an edit/admin/browse/detail/settings action on a
+            # module's own record generally can't happen before that
+            # module's own "create" (or first) requirement exists; the
+            # authentication module has no such prerequisite.
+            if bucket != "create" and prior_id_in_module and m["key"] != "authentication":
+                dependencies = [prior_id_in_module]
+            elif m["key"] != "authentication" and n > 1:
+                dependencies = ["FR-002"]  # Login — every other module requires an authenticated session
+            else:
+                dependencies = []
             frs.append({
-                "id": f"FR-{n:03d}", "name": f["name"], "description": f["description"],
+                "id": fr_id, "name": f["name"], "description": f["description"],
+                "actor": module_actor if bucket != "admin" else "Admin",
                 "module": m["name"], "module_key": m["key"], "priority": f["priority"],
+                "rationale": f"Directly supports this module's purpose: {m['purpose']}",
+                "dependencies": dependencies,
+                "acceptance_consideration": f"Considered met when the acting user can complete \"{f['name']}\" end-to-end and receives an explicit success or a specific, actionable error — not a silent failure.",
+                "status": "Draft — pending stakeholder confirmation",
+                "source": "Derived from discovery answers and the {} module baseline".format(m["name"]),
             })
+            if bucket == "create":
+                prior_id_in_module = fr_id
             n += 1
     return frs
 
@@ -590,30 +646,53 @@ def build_business_rules(modules) -> list[dict]:
 
 
 NFR_BANK = [
-    ("Performance", "The system shall respond to standard user-facing actions within 2 seconds under normal load.", "P0"),
-    ("Performance", "Search and listing pages shall return results within 1.5 seconds for catalogs up to 100,000 items.", "P1"),
-    ("Scalability", "The system shall support horizontal scaling of stateless application components as transaction volume grows.", "P1"),
-    ("Scalability", "The data layer shall support at least 10x current expected launch volume without architectural rework.", "P2"),
-    ("Availability", "Core user-facing functionality shall target 99.5% monthly uptime post-launch.", "P0"),
-    ("Reliability", "A failed payment or network error shall never leave a transaction in an ambiguous or double-charged state.", "P0"),
-    ("Security", "All traffic between client and server shall be encrypted using TLS 1.2 or higher.", "P0"),
-    ("Security", "The system shall enforce role-based access control on every state-changing server endpoint.", "P0"),
-    ("Privacy", "Personally identifiable information shall be encrypted at rest and access-logged.", "P1"),
-    ("Accessibility", "All primary user flows shall meet WCAG 2.2 AA where applicable.", "P1"),
-    ("Usability", "First-time users shall be able to complete the core workflow without external instructions.", "P2"),
-    ("Maintainability", "The codebase shall follow a documented architecture and coding standard to support ongoing maintenance.", "P2"),
-    ("Compatibility", "The system shall support the latest two major versions of common desktop and mobile browsers.", "P1"),
-    ("Monitoring", "The system shall emit structured logs and metrics sufficient to diagnose production incidents.", "P1"),
-    ("Logging", "Security-relevant events (login, permission denial, payment) shall be logged with actor, timestamp, and outcome.", "P1"),
-    ("Backup", "Production data shall be backed up on a regular, automated schedule with tested restore procedures.", "P1"),
-    ("Disaster Recovery", "A documented recovery plan shall define target recovery time and recovery point objectives.", "P2"),
-    ("Localization", "Text content shall be externalized to support future localization, even if only one language ships at launch.", "P3"),
+    ("Performance", "The system shall respond to standard user-facing actions within 2 seconds under normal load.", "P0",
+     "P95 response time for standard actions, measured via APM/monitoring tooling", "2 seconds (P95)", "Load testing prior to launch; ongoing APM monitoring in production", "All user-facing modules"),
+    ("Performance", "Search and listing pages shall return results within 1.5 seconds for catalogs up to 100,000 items.", "P1",
+     "P95 response time for search/listing queries", "1.5 seconds (P95) at up to 100,000 catalog items", "Load testing against a representative dataset size", "Search & Discovery"),
+    ("Scalability", "The system shall support horizontal scaling of stateless application components as transaction volume grows.", "P1",
+     "Ability to add application instances without a code change", "TBD — Requires Technical Confirmation (depends on chosen hosting/architecture)", "Architecture review; scaling/load test", "Platform / Infrastructure"),
+    ("Scalability", "The data layer shall support at least 10x current expected launch volume without architectural rework.", "P2",
+     "Headroom between launch volume and data-layer capacity", "10x launch volume", "Capacity planning review; load testing", "Platform / Infrastructure"),
+    ("Availability", "Core user-facing functionality shall target 99.5% monthly uptime post-launch.", "P0",
+     "Monthly uptime percentage for core user-facing functionality", "99.5% monthly", "Uptime monitoring against an SLO dashboard", "All user-facing modules"),
+    ("Reliability", "A failed payment or network error shall never leave a transaction in an ambiguous or double-charged state.", "P0",
+     "Rate of transactions left in an ambiguous/duplicate state after a failure", "0 duplicate-charge incidents", "Failure-injection/chaos testing on the transaction and payment flow", "Payments & Transactions"),
+    ("Security", "All traffic between client and server shall be encrypted using TLS 1.2 or higher.", "P0",
+     "Minimum TLS version accepted by the server", "TLS 1.2 or higher on all endpoints", "Automated TLS configuration scan", "Platform / Infrastructure"),
+    ("Security", "The system shall enforce role-based access control on every state-changing server endpoint.", "P0",
+     "Percentage of state-changing endpoints with a server-side permission check", "100% of state-changing endpoints", "Security code review; automated authorization test suite", "Authentication & Account Management"),
+    ("Privacy", "Personally identifiable information shall be encrypted at rest and access-logged.", "P1",
+     "Coverage of PII fields under encryption-at-rest and access logging", "100% of identified PII fields", "Data classification audit; access-log review", "Data Layer / All modules handling PII"),
+    ("Accessibility", "All primary user flows shall meet WCAG 2.2 AA where applicable.", "P1",
+     "WCAG 2.2 AA conformance across primary user flows", "WCAG 2.2 AA", "Automated accessibility scan plus manual keyboard/screen-reader pass", "All user-facing screens"),
+    ("Usability", "First-time users shall be able to complete the core workflow without external instructions.", "P2",
+     "First-time task success rate without external help in usability testing", "TBD — Requires Business Confirmation (target success rate)", "Moderated usability testing with representative users", "Core workflow screens"),
+    ("Maintainability", "The codebase shall follow a documented architecture and coding standard to support ongoing maintenance.", "P2",
+     "Adherence to the documented coding/architecture standard", "TBD — Requires Technical Confirmation", "Code review checklist; static analysis", "Engineering / All modules"),
+    ("Compatibility", "The system shall support the latest two major versions of common desktop and mobile browsers.", "P1",
+     "Browser/version coverage tested pre-release", "Latest 2 major versions of common desktop/mobile browsers", "Cross-browser test pass before each release", "All user-facing screens"),
+    ("Monitoring", "The system shall emit structured logs and metrics sufficient to diagnose production incidents.", "P1",
+     "Presence of structured logs/metrics on critical paths", "100% of critical paths instrumented", "Observability review during implementation", "Platform / Infrastructure"),
+    ("Logging", "Security-relevant events (login, permission denial, payment) shall be logged with actor, timestamp, and outcome.", "P1",
+     "Coverage of security-relevant events with actor/timestamp/outcome fields", "100% of identified security-relevant events", "Security/audit log review", "Authentication & Account Management, Payments & Transactions"),
+    ("Backup", "Production data shall be backed up on a regular, automated schedule with tested restore procedures.", "P1",
+     "Backup frequency and successful restore-test frequency", "TBD — Requires Technical Confirmation (backup cadence and retention)", "Scheduled restore drill", "Platform / Infrastructure"),
+    ("Disaster Recovery", "A documented recovery plan shall define target recovery time and recovery point objectives.", "P2",
+     "Existence and currency of a documented DR plan with RTO/RPO", "TBD — Requires Business/Technical Confirmation (RTO/RPO targets)", "DR plan review; recovery drill", "Platform / Infrastructure"),
+    ("Localization", "Text content shall be externalized to support future localization, even if only one language ships at launch.", "P3",
+     "Percentage of user-facing text externalized from code", "100% of user-facing strings externalized", "Code review; i18n lint check", "All user-facing screens"),
 ]
 
 
 def build_nfrs() -> list[dict]:
-    return [{"id": f"NFR-{i:03d}", "category": cat, "requirement": req, "priority": pri}
-            for i, (cat, req, pri) in enumerate(NFR_BANK, start=1)]
+    return [{
+        "id": f"NFR-{i:03d}", "category": cat, "requirement": req, "description": req, "priority": pri,
+        "measurement": measurement, "target": target, "verification_method": verification, "related_module": related_module,
+        "dependencies": ["Hosting/infrastructure decision"] if related_module == "Platform / Infrastructure" else [],
+        "source": "Non-functional baseline for platforms of this type; targets marked TBD require business/technical confirmation.",
+        "status": "Draft — pending confirmation of any TBD targets",
+    } for i, (cat, req, pri, measurement, target, verification, related_module) in enumerate(NFR_BANK, start=1)]
 
 
 def build_data_model(modules, context) -> tuple[list[dict], list[str]]:
@@ -705,6 +784,66 @@ def build_epics(modules) -> list[dict]:
     return [{"id": f"EPIC-{i:03d}", "name": m["name"], "description": m["purpose"]} for i, m in enumerate(modules, start=1)]
 
 
+_STORY_FLOW_TEMPLATES = {
+    "create": {
+        "main_flow": lambda actor, clause: [
+            f"{actor} opens the create/add action to {clause}",
+            f"{actor} fills in the required fields",
+            "System validates each required field as it is entered and again on submit",
+            "System saves the new record (as Draft or Pending where the module defines that status)",
+            "System confirms creation and displays the newly created record",
+        ],
+        "extra_ac": "Given {actor_l} submits the form with all required fields valid, when they confirm, then a new record is created and is immediately visible to {actor_l}.",
+    },
+    "edit": {
+        "main_flow": lambda actor, clause: [
+            f"{actor} opens the existing record they want to {clause}",
+            f"{actor} changes the relevant field(s)",
+            "System validates the changed field(s)",
+            "System saves the update and reflects it immediately everywhere the record is shown",
+        ],
+        "extra_ac": "Given {actor_l} has unsaved changes, when they attempt to navigate away, then the system warns them before the changes are discarded.",
+    },
+    "admin": {
+        "main_flow": lambda actor, clause: [
+            f"{actor} opens the queue of items awaiting a decision",
+            f"{actor} reviews the relevant details before deciding whether to {clause}",
+            f"{actor} confirms the decision, optionally with a reason/note",
+            "System applies the decision, updates the record's status, and records the action in the audit log",
+            "System notifies the affected user(s) of the outcome",
+        ],
+        "extra_ac": "Given the action is destructive or high-impact, when {actor_l} confirms it, then the system records {actor_l}, a timestamp, and the stated reason in the audit log before applying it.",
+    },
+    "browse": {
+        "main_flow": lambda actor, clause: [
+            f"{actor} opens the relevant list/search screen",
+            f"{actor} enters a query or applies filters/sort to {clause}",
+            "System returns matching results, updating as the query or filters change",
+            "System shows a clear empty state with guidance if no results match",
+        ],
+        "extra_ac": "Given no records match the current query or filters, when results are returned, then the system shows an explicit empty state rather than a blank screen.",
+    },
+    "settings": {
+        "main_flow": lambda actor, clause: [
+            f"{actor} opens their settings/preferences area",
+            f"{actor} changes the relevant setting to {clause}",
+            "System validates and saves the change",
+            "System confirms the setting has been updated",
+        ],
+        "extra_ac": "Given {actor_l} changes a setting, when they navigate away and return, then the changed value has persisted.",
+    },
+    "detail": {
+        "main_flow": lambda actor, clause: [
+            f"{actor} navigates to the relevant screen",
+            f"{actor} provides the information required to {clause}",
+            "System validates the input",
+            "System completes the action and confirms the result",
+        ],
+        "extra_ac": "Given {actor_l} meets the preconditions, when they {clause} with valid input, then the system completes the action and confirms it clearly.",
+    },
+}
+
+
 def build_stories(frs, modules, context) -> list[dict]:
     vocab = get_vocab(context.domain_classification)
     module_to_epic = {m["key"]: f"EPIC-{i:03d}" for i, m in enumerate(modules, start=1)}
@@ -712,11 +851,21 @@ def build_stories(frs, modules, context) -> list[dict]:
     stories = []
     for i, fr in enumerate(frs, start=1):
         raw_actor = module_actor.get(fr["module_key"], vocab["buyer"])
+        bucket = _classify_fr(fr["name"], fr["description"])
         # Cross-cutting FRs (security, RBAC) are attributed to "All roles"
-        # for requirements purposes, but a user story needs a concrete actor.
-        actor = "Admin" if raw_actor == "All roles" else raw_actor
+        # for requirements purposes, but a user story needs a concrete
+        # actor. Admin decisions (approve/reject/suspend/moderate) are
+        # always actioned by Admin regardless of the module's usual actor
+        # (e.g. suspending a Provider is something Admin does TO a
+        # Provider, not something a Provider does to themselves).
+        actor = "Admin" if (raw_actor == "All roles" or bucket == "admin") else raw_actor
         article = _article(actor)
         clause = _story_clause(fr["name"], fr["description"])
+        # For admin/moderation actions, "their"/"them" in the FR description
+        # refers to the target of the action (e.g. the Provider being
+        # suspended), not to Admin — so it must stay third person rather
+        # than being folded into a first-person "I/my" story statement.
+        first_person_clause = clause if bucket == "admin" else _first_person_clause(clause)
         sid = f"US-{i:03d}"
         preconditions = f"{actor} is authenticated and has the permissions required for this action"
         if fr["module_key"] == "authentication":
@@ -731,31 +880,31 @@ def build_stories(frs, modules, context) -> list[dict]:
                 preconditions = f"{actor} currently has an active session"
             elif "verification" in name_lower:
                 preconditions = f"{actor} has a registered account pending verification"
+        template = _STORY_FLOW_TEMPLATES[bucket]
         stories.append({
             "id": sid, "epic_id": module_to_epic.get(fr["module_key"], "EPIC-001"),
             "feature": fr["name"], "role": actor,
-            "story": f"As {article} {actor}, I want to {clause}, so that I can do so quickly, reliably, and with confidence the result is correct.",
+            "story": f"As {article} {actor}, I want to {first_person_clause}, so that I can do so quickly, reliably, and with confidence the result is correct.",
             "business_value": fr["description"],
             "preconditions": preconditions,
             "trigger": f"{actor} initiates the '{fr['name']}' action",
-            "main_flow": [
-                f"{actor} navigates to the relevant screen",
-                f"{actor} provides the information required to {clause}",
-                "System validates the input",
-                "System completes the action and confirms the result",
-            ],
+            "main_flow": template["main_flow"](actor, clause),
             "alternative_flow": "None" if fr["priority"] in ("P0", "P1") else f"{actor} saves as draft and returns later, where applicable",
-            "exception_flow": "System displays a clear, specific error message and preserves the user's input for correction",
+            "exception_flow": ("System rejects the decision if the record's state has since changed (e.g. already actioned by another Admin), and does not apply a partial update"
+                               if bucket == "admin" else
+                               "System displays a clear, specific error message and preserves the user's input for correction"),
             "business_rules": [b for b in next((m["business_rules"] for m in modules if m["key"] == fr["module_key"]), [])],
-            "dependencies": [],
+            "dependencies": list(fr.get("dependencies", [])),
             "acceptance_criteria": [
-                f"Given {actor.lower()} meets the preconditions, when they {clause} with valid input, then the system completes the action and confirms it clearly.",
+                template["extra_ac"].format(actor_l=actor.lower(), clause=clause),
                 f"Given invalid or incomplete input, when {actor.lower()} attempts to {clause}, then the system rejects the action with a specific, actionable error message.",
+                f"Given {actor.lower()} lacks the permissions required for this action, when they attempt to {clause}, then the system denies the action and does not reveal data beyond what {actor.lower()} is authorized to see.",
             ],
             "related_fr_ids": [fr["id"]],
         })
 
-    # Second pass: derive cross-story dependencies for backlog planning.
+    # Second pass: derive cross-story dependencies for backlog planning, in
+    # addition to the FR-level dependency each story already carries above.
     # ASSUMPTION: every story's own preconditions already require an
     # authenticated actor, so — beyond that module's own stories — every
     # story depends on the authentication module's "Login" story being
@@ -769,10 +918,18 @@ def build_stories(frs, modules, context) -> list[dict]:
          if s["epic_id"] == module_to_epic.get("authentication") and "login" in s["feature"].lower()),
         None,
     )
+    fr_to_story = {s["related_fr_ids"][0]: s["id"] for s in stories if s.get("related_fr_ids")}
     if login_story:
         for s in stories:
-            if s["id"] != login_story["id"] and s["epic_id"] != login_story["epic_id"]:
-                s["dependencies"] = [login_story["id"]]
+            if s["id"] == login_story["id"] or s["epic_id"] == login_story["epic_id"]:
+                continue
+            deps = {fr_to_story.get(d, d) for d in s["dependencies"]}
+            deps.add(login_story["id"])
+            s["dependencies"] = sorted(deps)
+        # Translate the remaining same-module FR-level dependencies (e.g. an
+        # Edit story depending on that module's Create FR) into story IDs too.
+    for s in stories:
+        s["dependencies"] = sorted({fr_to_story.get(d, d) for d in s["dependencies"]} - {s["id"]})
 
     return stories
 
@@ -814,24 +971,79 @@ def build_screens(modules, stories, roles, context) -> list[dict]:
         "data_required": [f"{vocab['buyer']}'s recent {vocab['transaction']}s"], "ui_elements_required": ["Navigation menu", "Activity summary", "Primary call-to-action"],
         "permissions": f"Authenticated {role_names[0]}", "business_rules": [], "dependencies": ["SCR-001"],
     }]
+
+    # A module with several distinct kinds of requirement (browse vs. create
+    # vs. admin decision, etc.) genuinely needs several distinct screens —
+    # collapsing them into one generic screen is exactly the kind of
+    # under-specified UX spec this builder exists to avoid. Each screen
+    # below is scoped to one bucket of that module's actual requirements, so
+    # its content (actions, data, UI elements) comes from those specific
+    # requirements and entity fields rather than a generic filler sentence.
+    frs = build_functional_requirements(modules)
+    fr_by_module: dict[str, list] = {}
+    for fr in frs:
+        fr_by_module.setdefault(fr["module_key"], []).append(fr)
+    story_by_fr = {s["related_fr_ids"][0]: s["id"] for s in stories if s.get("related_fr_ids")}
+
+    screen_labels = {"browse": "Browse & Search", "create": "Create / Edit", "detail": "Detail / Overview",
+                      "settings": "Settings", "admin": "Admin / Moderation"}
+    ui_elements = {
+        "browse": ["Search input", "Filter controls", "Sort dropdown", "Results list/grid", "Empty state"],
+        "create": ["Form fields", "Save button", "Cancel button", "Inline validation messages"],
+        "detail": ["Detail/summary layout", "Primary action button(s)", "Related information panel"],
+        "settings": ["Form fields", "Toggle controls", "Save button"],
+        "admin": ["Data table / queue", "Approve/Reject controls", "Filter controls", "Audit trail panel"],
+    }
+
     i = 3
-    for m in modules:
+    for idx, m in enumerate(modules, start=1):
         if m["key"] in ("authentication", "security", "notifications_module"):
             continue
-        related_stories = [s["id"] for s in stories if s["epic_id"] == f"EPIC-{modules.index(m) + 1:03d}"]
-        related_frs = [s["related_fr_ids"][0] for s in stories if s["id"] in related_stories]
-        screens.append({
-            "id": f"SCR-{i:03d}", "name": m["name"], "purpose": m["purpose"],
-            "primary_role": m["actors"][0] if m["actors"] else role_names[0],
-            "entry_points": ["SCR-002"], "exit_points": ["SCR-002"],
-            "related_story_ids": related_stories, "related_requirement_ids": related_frs,
-            "primary_actions": [f["name"] for f in m["fr"][:2]] if isinstance(m["fr"][0], dict) and "name" in m["fr"][0] else ["Perform the primary action for this module"],
-            "secondary_actions": ["Cancel", "Go back"],
-            "navigation": "Reached from the Dashboard via primary navigation", "information_displayed": [f"Data relevant to {m['name']}"],
-            "data_required": ["User input specific to this module"], "ui_elements_required": ["List or form view", "Action buttons"],
-            "permissions": f"Authenticated {m['actors'][0] if m['actors'] else role_names[0]}", "business_rules": m["business_rules"][:2], "dependencies": ["SCR-002"],
-        })
-        i += 1
+        module_frs = fr_by_module.get(m["key"], [])
+        buckets: dict[str, list] = {}
+        for fr in module_frs:
+            b = _classify_fr(fr["name"], fr["description"])
+            key = "create" if b == "edit" else b
+            buckets.setdefault(key, []).append(fr)
+        if not buckets:
+            buckets["detail"] = module_frs
+        multi = len(buckets) > 1
+        entity_items = list(m["entities"].items())
+
+        for key in ("browse", "create", "detail", "settings", "admin"):
+            if key not in buckets:
+                continue
+            group = buckets[key]
+            label = screen_labels[key]
+            screen_name = f"{m['name']} — {label}" if multi else m["name"]
+            related_story_ids = [story_by_fr[fr["id"]] for fr in group if fr["id"] in story_by_fr]
+            related_requirement_ids = [fr["id"] for fr in group]
+            actor_here = "Admin" if key == "admin" else _module_primary_actor(m, role_names[0])
+            info_displayed = [f"{fr['name']}: {fr['description']}" for fr in group][:4]
+            if entity_items:
+                ename, fields = entity_items[0]
+                data_required = [f"{ename} — {', '.join(fields[:5])}"]
+            else:
+                data_required = [f"Input required for: {', '.join(fr['name'] for fr in group)}"]
+            screens.append({
+                "id": f"SCR-{i:03d}", "name": screen_name,
+                "purpose": f"{label} for {m['name']}: " + "; ".join(fr["name"] for fr in group),
+                "primary_role": actor_here,
+                "entry_points": ["SCR-002"] if key != "admin" else ["Admin-only navigation menu"],
+                "exit_points": ["SCR-002"],
+                "related_story_ids": related_story_ids, "related_requirement_ids": related_requirement_ids,
+                "primary_actions": [fr["name"] for fr in group],
+                "secondary_actions": ["Clear filters"] if key == "browse" else ["Cancel", "Go back"],
+                "navigation": (f"Reached from the Dashboard via {m['name']} navigation" if key != "admin"
+                               else "Reached from the Admin-only navigation area; not shown to other roles"),
+                "information_displayed": info_displayed,
+                "data_required": data_required,
+                "ui_elements_required": ui_elements[key],
+                "permissions": f"Authenticated {actor_here}" if key != "admin" else "Admin role only",
+                "business_rules": m["business_rules"][:3],
+                "dependencies": ["SCR-002"],
+            })
+            i += 1
     return screens
 
 
