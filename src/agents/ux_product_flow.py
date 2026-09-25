@@ -40,6 +40,7 @@ Roles: {ba_output.get('roles', [])}
 Functional requirements: {prd_output.get('functional_requirements', [])}
 User stories: {pm_output.get('stories', [])}
 Data entities: {ba_output.get('data_entities', [])}
+Business rules (PRD-formalized, includes IDs): {prd_output.get('product_business_rules', []) or ba_output.get('business_rules', [])}
 
 The PRD's navigation_pattern is: {prd_output.get('navigation_pattern', 'Not specified — infer one consistent pattern from navigation_behavior below and use it everywhere in this document')}
 The PRD's navigation_behavior is: {prd_output.get('navigation_behavior', 'Not specified')}
@@ -90,6 +91,26 @@ least one user flow — there must be no functional requirement left with
 no screen and no flow. Before finalizing, check every FR id off this
 list; if one has no home, add the screen/flow it needs rather than
 leaving it out.
+
+CRITICAL BUSINESS RULE TRACEABILITY: every business rule id listed above
+(e.g. BR-001) must appear — by its ID — in at least one screen's
+business_rules list, or drive at least one user flow's decision_points
+or error_paths. A business rule that exists only as prose in the BRD/PRD
+with no corresponding UI enforcement point (a validation message, a
+disabled action, a conditional branch) is not acceptable — the Design AI
+Agent has no way to build it into the interface otherwise. Before
+finalizing, check every business rule ID off this list; if one has no
+home, add the specific screen business_rules entry or flow decision
+point that enforces it.
+
+CRITICAL ROLE-CONDITIONAL NAVIGATION: if roles_and_permissions above
+defines more than one role, or if any screen/module implies a role-scoped
+view (an admin/manager/exec-only dashboard, portal, or overview), the
+navigation object and information_architecture must explicitly state
+which role(s) can reach each such view and how the navigation differs by
+role — e.g. "Hiring Manager sees X, Y in the sidebar; Recruiter sees only
+X." A single generic navigation description that does not address role
+differences is incomplete whenever more than one role exists.
 
 Respond ONLY with JSON in exactly this shape:
 {{

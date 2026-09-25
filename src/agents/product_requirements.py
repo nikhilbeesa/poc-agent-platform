@@ -133,6 +133,17 @@ Rules:
   ungoverned by a role here — the UX spec will build its permission
   matrix strictly from this list and cannot invent additional
   capabilities for any role.
+- ROLE FIDELITY: every role in roles_and_permissions must use the EXACT
+  same role name the Business Analyst already defined above (e.g. if the
+  BA lists "Hiring Manager", write "Hiring Manager" — do not rename it to
+  "Manager", split it into two roles, or merge it with another). Your job
+  here is to translate that role's existing purpose/responsibilities/
+  capabilities/restricted fields into a formal permissions list, not to
+  redefine the role's scope — if the BA's role already restricts a
+  capability, roles_and_permissions must reflect that same restriction,
+  and personas.role for any persona based on this role must reference it
+  by the identical name too, so the BRD, PRD, and (downstream) UX spec
+  never describe the same role's boundaries differently.
 
 Respond ONLY with JSON in exactly this shape:
 {{
