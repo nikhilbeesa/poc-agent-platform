@@ -36,7 +36,20 @@ function unlock(panelId) { $(panelId).classList.remove('is-locked'); }
 
 async function api(path, opts = {}) {
   const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
-  const data = await res.json();
+  let data;
+  try {
+    data = await res.json();
+  } catch (parseErr) {
+    // The response wasn't JSON at all — almost always means a proxy/host
+    // timed the request out (or crashed) and served its own HTML error
+    // page before our Flask app's JSON error handler ever got to run.
+    // Surface something actionable instead of the raw parse error.
+    throw new Error(
+      res.ok
+        ? 'The server sent back an unexpected response. It may have timed out — please try again.'
+        : `Request failed (HTTP ${res.status}). The server may have timed out — please try again.`
+    );
+  }
   if (!res.ok) throw new Error(data.error || 'request failed');
   return data;
 }
@@ -729,8 +742,46 @@ async function runAgentPipeline() {
     }
   }
 
+  // The 5 documents existing isn't the same as the package being
+  // complete — automatically run a short chain of "resolve" passes (each
+  // its own quick request, so no single call risks a host/proxy timeout)
+  // until validation comes back clean or a small round cap is hit. This
+  // never requires the person to notice a gap and click anything — it
+  // just narrates progress as it goes.
+  await autoResolveGaps();
+
   $('#agents-status').textContent = `complete — ${agentMeta.length}/${agentMeta.length}`;
   $('#btn-export').hidden = false;
+}
+
+const MAX_AUTO_RESOLVE_ROUNDS = 4;
+
+async function autoResolveGaps() {
+  for (let round = 1; round <= MAX_AUTO_RESOLVE_ROUNDS; round++) {
+    let data;
+    try {
+      data = await api(`/api/project/${projectId}/resolve`, { method: 'POST' });
+    } catch (e) {
+      logLine(`⚠ Auto-resolve round ${round} failed: ${e.message} — you can retry with "Resolve issues" below.`);
+      return;
+    }
+    if (!data.resolved) {
+      // Nothing left to fix (or nothing was flagged in the first place).
+      return;
+    }
+    logLine(`↻ Auto-resolve round ${round}: fixed ${data.issues_addressed} issue(s) — re-ran: ${data.agents_rerun.join(', ')}`, true);
+    showQaVerdict({ output: data.validation_output, consistency_notes: data.consistency_notes });
+    if (data.artefacts && data.artefacts.length) {
+      unlock('#panel-artefacts');
+      renderArtefacts(data.artefacts);
+    }
+    const status = data.validation_output && data.validation_output.final_handoff_status;
+    const clean = status === 'READY FOR DESIGN AGENT'
+      && !(data.validation_output.conflicts_found || []).length
+      && !(data.validation_output.missing_information || []).length;
+    if (clean) return;
+  }
+  logLine(`⚠ Reached the auto-resolve round limit (${MAX_AUTO_RESOLVE_ROUNDS}) with some items still flagged — review below, or click "Resolve issues" to try another round.`);
 }
 
 function showQaVerdict(data) {

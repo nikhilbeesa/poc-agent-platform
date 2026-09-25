@@ -19,7 +19,7 @@ from export import export_all_artefacts  # noqa: E402
 from knowledge.bootstrap_seed_data import bootstrap  # noqa: E402
 from knowledge.store import get_knowledge_store  # noqa: E402
 from llm_client import get_client  # noqa: E402
-from orchestrator import AGENT_PIPELINE, resolve_handoff_issues, run_gap_correction_loop  # noqa: E402
+from orchestrator import AGENT_PIPELINE, resolve_handoff_issues  # noqa: E402
 from project_store import get_project_store  # noqa: E402
 
 app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "static"))
@@ -152,19 +152,23 @@ def run_agent(project_id, index):
 
     is_last_agent = AGENT_PIPELINE[index].role == AgentRole.AI_HANDOFF_VALIDATION
     if is_last_agent:
-        # The pipeline finishing (5 documents generated) is not the same as
-        # the package being complete — automatically run the gap-correction
-        # loop (validate, auto-repair implicated agents, re-validate) rather
-        # than surfacing a single validation pass and asking the user to
-        # notice and manually fix whatever it found.
-        gap_summary = run_gap_correction_loop(ctx)
-        contribution = ctx.get_contribution(AgentRole.AI_HANDOFF_VALIDATION)
+        # NOTE: this deliberately does NOT run the full multi-round
+        # gap-correction loop synchronously here — chaining several LLM
+        # calls (validation + re-running implicated agents, repeated up to
+        # MAX_GAP_CORRECTION_ROUNDS times) inside one HTTP request risked
+        # exceeding hosting platforms' request timeouts, which surfaces to
+        # the browser as an HTML error page instead of JSON (a fetch().json()
+        # parse error) — confusing and looks like a crash even though the
+        # work was actually still in progress server-side. Auto-repair
+        # instead happens as a short chain of separate requests driven by
+        # the frontend calling /resolve repeatedly — see runAgentPipeline()
+        # in app.js. This single call just runs validation once (fast).
+        contribution = AGENT_PIPELINE[index].run(ctx)
         return jsonify({
             "agent": contribution.agent.value,
             "summary": contribution.summary,
             "output": contribution.output,
             "consistency_notes": ctx.consistency_notes,
-            "auto_gap_correction": gap_summary,
         })
 
     agent = AGENT_PIPELINE[index]
