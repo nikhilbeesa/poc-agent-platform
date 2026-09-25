@@ -168,6 +168,38 @@ def _notes_from_validation_issues(validation_output: dict) -> list[str]:
     return notes
 
 
+def _roles_and_notes_from_consistency(validation_output: dict) -> tuple[set, list[str], bool]:
+    """consistency_notes are narrative-only observations from the validator
+    (terminology mismatches, role-naming ambiguity, scope contradictions,
+    etc.) — unlike conflicts_found/missing_information, they carry no
+    documents_involved/affected_document field. Previously these were
+    completely invisible to the resolution loop: _notes_from_validation_issues
+    and _roles_from_validation_issues never read this field at all, so a
+    real issue reported only here could survive an unlimited number of
+    "Resolve issues" clicks unchanged, because no agent was ever re-run to
+    fix it and no fix instruction was ever generated for it.
+
+    This does the same best-effort document-name matching used for
+    structured issues (documents/roles are often named in the note's own
+    text, e.g. "UX documentation... PRD and Business Analyst documents...")
+    and returns anything that can't be matched as unattributed, so the
+    caller falls back to a full-pipeline rerun rather than silently
+    dropping the issue."""
+    roles = set()
+    notes = []
+    unattributed = False
+    for note in validation_output.get("consistency_notes", []) or []:
+        if not note:
+            continue
+        notes.append(f"Consistency issue: {note}")
+        role = _map_document_name_to_role(note)
+        if role:
+            roles.add(role)
+        else:
+            unattributed = True
+    return roles, notes, unattributed
+
+
 def _apply_resolution(context: ProjectContext, notes: list[str], roles_to_rerun: list) -> None:
     context.resolution_notes = notes
     for role in roles_to_rerun:
@@ -199,16 +231,21 @@ def run_gap_correction_loop(context: ProjectContext, max_rounds: int = MAX_GAP_C
             "partial_capabilities": output.get("partial_capabilities", []),
             "unmapped_idea_capabilities": output.get("unmapped_idea_capabilities", []),
         })
-        has_issues = bool(output.get("conflicts_found") or output.get("missing_information")) or matrix_gap
+        has_issues = bool(
+            output.get("conflicts_found") or output.get("missing_information") or output.get("consistency_notes")
+        ) or matrix_gap
         if not has_issues:
             break
 
         issue_roles, unattributed = _roles_from_validation_issues(output)
         issue_roles |= _roles_from_coverage_matrix(output)
+        consistency_roles, consistency_notes_list, consistency_unattributed = _roles_and_notes_from_consistency(output)
+        issue_roles |= consistency_roles
+        unattributed = unattributed or consistency_unattributed
         notes = _notes_from_validation_issues(output) + cov.gap_resolution_notes({
             "rows": output.get("coverage_matrix", []),
             "unmapped_idea_capabilities": output.get("unmapped_idea_capabilities", []),
-        })
+        }) + consistency_notes_list
         if not notes:
             break  # nothing actionable was actually extracted — avoid an infinite no-op loop
 
@@ -297,15 +334,23 @@ def resolve_handoff_issues(context: ProjectContext) -> dict:
         "partial_capabilities": output.get("partial_capabilities", []),
         "unmapped_idea_capabilities": output.get("unmapped_idea_capabilities", []),
     })
-    if not output.get("conflicts_found") and not output.get("missing_information") and not matrix_gap:
+    if (
+        not output.get("conflicts_found")
+        and not output.get("missing_information")
+        and not output.get("consistency_notes")
+        and not matrix_gap
+    ):
         return {"resolved": False, "reason": "No conflicts or missing information were flagged — nothing to resolve."}
 
     issue_roles, unattributed = _roles_from_validation_issues(output)
     issue_roles |= _roles_from_coverage_matrix(output)
+    consistency_roles, consistency_notes_list, consistency_unattributed = _roles_and_notes_from_consistency(output)
+    issue_roles |= consistency_roles
+    unattributed = unattributed or consistency_unattributed
     notes = _notes_from_validation_issues(output) + cov.gap_resolution_notes({
         "rows": output.get("coverage_matrix", []),
         "unmapped_idea_capabilities": output.get("unmapped_idea_capabilities", []),
-    })
+    }) + consistency_notes_list
 
     if unattributed or not issue_roles:
         roles_to_rerun = list(CONTENT_PIPELINE_ORDER)
