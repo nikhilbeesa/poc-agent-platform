@@ -88,6 +88,20 @@ class ProjectContext(BaseModel):
     # conflicts/gaps the next agent run(s) should fix. Agents read this
     # in build_prompt() (LIVE mode only) and it's cleared once consumed.
     resolution_notes: list[str] = Field(default_factory=list)
+    # UNLIKE resolution_notes, this never gets cleared. Every note that has
+    # ever been applied in a past resolution round is appended here and is
+    # included in EVERY future agent prompt from then on (even ones
+    # triggered by a totally unrelated issue). Without this, a decision
+    # fixed in round 2 (e.g. "this is recruiter-only, drop Candidates as a
+    # stakeholder") is only ever stated as an instruction during round 2 —
+    # by round 5, nothing tells the agent not to reintroduce it, and it's
+    # relying entirely on the LLM perfectly preserving that one detail
+    # across several further full-document regenerations. That's how a
+    # resolve loop can whack-a-mole: fixing issue A in round N, only for
+    # a round N+2 regeneration (triggered by unrelated issue B) to quietly
+    # re-drift back on A. Locking the decision in here gives every future
+    # prompt a standing "do not re-litigate this" reminder instead.
+    locked_decisions: list[str] = Field(default_factory=list)
 
     artefacts: list[Artefact] = Field(default_factory=list)
 

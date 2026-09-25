@@ -205,6 +205,13 @@ def _apply_resolution(context: ProjectContext, notes: list[str], roles_to_rerun:
     for role in roles_to_rerun:
         _AGENT_BY_ROLE[role].run(context)
     context.resolution_notes = []
+    # Lock these in permanently (see ProjectContext.locked_decisions) so a
+    # later round fixing an unrelated issue doesn't quietly undo this one.
+    # Dedup while preserving order — the same note text can otherwise pile
+    # up round after round if a gap keeps almost-but-not-quite resolving.
+    for n in notes:
+        if n not in context.locked_decisions:
+            context.locked_decisions.append(n)
 
 
 def run_gap_correction_loop(context: ProjectContext, max_rounds: int = MAX_GAP_CORRECTION_ROUNDS) -> dict:

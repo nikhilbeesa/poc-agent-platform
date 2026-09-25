@@ -33,9 +33,20 @@ class BaseAgent:
         instead of closing it. Subclasses call this from build_prompt()
         and splice the result in near the top of the prompt, ahead of the
         normal instructions. Returns "" when there's nothing to fix."""
-        if not context.resolution_notes:
+        if not context.resolution_notes and not context.locked_decisions:
             return ""
         notes = "\n".join(f"- {n}" for n in context.resolution_notes)
+        locked_block = ""
+        if context.locked_decisions:
+            locked = "\n".join(f"- {n}" for n in context.locked_decisions)
+            locked_block = f"""
+CONFIRMED DECISIONS FROM EARLIER RESOLUTION ROUNDS — these are already
+settled and MUST NOT be re-litigated, reversed, or drifted away from in
+this revision, even though none of them may be mentioned in the current
+issue list below (they're included here purely so an unrelated fix in
+this round doesn't accidentally undo a past one):
+{locked}
+"""
         previous = context.get_contribution(self.role)
         previous_block = ""
         if previous is not None:
@@ -51,7 +62,9 @@ unrelated sections from scratch, rename things that weren't flagged, or
 introduce different wording for content the issues don't mention — doing
 so creates a brand-new inconsistency in place of the one you just fixed.
 """
-        return f"""
+        current_block = ""
+        if notes:
+            current_block = f"""
 IMPORTANT — this is a revision pass. A validation step already reviewed
 the full document package and found the specific issues below. Your
 output MUST resolve every one of them that is relevant to this
@@ -59,7 +72,9 @@ document, while keeping everything else consistent with what the other
 documents already say. Do not introduce new inconsistencies while fixing
 these:
 {notes}
-{previous_block}
+"""
+        return f"""
+{locked_block}{current_block}{previous_block}
 """
 
     def mock_response(self, context: ProjectContext) -> dict:
