@@ -19,7 +19,7 @@ from export import export_all_artefacts  # noqa: E402
 from knowledge.bootstrap_seed_data import bootstrap  # noqa: E402
 from knowledge.store import get_knowledge_store  # noqa: E402
 from llm_client import get_client  # noqa: E402
-from orchestrator import AGENT_PIPELINE, resolve_handoff_issues  # noqa: E402
+from orchestrator import AGENT_PIPELINE, resolve_handoff_issues, run_gap_correction_loop  # noqa: E402
 from project_store import get_project_store  # noqa: E402
 
 app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "static"))
@@ -149,6 +149,24 @@ def run_agent(project_id, index):
         return jsonify({"error": f"agents must run in order — expected index {len(ctx.agent_contributions)}"}), 400
 
     _demo_pace()
+
+    is_last_agent = AGENT_PIPELINE[index].role == AgentRole.AI_HANDOFF_VALIDATION
+    if is_last_agent:
+        # The pipeline finishing (5 documents generated) is not the same as
+        # the package being complete — automatically run the gap-correction
+        # loop (validate, auto-repair implicated agents, re-validate) rather
+        # than surfacing a single validation pass and asking the user to
+        # notice and manually fix whatever it found.
+        gap_summary = run_gap_correction_loop(ctx)
+        contribution = ctx.get_contribution(AgentRole.AI_HANDOFF_VALIDATION)
+        return jsonify({
+            "agent": contribution.agent.value,
+            "summary": contribution.summary,
+            "output": contribution.output,
+            "consistency_notes": ctx.consistency_notes,
+            "auto_gap_correction": gap_summary,
+        })
+
     agent = AGENT_PIPELINE[index]
     contribution = agent.run(ctx)
 
@@ -173,6 +191,9 @@ def export(project_id):
 
     val = ctx.get_contribution(AgentRole.AI_HANDOFF_VALIDATION)
     handoff_status = val.output.get("final_handoff_status") if val else None
+    capability_summary = val.output.get("capability_summary") if val else None
+    outstanding_capabilities = sorted(set((val.output.get("missing_capabilities", []) if val else [])) |
+                                       set((val.output.get("partial_capabilities", []) if val else [])))
 
     store = get_project_store()
     store.save({
@@ -189,7 +210,17 @@ def export(project_id):
         ],
     })
 
+    # stage is the authoritative completeness gate: COMPLETE only when the
+    # AI Handoff Validation agent's deterministic-matrix-backed verdict is
+    # genuinely clean (see orchestrator.run_gap_correction_loop / export.py).
+    # 5 documents existing is necessary but never sufficient on its own —
+    # callers should check "stage", not just that this call returned 200.
     return jsonify({
+        "stage": ctx.stage.value,
+        "is_complete": ctx.stage.value == "complete",
+        "handoff_status": handoff_status,
+        "capability_summary": capability_summary,
+        "outstanding_capabilities": outstanding_capabilities,
         "artefacts": [
             {"type": a.type, "title": a.title, "content_markdown": a.content_markdown}
             for a in ctx.artefacts

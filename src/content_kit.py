@@ -479,18 +479,202 @@ MODULE_LIBRARY = [
         "entities": {},
         "notifications": ["Suspicious activity detected"],
     },
+    {
+        "key": "onboarding", "name": "Onboarding & Activation", "always": True,
+        "purpose": "Guides a newly-registered {buyer} or {seller} from account creation to their first successful core action, so the value of the product is obvious quickly instead of requiring them to figure it out unassisted.",
+        "actors": ["{buyer}", "{seller}"],
+        "inputs": ["Newly created account", "Role selected at signup"],
+        "processing": ["Determine the correct onboarding path for the account's role", "Track completion of each onboarding step", "Surface the next best action until the first core action is completed"],
+        "outputs": ["Onboarding progress state", "Completed/activated account"],
+        "business_rules": [
+            "Onboarding must be skippable/dismissible and must never block access to the core product.",
+            "An account's onboarding state must persist across sessions and devices.",
+        ],
+        "fr": [
+            {"name": "Guided First-Run Walkthrough", "description": "The system shall present a short, dismissible guided walkthrough of the core workflow the first time a new {buyer} or {seller} account signs in.", "priority": "P1"},
+            {"name": "Onboarding Progress Checklist", "description": "The system shall show a role-appropriate checklist of setup steps (e.g. complete profile, add first {item}, set availability) and track which are completed.", "priority": "P2"},
+            {"name": "Skip / Resume Onboarding", "description": "The system shall allow a user to skip onboarding at any point and resume it later from account settings without losing progress already made.", "priority": "P2"},
+        ],
+        "entities": {"OnboardingProgress": ["Account ID", "Step", "Status", "Completed date"]},
+        "notifications": ["Onboarding step reminder"],
+    },
+    {
+        "key": "privacy_consent", "name": "Privacy, Consent & Data Retention", "always": True,
+        "purpose": "Gives users control over their own data — requesting a copy of it, deleting their account, and managing consent for optional data uses — and ensures the platform actually enforces its stated retention policy rather than only describing one.",
+        "actors": ["{buyer}", "{seller}", "Admin"],
+        "inputs": ["Account deletion request", "Data export/access request", "Consent choices"],
+        "processing": [
+            "Authenticate the requesting user before acting on a deletion or export request",
+            "Delete or irreversibly anonymize personal data not otherwise required to be retained, within the published retention window",
+            "Package a machine-readable export of the user's own data on request",
+            "Record and honor granular consent choices for optional (non-essential) data uses",
+        ],
+        "outputs": ["Deletion confirmation", "Data export file", "Updated consent record"],
+        "business_rules": [
+            "A user-initiated account deletion request must be honored within the platform's published retention/deletion window; data required for legal/financial record-keeping may be retained only as long as that obligation requires, clearly separate from the rest of the deleted account.",
+            "A user may withdraw consent for any optional (non-essential) data use at any time, without needing to delete their entire account.",
+            "Withdrawing optional consent or requesting deletion must never be harder to do than the original opt-in/signup action.",
+        ],
+        "fr": [
+            {"name": "Request Account Deletion", "description": "The system shall allow a {buyer} or {seller} to request deletion of their account and associated personal data, confirm the request, and receive confirmation once it has been processed.", "priority": "P1"},
+            {"name": "Data Export / Right to Access", "description": "The system shall allow a user to request and receive a machine-readable export of the personal data the platform holds about them.", "priority": "P2"},
+            {"name": "Consent Management", "description": "The system shall let a user view and change their consent choices for optional (non-essential) data uses, separate from the notification-preferences settings.", "priority": "P2"},
+            {"name": "Data Retention Enforcement", "description": "The system shall automatically enforce the platform's data retention policy, removing or anonymizing personal data once its retention period has elapsed, independent of an explicit deletion request.", "priority": "P2"},
+        ],
+        "entities": {"PrivacyRequest": ["Request ID", "Account ID", "Type", "Status", "Requested date", "Completed date"]},
+        "notifications": ["Deletion request received", "Deletion completed", "Data export ready"],
+    },
+    {
+        "key": "ai_features", "name": "AI-Powered Features",
+        "keywords": ("artificial intelligence", "machine learning", " ai ", " ai-", "ai-powered", "ai powered",
+                     "recommend", "personali", "predict", "smart match", "auto-generat", "autogenerat",
+                     "generat", "chatbot", " nlp", "assistant", "matching algorithm", "smart suggest"),
+        "purpose": "Applies an AI/ML component to the core workflow to produce a {buyer}-facing recommendation, generated content, or prediction — specified as concrete product behavior (defined input, trigger, output, confidence handling, and a safe fallback), not just \"AI\" as an unspecified add-on.",
+        "actors": ["{buyer}", "{seller}", "Admin"],
+        "inputs": ["User/behavioral data the user has consented to use", "The specific triggering event or user action", "Relevant {catalog_name} data"],
+        "processing": [
+            "Assemble the defined input data at the defined trigger point",
+            "Run the AI/ML component to produce a recommendation, generated content, or prediction",
+            "Attach a confidence signal and route low-confidence output to the defined fallback instead of presenting it as authoritative",
+            "Log the input summary, output, and user action taken on it (accepted, edited, dismissed) for quality review",
+        ],
+        "outputs": ["AI-generated recommendation, content, or prediction, clearly labeled as such", "Fallback (non-AI) result when confidence is low or the component fails"],
+        "business_rules": [
+            "Every AI-generated recommendation or content item must be clearly labeled as AI-generated and must be reviewable and overridable by the user before it has any binding effect.",
+            "If the AI component's confidence falls below the configured threshold, or the component fails or times out, the system must fall back to the defined non-AI default rather than presenting a low-confidence or absent result as authoritative.",
+            "AI input data usage must be disclosed to the user, and the user must be able to opt out of AI-personalized features, falling back to the non-personalized experience rather than losing access to the product.",
+        ],
+        "fr": [
+            {"name": "Generate AI Recommendation / Output", "description": "The system shall generate an AI-produced recommendation, piece of content, or prediction for the {buyer} based on defined input data and a defined trigger, and shall present it as a suggestion the user can accept, edit, or dismiss rather than an automatic action taken on their behalf.", "priority": "P1"},
+            {"name": "Explain AI Result", "description": "The system shall provide a short, human-readable explanation of why a given AI output was produced whenever that output affects something the user must decide on.", "priority": "P2"},
+            {"name": "Override / Edit AI Output", "description": "The system shall allow the user to edit or fully override any AI-generated content or recommendation before it is acted upon, saved, or published.", "priority": "P1"},
+            {"name": "AI Failure & Low-Confidence Fallback", "description": "If the AI component fails, times out, or returns a result below the configured confidence threshold, the system shall fall back to a clearly labeled non-AI default (e.g. manual search/browse, a neutral empty state with guidance) rather than blocking the user or silently presenting a guess as fact.", "priority": "P1"},
+            {"name": "AI Data Usage & Opt-Out Controls", "description": "The system shall disclose what user data is used as AI input and shall let the user opt out of AI-personalized features, reverting to the non-personalized experience.", "priority": "P2"},
+        ],
+        "entities": {"AIRecommendation": ["Recommendation ID", "User ID", "Input summary", "Output", "Confidence score", "Model/version", "User action (accepted/edited/dismissed)", "Created date"]},
+        "notifications": [],
+    },
+    {
+        "key": "data_export_import", "name": "Data Export & Import",
+        "keywords": ("export", "import their", "bulk upload", "csv", "download my data", "download their data",
+                     "backup my data", "backup their data", "spreadsheet upload", "bulk import"),
+        "purpose": "Lets a user or Admin move data into or out of the platform in bulk — importing existing records so they don't have to be re-entered one at a time, and exporting data for reporting, backup, or migration.",
+        "actors": ["{seller}", "Admin"],
+        "inputs": ["Source file (CSV/spreadsheet)", "Export filter/date-range selection"],
+        "processing": ["Validate an uploaded file's structure and required fields before importing", "Report row-level import errors without discarding the rows that succeeded", "Assemble the requested export within the requesting user's access scope", "Generate a downloadable export file"],
+        "outputs": ["Import result summary (succeeded/failed rows)", "Downloadable export file"],
+        "business_rules": [
+            "An import must validate every row before committing any of them, and must report exactly which rows failed and why rather than failing the whole batch silently.",
+            "An export may only include data the requesting user/role is authorized to see.",
+        ],
+        "fr": [
+            {"name": "Export Data", "description": "The system shall allow an authorized user to export a filtered set of their data (e.g. {item}s, {transaction}s) to a common file format (CSV), respecting the same access restrictions as viewing that data in-app.", "priority": "P2"},
+            {"name": "Bulk Import Data", "description": "The system shall allow an authorized user to bulk-import records from a CSV/spreadsheet file, validating required fields and reporting row-level errors before committing successful rows.", "priority": "P2"},
+            {"name": "Import Validation & Error Report", "description": "The system shall produce a clear, row-referenced error report for any import rows that failed validation, so the user can correct and re-submit just those rows.", "priority": "P2"},
+        ],
+        "entities": {"ImportExportJob": ["Job ID", "Type", "Requested by", "Status", "Row count", "Error count", "Created date"]},
+        "notifications": ["Export ready", "Import completed", "Import completed with errors"],
+    },
+    {
+        "key": "integrations_module", "name": "Third-Party Integrations",
+        "keywords": ("integrat", "connect your", "connect to", "connect their", "sync with", "sync their",
+                     "calendar", "webhook", "zapier", "slack", "google calendar", "third-party", "third party",
+                     "plug in to", "api access"),
+        "purpose": "Lets a user connect an external, third-party service to the platform so data or actions stay in sync without manual re-entry (e.g. a calendar, a messaging tool, or another business system).",
+        "actors": ["{buyer}", "{seller}", "Admin"],
+        "inputs": ["Third-party account authorization (OAuth or API key)", "Sync/connection settings"],
+        "processing": ["Authenticate and authorize the connection to the third-party service", "Sync data between the platform and the connected service on the defined schedule/trigger", "Detect and surface sync failures rather than failing silently", "Allow the connection to be revoked"],
+        "outputs": ["Active connection status", "Sync result/log", "Disconnected status"],
+        "business_rules": [
+            "A third-party connection must be re-authorizable and revocable by the user at any time from within the product.",
+            "A sync failure must be surfaced to the user with a clear next step, never silently dropped.",
+        ],
+        "fr": [
+            {"name": "Connect Third-Party Account", "description": "The system shall allow a user to authorize a connection to a supported third-party service and confirm the connection succeeded.", "priority": "P2"},
+            {"name": "Manage Connected Integrations", "description": "The system shall let a user view their currently connected integrations and the data each one syncs.", "priority": "P2"},
+            {"name": "Integration Sync Failure Handling", "description": "The system shall detect a failed sync with a connected third-party service and notify the affected user with a clear explanation and next step.", "priority": "P2"},
+            {"name": "Disconnect Integration", "description": "The system shall allow a user to revoke/disconnect a previously connected third-party integration at any time.", "priority": "P2"},
+        ],
+        "entities": {"IntegrationConnection": ["Connection ID", "Account ID", "Provider", "Status", "Last synced", "Scopes granted"]},
+        "notifications": ["Integration connected", "Sync failed", "Integration disconnected"],
+    },
+    {
+        "key": "offline_sync", "name": "Offline Access & Synchronization",
+        "keywords": ("offline", "no internet", "airplane mode", "works without", "local cache", "poor connectivity",
+                     "low connectivity", "spotty connection"),
+        "purpose": "Lets a user keep working when connectivity drops and reconciles their changes once the connection returns, so a temporary loss of network access doesn't block or lose their work.",
+        "actors": ["{buyer}", "{seller}"],
+        "inputs": ["Locally cached data", "Queued offline actions"],
+        "processing": ["Cache the data a user needs for their core workflow for offline access", "Queue state-changing actions performed while offline", "Detect connectivity restoration and replay the queued actions", "Detect and surface conflicts between an offline change and a newer server-side change"],
+        "outputs": ["Synced/up-to-date data", "Conflict requiring user resolution, where one exists"],
+        "business_rules": [
+            "An action performed offline must never be silently lost; it is either applied on reconnect or surfaced to the user as a conflict to resolve.",
+            "The user must always be able to see whether the data they're viewing is fully synced or reflects a pending/queued state.",
+        ],
+        "fr": [
+            {"name": "Offline Data Access", "description": "The system shall let a user view previously loaded, relevant data while offline, clearly indicating that the view may not reflect the latest server state.", "priority": "P2"},
+            {"name": "Queue Actions While Offline", "description": "The system shall queue state-changing actions performed while offline and automatically attempt to apply them once connectivity is restored.", "priority": "P2"},
+            {"name": "Conflict Resolution on Sync", "description": "The system shall detect a conflict between a queued offline change and a newer server-side change, and shall surface it to the user for resolution rather than silently overwriting either version.", "priority": "P2"},
+            {"name": "Sync Status Indicator", "description": "The system shall show the user a clear, always-visible indicator of current sync status (synced, syncing, offline/pending).", "priority": "P3"},
+        ],
+        "entities": {"SyncQueueItem": ["Item ID", "Account ID", "Action type", "Payload summary", "Status", "Queued date", "Synced date"]},
+        "notifications": ["Sync completed", "Sync conflict needs your attention"],
+    },
+    {
+        "key": "subscription_billing", "name": "Subscription & Plan Management",
+        "keywords": ("subscription", "recurring billing", "membership plan", "monthly plan", "annual plan",
+                     "plan tier", "upgrade plan", "downgrade plan", "free trial", "premium plan", "pricing tier"),
+        "purpose": "Lets a user choose, change, and pay for a recurring subscription plan, and gives the business a reliable way to gate premium functionality by the user's current plan/entitlement.",
+        "actors": ["{buyer}", "{seller}", "Admin"],
+        "inputs": ["Selected plan/tier", "Billing cycle", "Payment method"],
+        "processing": ["Start a subscription on the selected plan and billing cycle", "Charge the recurring amount on each billing cycle via the payment processor", "Apply an upgrade/downgrade at the correct proration/effective point", "Handle a failed recurring charge with a defined retry and grace period", "Gate premium functionality based on the account's current entitlement"],
+        "outputs": ["Active subscription status", "Updated entitlement", "Invoice/receipt"],
+        "business_rules": [
+            "A user's access to premium functionality must always reflect their current entitlement, re-evaluated on every relevant action, not just at login.",
+            "A failed recurring charge must not immediately revoke access; the account enters a defined grace period with a clear notification before downgrade.",
+            "Cancelling a subscription must be no more difficult than starting one, and must clearly state what happens to access and data at cancellation.",
+        ],
+        "fr": [
+            {"name": "Select / Start Subscription Plan", "description": "The system shall let a user choose a subscription plan and billing cycle, review the price, and confirm to start the subscription.", "priority": "P1"},
+            {"name": "Upgrade / Downgrade Plan", "description": "The system shall let a subscribed user change to a different plan, applying the platform's proration policy and updating entitlement at the correct effective point.", "priority": "P2"},
+            {"name": "Cancel Subscription", "description": "The system shall let a user cancel their subscription, clearly stating what happens to access and data at cancellation and confirming the cancellation.", "priority": "P1"},
+            {"name": "Failed Recurring Payment Handling", "description": "The system shall detect a failed recurring charge, notify the user, and apply the platform's grace-period policy before restricting access.", "priority": "P1"},
+            {"name": "Entitlement Gating", "description": "The system shall gate access to plan-specific functionality based on the account's current entitlement, evaluated on each relevant action.", "priority": "P1"},
+        ],
+        "entities": {"Subscription": ["Subscription ID", "Account ID", "Plan", "Billing cycle", "Status", "Current period end", "Created date"]},
+        "notifications": ["Subscription started", "Payment failed — grace period", "Subscription cancelled", "Plan changed"],
+    },
 ]
+
+
+def _idea_and_answers_text(context) -> str:
+    parts = [context.business_idea_raw or ""]
+    for q in context.discovery_questions:
+        if q.answer:
+            parts.append(str(q.answer))
+    return (" " + " ".join(parts).lower() + " ")
 
 
 def select_modules(context) -> list[dict]:
     """Pick the modules relevant to this project's domain and resolve every
     {buyer}/{seller}/{item}/.../placeholder against the domain vocabulary,
-    returning fully-formatted module dicts ready to render."""
+    returning fully-formatted module dicts ready to render.
+
+    A module is included if it's always-on, if it's gated to this specific
+    domain, OR if the raw business idea / discovery answers contain one of
+    its trigger keywords — so a capability the idea clearly calls for (AI
+    features, offline support, integrations, bulk import/export,
+    subscriptions) is never silently dropped just because it isn't part of
+    the fixed domain template, per the platform's completeness rules."""
     domain = context.domain_classification
     vocab = get_vocab(domain)
+    idea_text = _idea_and_answers_text(context)
     selected = []
     for m in MODULE_LIBRARY:
-        if not (m.get("always") or domain in m.get("domains", ())):
+        include = bool(m.get("always")) or domain in m.get("domains", ())
+        if not include and m.get("keywords"):
+            include = any(kw in idea_text for kw in m["keywords"])
+        if not include:
             continue
         resolved = {
             "key": m["key"],
@@ -719,10 +903,10 @@ def build_notifications_matrix(modules, context) -> list[dict]:
         for event in m["notifications"]:
             rows.append({
                 "event": event,
-                "buyer": "Yes" if any(k in m["key"] for k in ("authentication", "user_profile", "transaction", "payments", "reviews", "support", "scheduling", "notifications_module")) else "—",
-                "seller": "Yes" if m["key"] in ("catalog", "transaction", "provider_management", "payments", "scheduling", "reviews", "trust_safety", "fulfilment", "authentication", "support") else "—",
-                "admin": "Yes" if m["key"] in ("provider_management", "trust_safety", "security", "admin_ops", "support") else "—",
-                "channel": "Email + In-app" if m["key"] in ("authentication", "payments") else "In-app + Push",
+                "buyer": "Yes" if any(k in m["key"] for k in ("authentication", "user_profile", "transaction", "payments", "reviews", "support", "scheduling", "notifications_module", "onboarding", "privacy_consent", "subscription_billing", "offline_sync", "integrations_module", "data_export_import")) else "—",
+                "seller": "Yes" if m["key"] in ("catalog", "transaction", "provider_management", "payments", "scheduling", "reviews", "trust_safety", "fulfilment", "authentication", "support", "onboarding", "subscription_billing", "data_export_import", "integrations_module") else "—",
+                "admin": "Yes" if m["key"] in ("provider_management", "trust_safety", "security", "admin_ops", "support", "privacy_consent", "data_export_import") else "—",
+                "channel": "Email + In-app" if m["key"] in ("authentication", "payments", "subscription_billing", "privacy_consent") else "In-app + Push",
             })
     return rows
 
@@ -773,6 +957,12 @@ def build_integrations(modules, context) -> list[dict]:
     integrations.append({"integration": "Analytics", "purpose": "Captures product usage events for the metrics defined in this document.", "requirements": "Event-based tracking; vendor TBD."})
     if any(m["key"] == "trust_safety" for m in modules):
         integrations.append({"integration": "Identity Verification", "purpose": "Verifies user-submitted identity documents.", "requirements": "Document capture and verification; vendor TBD."})
+    if any(m["key"] == "ai_features" for m in modules):
+        integrations.append({"integration": "AI / ML Provider", "purpose": "Supplies the recommendation/generation/prediction model behind the AI-Powered Features module.", "requirements": "Confidence score per response; bounded latency with a timeout; vendor/model TBD."})
+    if any(m["key"] == "integrations_module" for m in modules):
+        integrations.append({"integration": "Third-Party Connections (user-configured)", "purpose": "Supports the externally-connected services users link from the Third-Party Integrations module.", "requirements": "OAuth-based authorization where the provider supports it; revocable per user; specific providers TBD."})
+    if any(m["key"] == "subscription_billing" for m in modules):
+        integrations.append({"integration": "Recurring Billing Provider", "purpose": "Processes recurring subscription charges, retries, and dunning for the Subscription & Plan Management module.", "requirements": "Webhook support for payment success/failure events; PCI-compliant; vendor TBD."})
     return integrations
 
 

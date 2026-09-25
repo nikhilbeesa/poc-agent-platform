@@ -1,0 +1,39 @@
+{
+  "name": "Ai-Powered Recommends",
+  "description": "A newly-learned domain, inferred from an idea that didn't match existing domains: \"An AI-powered app that recommends personalized workout plans, syncs with wearables, works offline at the gym, and offers a monthly subscription for premium coaching\"",
+  "typical_modules": [
+    "core workflow",
+    "user accounts",
+    "notifications"
+  ],
+  "seed_questions": [
+    {
+      "id": "ai_powered_recommends_users",
+      "text": "Who are the primary users of this platform?",
+      "category": "users",
+      "options": [
+        "Individual consumers",
+        "Small businesses",
+        "Enterprise teams",
+        "Multiple user types"
+      ]
+    },
+    {
+      "id": "ai_powered_recommends_value",
+      "text": "What's the core value this delivers to those users?",
+      "category": "value_proposition",
+      "options": []
+    },
+    {
+      "id": "ai_powered_recommends_scale",
+      "text": "Roughly how many users/transactions do you expect early on?",
+      "category": "scale",
+      "options": [
+        "Under 100",
+        "100\u20131,000",
+        "1,000\u201310,000",
+        "10,000+"
+      ]
+    }
+  ]
+}

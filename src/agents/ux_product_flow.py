@@ -15,7 +15,7 @@ import content_kit as ck  # noqa: E402
 
 class UXProductFlowAgent(BaseAgent):
     role = AgentRole.UX_PRODUCT_FLOW
-    max_output_tokens = 8000
+    max_output_tokens = 12000
 
     def build_prompt(self, context: ProjectContext) -> str:
         ba = context.get_contribution(AgentRole.BUSINESS_ANALYST)
@@ -62,6 +62,13 @@ full field-level detail (purpose, type, required, validation, default)
 for every data-entry screen; navigation structure; notifications &
 feedback patterns; a role/permission matrix (view/edit/approve/reject);
 responsive requirements; and accessibility requirements.
+
+CRITICAL TRACEABILITY RULE: every single functional requirement id listed
+above must appear in related_requirement_ids of at least one screen OR at
+least one user flow — there must be no functional requirement left with
+no screen and no flow. Before finalizing, check every FR id off this
+list; if one has no home, add the screen/flow it needs rather than
+leaving it out.
 
 Respond ONLY with JSON in exactly this shape:
 {{

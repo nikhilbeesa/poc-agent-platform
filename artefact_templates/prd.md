@@ -53,17 +53,31 @@
 ## 16. Security, Privacy & Access Constraints
 {{security_privacy_access_constraints}}
 
-## 17. Success Metrics
-{{success_metrics}}
+## 17. AI Feature Specifications
+{{ai_feature_specifications}}
 
-## 18. Out of Scope
+## 18. MVP / Phase 2 / Future Scope
+
+### MVP Scope
+{{mvp_scope}}
+
+### Phase 2 Scope
+{{phase_2_scope}}
+
+### Future Scope
+{{future_scope}}
+
+### Out of Scope
 {{out_of_scope}}
 
-## 19. Dependencies
+## 19. Success Metrics
+{{success_metrics}}
+
+## 20. Dependencies
 {{dependencies}}
 
-## 20. Assumptions
+## 21. Assumptions
 {{assumptions}}
 
-## 21. Release Plan
+## 22. Release Plan
 {{release_milestones}}

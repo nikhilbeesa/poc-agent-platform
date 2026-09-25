@@ -19,7 +19,7 @@ import content_kit as ck  # noqa: E402
 
 class ProductManagerAgent(BaseAgent):
     role = AgentRole.PRODUCT_MANAGER
-    max_output_tokens = 8000
+    max_output_tokens = 12000
 
     def build_prompt(self, context: ProjectContext) -> str:
         ba = context.get_contribution(AgentRole.BUSINESS_ANALYST)
@@ -55,6 +55,14 @@ leave the list empty only if the story genuinely has no prerequisite).
 Also produce a priority table (High/Medium/Low with a short note) for
 every story, tied to the originating requirement's priority (P0/P1 ->
 High, P2 -> Medium, P3 -> Low).
+
+CRITICAL — related_fr_ids must be accurate, not just plausible: each
+story's related_fr_ids must reference ONLY the FR id(s) it's actually
+converting. Never link a story to an FR from an unrelated capability for
+convenience or padding — e.g. a User Registration story must never list
+a Payments/Banking FR id in related_fr_ids, and vice versa, even if both
+happen to be P0. A wrong mapping here breaks traceability for every
+downstream document.
 
 Respond ONLY with JSON in exactly this shape:
 {{

@@ -11,6 +11,26 @@ consumed by an independent, external Design AI Agent.*
 
 {{recommendation}}
 
+## Readiness Summary
+
+{{readiness_summary}}
+
+## Capability Coverage Matrix
+
+Every major capability identified in the Business Requirements is checked
+end-to-end across all four upstream documents. A capability must be
+✅ Complete (or N/A with a documented reason) in every column to be
+considered done — ⚠️ Partial or ❌ Missing means real, unresolved work
+remains in that document.
+
+{{coverage_matrix_table}}
+
+### Capabilities With Unresolved Gaps
+{{gap_capabilities}}
+
+### Capabilities Implied By The Business Idea But Not Yet Represented At All
+{{unmapped_idea_capabilities}}
+
 ## Completeness Check
 {{completeness_notes}}
 
@@ -25,3 +45,4 @@ consumed by an independent, external Design AI Agent.*
 
 ## Missing Information
 {{missing_information}}
+

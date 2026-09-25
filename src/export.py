@@ -512,6 +512,37 @@ def export_prd(context: ProjectContext) -> Artefact:
         f"- **{m.get('milestone', '?')}**: {m.get('description', '')}" for m in o.get("release_milestones", [])
     ) or "- None specified"
 
+    def _kv_block_with_notes(d: dict, notes_key: str, notes_label: str) -> str:
+        base = dict(d)
+        capability_notes = base.pop(notes_key, [])
+        text = _kv_block(base)
+        if capability_notes:
+            notes_text = "\n".join(f"  - **{n.get('capability', '?')}:** {n.get('note', '')}" for n in capability_notes)
+            text += f"\n- **{notes_label}:**\n{notes_text}"
+        return text
+
+    def _render_ai_feature(f: dict) -> str:
+        return (
+            f"### {f.get('feature', 'Untitled AI Feature')}" + (f" ({f['related_fr']})" if f.get("related_fr") else "") + "\n"
+            f"- **Purpose:** {f.get('purpose', 'N/A')}\n"
+            f"- **Input data:** {f.get('input_data', 'N/A')}\n"
+            f"- **Trigger:** {f.get('trigger', 'N/A')}\n"
+            f"- **Processing behavior:** {f.get('processing_behavior', 'N/A')}\n"
+            f"- **Output:** {f.get('output', 'N/A')}\n"
+            f"- **Confidence handling:** {f.get('confidence_handling', 'N/A')}\n"
+            f"- **Explainability:** {f.get('explainability', 'N/A')}\n"
+            f"- **User control:** {f.get('user_control', 'N/A')}\n"
+            f"- **Edit/override behavior:** {f.get('edit_override_behavior', 'N/A')}\n"
+            f"- **Failure behavior:** {f.get('failure_behavior', 'N/A')}\n"
+            f"- **Fallback behavior:** {f.get('fallback_behavior', 'N/A')}\n"
+            f"- **Privacy considerations:** {f.get('privacy_considerations', 'N/A')}\n"
+            f"- **Data usage:** {f.get('data_usage', 'N/A')}\n"
+            f"- **Security considerations:** {f.get('security_considerations', 'N/A')}\n"
+            f"- **Performance expectations:** {f.get('performance_expectations', 'N/A')}\n"
+        )
+    ai_features_text = "\n".join(_render_ai_feature(f) for f in o.get("ai_feature_specifications", [])) or \
+        "*This product has no AI-powered features per the business idea and discovery answers.*"
+
     values = {
         "project_name": _project_name(context),
         "generated_date": _date(),
@@ -530,8 +561,12 @@ def export_prd(context: ProjectContext) -> Artefact:
         "state_behaviors": _kv_block(o.get("state_behaviors", {})),
         "audit_and_versioning": o.get("audit_and_versioning", "Not specified"),
         "non_functional_requirements": o.get("non_functional_requirements", []),
-        "technical_integration_constraints": _kv_block(o.get("technical_integration_constraints", {})),
-        "security_privacy_access_constraints": _kv_block(o.get("security_privacy_access_constraints", {})),
+        "technical_integration_constraints": _kv_block_with_notes(o.get("technical_integration_constraints", {}), "capability_technical_notes", "Per-capability technical notes"),
+        "security_privacy_access_constraints": _kv_block_with_notes(o.get("security_privacy_access_constraints", {}), "capability_security_notes", "Per-capability security notes"),
+        "ai_feature_specifications": ai_features_text,
+        "mvp_scope": o.get("mvp_scope", []) or ["Not specified"],
+        "phase_2_scope": o.get("phase_2_scope", []) or ["None specified"],
+        "future_scope": o.get("future_scope", []) or ["None specified"],
         "success_metrics": o.get("success_metrics", []),
         "out_of_scope": o.get("out_of_scope", []),
         "dependencies": o.get("dependencies", []),
@@ -681,11 +716,40 @@ def export_ai_handoff_validation(context: ProjectContext) -> Artefact:
         for m in missing
     ) or "- None found."
 
+    totals = o.get("capability_summary", {})
+    readiness_summary = (
+        f"- **Total capabilities identified:** {totals.get('capabilities', 'N/A')}\n"
+        f"- **Total Business Requirements:** {totals.get('business_requirements', 'N/A')}\n"
+        f"- **Total PRD Functional Requirements:** {totals.get('prd_features', 'N/A')}\n"
+        f"- **Total User Stories:** {totals.get('user_stories', 'N/A')}\n"
+        f"- **Total UX Screens:** {totals.get('ux_screens', 'N/A')} / **UX Flows:** {totals.get('ux_flows', 'N/A')}\n"
+        f"- **Deterministic coverage:** {totals.get('coverage_percentage', 'N/A')}%\n"
+        f"- **Missing capabilities:** {len(o.get('missing_capabilities', []))}\n"
+        f"- **Partial capabilities:** {len(o.get('partial_capabilities', []))}\n"
+        f"- **Capabilities implied by the idea but unrepresented:** {len(o.get('unmapped_idea_capabilities', []))}"
+    )
+
+    matrix_rows = o.get("coverage_matrix", [])
+    matrix_table = _table(
+        ["Capability", "FR IDs", "BRD", "PRD", "User Story", "UX", "Technical", "Security", "Notes"],
+        [[r.get("capability", ""), ", ".join(r.get("fr_ids", [])) or "—", r.get("brd", ""), r.get("prd", ""),
+          r.get("user_story", ""), r.get("ux", ""), r.get("technical", ""), r.get("security", ""),
+          "; ".join(r.get("notes", [])) or ""] for r in matrix_rows],
+    )
+
+    gap_caps = sorted(set(o.get("missing_capabilities", [])) | set(o.get("partial_capabilities", [])))
+    gap_capabilities_text = _bullets(gap_caps) if gap_caps else "- None — every capability is fully covered."
+    unmapped_text = _bullets(o.get("unmapped_idea_capabilities", [])) if o.get("unmapped_idea_capabilities") else "- None."
+
     values = {
         "project_name": _project_name(context),
         "generated_date": _date(),
         "final_handoff_status": o.get("final_handoff_status", "UNKNOWN"),
         "recommendation": o.get("recommendation", "Not specified"),
+        "readiness_summary": readiness_summary,
+        "coverage_matrix_table": matrix_table,
+        "gap_capabilities": gap_capabilities_text,
+        "unmapped_idea_capabilities": unmapped_text,
         "completeness_notes": o.get("completeness_notes", []),
         "consistency_notes": o.get("consistency_notes", []),
         "design_readiness_notes": o.get("design_readiness_notes", []),
@@ -713,9 +777,32 @@ def export_all_artefacts(context: ProjectContext) -> ProjectContext:
         export_ai_handoff_validation(context),
     ]
     context.artefacts = artefacts
-    context.stage = ProjectStage.COMPLETE
+    # Exporting the 5 files is NOT what makes the package complete — a
+    # document existing and a document being genuinely gap-free are
+    # different things. Completion is decided solely by the AI Handoff
+    # Validation agent's actual (deterministic-matrix-backed) verdict, set
+    # by the orchestrator's gap-correction loop (see orchestrator.py). If
+    # that loop hasn't run, or ran and still found real gaps, stage stays
+    # at REVIEW — export never upgrades it to COMPLETE on its own.
+    val = context.get_contribution(AgentRole.AI_HANDOFF_VALIDATION)
+    if val is not None:
+        output = val.output
+        matrix_gap = any(
+            row.get(col) in ("⚠️ Partial", "❌ Missing")
+            for row in output.get("coverage_matrix", [])
+            for col in ("brd", "prd", "user_story", "ux", "technical", "security")
+        ) or bool(output.get("unmapped_idea_capabilities"))
+        is_clean = (
+            output.get("final_handoff_status") == "READY FOR DESIGN AGENT"
+            and not output.get("conflicts_found")
+            and not output.get("missing_information")
+            and not matrix_gap
+        )
+        context.stage = ProjectStage.COMPLETE if is_clean else ProjectStage.REVIEW
+    else:
+        context.stage = ProjectStage.REVIEW
 
-    log_agent_call(logger, context.project_id, "export", "completed", {"count": len(artefacts)})
+    log_agent_call(logger, context.project_id, "export", "completed", {"count": len(artefacts), "stage": context.stage.value})
     return context
 
 
@@ -732,7 +819,7 @@ def save_artefacts_to_disk(context: ProjectContext, output_dir: str) -> list:
 
 if __name__ == "__main__":
     from context import DiscoveryQuestion
-    from orchestrator import run_agent_pipeline
+    from orchestrator import run_full_pipeline
 
     ctx = ProjectContext(business_idea_raw="An app where people can book home cleaners for one-off or recurring visits")
     ctx.domain_classification = "booking_platform"
@@ -741,11 +828,12 @@ if __name__ == "__main__":
         DiscoveryQuestion(id="q2", text="Payment timing?", category="payments", status="answered", answer="At time of booking"),
     ]
 
-    ctx = run_agent_pipeline(ctx)
+    summary = run_full_pipeline(ctx)
     ctx = export_all_artefacts(ctx)
     paths = save_artefacts_to_disk(ctx, "/tmp/poc_export_test")
 
     print(f"Stage: {ctx.stage.value}")
+    print(f"Gap-correction summary: {summary}")
     print(f"Artefacts exported: {len(ctx.artefacts)}")
     for p in paths:
         print(f"  - {p}")

@@ -7,10 +7,10 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from context import AgentRole, ProjectContext  # noqa: E402
+from context import AgentRole, ProjectContext, ProjectStage  # noqa: E402
 from discovery import is_discovery_complete, run_discovery  # noqa: E402
 from export import export_all_artefacts, save_artefacts_to_disk  # noqa: E402
-from orchestrator import AGENT_PIPELINE, run_agent_pipeline  # noqa: E402
+from orchestrator import AGENT_PIPELINE, run_full_pipeline  # noqa: E402
 
 EXPECTED_ARTEFACT_COUNT = 5  # business_requirements, user_stories, prd, ux_product_flow_specification, ai_handoff_validation
 
@@ -19,6 +19,7 @@ SAMPLE_IDEAS = [
     "An online store selling handmade candles and shipping them nationwide",
     "A platform connecting freelance photographers with couples planning weddings",
     "A tool that helps small farms track crop yields and equipment maintenance",  # unseen domain
+    "An AI-powered app that recommends personalized workout plans, syncs with wearables, works offline at the gym, and offers a monthly subscription for premium coaching",  # forces AI/offline/integrations/subscription modules
 ]
 
 
@@ -34,12 +35,13 @@ def run_one(idea: str) -> dict:
     auto_answer_all(ctx)
     discovery_ok = is_discovery_complete(ctx)
 
-    ctx = run_agent_pipeline(ctx)
+    gap_summary = run_full_pipeline(ctx)
     ctx = export_all_artefacts(ctx)
 
     val = ctx.get_contribution(AgentRole.AI_HANDOFF_VALIDATION)
     status = val.output.get("final_handoff_status", "unknown") if val else "unknown"
     conflicts = val.output.get("conflicts_found", []) if val else []
+    coverage_pct = val.output.get("capability_summary", {}).get("coverage_percentage") if val else None
 
     out_dir = f"/tmp/e2e_export/{ctx.project_id[:8]}_{ctx.domain_classification}"
     saved_paths = save_artefacts_to_disk(ctx, out_dir)
@@ -49,6 +51,8 @@ def run_one(idea: str) -> dict:
         "discovery_complete": discovery_ok, "contributions": len(ctx.agent_contributions),
         "expected_agents": len(AGENT_PIPELINE), "artefacts": len(ctx.artefacts),
         "status": status, "conflicts": conflicts, "saved_paths": saved_paths, "context": ctx,
+        "gap_summary": gap_summary, "coverage_pct": coverage_pct,
+        "genuinely_complete": ctx.stage == ProjectStage.COMPLETE,
     }
 
 
@@ -69,6 +73,7 @@ def main() -> None:
             print(f"  agent contributions: {r['contributions']}/{r['expected_agents']}")
             print(f"  artefacts exported: {r['artefacts']}/{EXPECTED_ARTEFACT_COUNT}")
             print(f"  AI Handoff Validation status: {r['status']}" + (f"  ({len(r['conflicts'])} conflict(s))" if r["conflicts"] else ""))
+            print(f"  capability coverage: {r['coverage_pct']}%  |  genuinely COMPLETE (not just 5 files): {r['genuinely_complete']}  |  gap-correction rounds used: {r['gap_summary']['rounds_used']}")
             print(f"  status: {'PASS' if passed else 'PARTIAL'}")
         except Exception as e:
             r = {"idea": idea, "error": str(e)}

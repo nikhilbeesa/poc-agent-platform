@@ -20,7 +20,7 @@ import content_kit as ck  # noqa: E402
 
 class BusinessAnalystAgent(BaseAgent):
     role = AgentRole.BUSINESS_ANALYST
-    max_output_tokens = 8000
+    max_output_tokens = 12000
 
     def build_prompt(self, context: ProjectContext) -> str:
         answered = "\n".join(f"- {q.text} -> {q.answer}" for q in context.discovery_questions if q.answer)
@@ -37,6 +37,28 @@ Domain: {context.domain_classification}
 
 Answered discovery questions:
 {answered}
+
+BEFORE writing anything, build a complete internal capability inventory
+from BOTH the business idea text AND the discovery answers together (both
+are source of truth — never rely on only one). Walk this checklist and
+include every capability that's relevant to THIS product, even if the
+discovery answers never explicitly mentioned it, whenever it's logically
+required for the stated product to function: user registration;
+authentication; user profile; roles & permissions; onboarding; the core
+business functionality itself; CRUD operations on the core entities;
+search; filtering; sorting; categories/taxonomy; a dashboard/home view;
+notifications & alerts; settings & preferences; payments; subscription/
+recurring billing; reports; analytics; data export/import; third-party
+integrations; AI/ML functionality (recommendations, generated content,
+predictions, matching, a chatbot/assistant — spec it as real product
+behavior per the AI Feature rule below, never just name-drop "AI
+features"); offline functionality & synchronization; error handling;
+admin/back-office functionality; data management; privacy; security;
+account deletion; data retention; compliance; performance; scalability;
+accessibility. Only include what's actually relevant to this specific
+product — do not force in a capability that plainly doesn't apply (e.g.
+skip payments for a purely informational tool) — but never omit one that
+does apply just because the discovery answers didn't spell it out.
 
 Write ALL of the following sections, covering: executive summary;
 business background; a problem-statement table (problem area / pain
@@ -92,6 +114,16 @@ Rules:
   TBD or as an assumption/open question rather than guessing.
 - Every list should be as complete as the actual product needs — do not
   artificially cap requirements, rules, or risks at a token few examples.
+- If the business idea or discovery answers describe ANY AI/ML-powered
+  behavior, it MUST be a real module with its own functional requirements
+  covering: generating the AI output, explaining it, letting the user
+  edit/override it, and a defined failure/fallback path — never relegate
+  genuine AI-powered product behavior to "future enhancements" just
+  because it's harder to specify than a CRUD feature.
+- Never reuse an FR ID for an unrelated feature, and never map one
+  capability's functional requirement to a completely different
+  capability's module (e.g. a registration requirement must never live
+  under a payments/banking module).
 
 Respond ONLY with JSON in exactly this shape:
 {{
