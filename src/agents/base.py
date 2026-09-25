@@ -20,14 +20,37 @@ class BaseAgent:
 
     def resolution_notes_block(self, context: ProjectContext) -> str:
         """Formats any pending conflict-resolution notes (set by a
-        "Resolve Issues" pass) into a prompt block. Subclasses call this
-        from build_prompt() and splice the result in near the top of the
-        prompt, ahead of the normal instructions, so the model treats
-        fixing these specific issues as a hard requirement rather than
-        an afterthought. Returns "" when there's nothing to fix."""
+        "Resolve Issues" pass) into a prompt block, together with this
+        agent's own PREVIOUS output for this document (if any) — so a
+        revision pass edits the existing document to fix exactly the
+        issues named, rather than regenerating the whole thing from
+        scratch. Regenerating from scratch each round is why a resolve
+        loop can fail to converge: two independently-regenerated documents
+        (e.g. the PRD's navigation pattern and the UX spec's navigation
+        pattern) can each individually look reasonable while still
+        disagreeing with each other, because neither was anchored to a
+        fixed prior version — the "fix" just relocates the mismatch
+        instead of closing it. Subclasses call this from build_prompt()
+        and splice the result in near the top of the prompt, ahead of the
+        normal instructions. Returns "" when there's nothing to fix."""
         if not context.resolution_notes:
             return ""
         notes = "\n".join(f"- {n}" for n in context.resolution_notes)
+        previous = context.get_contribution(self.role)
+        previous_block = ""
+        if previous is not None:
+            previous_block = f"""
+Your own PREVIOUS output for this document (before this revision) was:
+{json.dumps(previous.output, indent=2)}
+
+Treat the above as the current source of truth for everything you are NOT
+explicitly told to change below. Make the smallest edit that fully
+resolves every issue listed — keep every ID, name, and piece of content
+that isn't implicated by an issue exactly as it was. Do not regenerate
+unrelated sections from scratch, rename things that weren't flagged, or
+introduce different wording for content the issues don't mention — doing
+so creates a brand-new inconsistency in place of the one you just fixed.
+"""
         return f"""
 IMPORTANT — this is a revision pass. A validation step already reviewed
 the full document package and found the specific issues below. Your
@@ -36,7 +59,7 @@ document, while keeping everything else consistent with what the other
 documents already say. Do not introduce new inconsistencies while fixing
 these:
 {notes}
-
+{previous_block}
 """
 
     def mock_response(self, context: ProjectContext) -> dict:

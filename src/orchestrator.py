@@ -85,7 +85,16 @@ _DOCUMENT_NAME_KEYWORDS = [
     (AgentRole.UX_PRODUCT_FLOW, ("ux", "flow", "screen", "wireframe", "interaction")),
     (AgentRole.PRODUCT_REQUIREMENTS, ("prd", "product requirement")),
     (AgentRole.PRODUCT_MANAGER, ("user stor", "stories", "epic")),
-    (AgentRole.BUSINESS_ANALYST, ("business", "brd")),
+    # Deliberately requires "requirement(s)" or "brd" alongside "business" —
+    # bare "business" alone false-positives on things like "business rules"
+    # or "business logic" mentioned in passing inside a PRD/UX conflict
+    # description, which isn't naming the Business Requirements document at
+    # all. That false match was cascading EVERY resolve round all the way
+    # back to re-running the Business Analyst (and therefore everything
+    # downstream of it) even when the actual issue was only between the
+    # PRD and the UX spec — regenerating all 4 documents from scratch each
+    # round rather than making a targeted fix to the two actually involved.
+    (AgentRole.BUSINESS_ANALYST, ("business requirement", "brd", "business analyst")),
 ]
 
 

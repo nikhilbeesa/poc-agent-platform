@@ -41,6 +41,26 @@ Functional requirements: {prd_output.get('functional_requirements', [])}
 User stories: {pm_output.get('stories', [])}
 Data entities: {ba_output.get('data_entities', [])}
 
+The PRD's navigation_pattern is: {prd_output.get('navigation_pattern', 'Not specified — infer one consistent pattern from navigation_behavior below and use it everywhere in this document')}
+The PRD's navigation_behavior is: {prd_output.get('navigation_behavior', 'Not specified')}
+The PRD's roles_and_permissions are: {prd_output.get('roles_and_permissions', [])}
+The PRD's security-side role/access notes are: {prd_output.get('security_privacy_access_constraints', {}).get('roles', [])} / {prd_output.get('security_privacy_access_constraints', {}).get('access_restrictions', [])}
+
+CRITICAL — the PRD is the single source of truth for navigation and for
+roles/permissions; this document must NOT reinterpret or invent either:
+- Every screen's navigation entry/exit points must be described using the
+  EXACT navigation_pattern label above (e.g. if it says "Left sidebar
+  (desktop) + bottom tab bar (mobile)", every screen's navigation must be
+  phrased in terms of that sidebar/tab-bar structure — do not describe a
+  top nav bar, a hamburger drawer, or any other structure that isn't
+  actually a restatement of that same pattern).
+- The role/permission matrix's columns and cells must be built ONLY from
+  the PRD's roles_and_permissions/access_restrictions above. Do not add a
+  capability (e.g. an approve/reject/moderate action) for a role unless
+  that PRD list actually grants it — if none of the PRD's roles have an
+  approval-type permission, the matrix simply has no approve/reject
+  column at all, rather than including one as a default template shape.
+
 For every module, break it into as many distinct screens as its actual
 requirements justify — a module that bundles browsing, creating/editing,
 viewing detail, admin moderation, and settings-type requirements needs a
@@ -59,8 +79,9 @@ main path, alternative paths, error paths, decision points, completion
 state, related screens/requirements/stories). Also define: information architecture; screen states (loading/
 empty/success/failure) for the key screens; key interactions; forms with
 full field-level detail (purpose, type, required, validation, default)
-for every data-entry screen; navigation structure; notifications &
-feedback patterns; a role/permission matrix (view/edit/approve/reject);
+for every data-entry screen; navigation structure (must match
+navigation_pattern above exactly); notifications & feedback patterns; a
+role/permission matrix built strictly from the PRD's roles above;
 responsive requirements; and accessibility requirements.
 
 CRITICAL TRACEABILITY RULE: every single functional requirement id listed
@@ -91,9 +112,9 @@ Respond ONLY with JSON in exactly this shape:
   "screen_states": [{{"screen_id": "...", "state": "loading|empty|success|failure", "what_user_sees": "...", "available_actions": ["..."], "disabled_actions": ["..."], "next_step": "..."}}],
   "interactions": [{{"action": "...", "preconditions": "...", "system_behavior": "...", "user_visible_result": "...", "next_state": "...", "possible_errors": ["..."]}}],
   "forms": [{{"form_name": "...", "screen_id": "...", "fields": [{{"field": "...", "purpose": "...", "data_type": "...", "required": true, "validation": "...", "default_value": "..."}}]}}],
-  "navigation": {{"primary": "...", "secondary": "...", "mobile": "..."}},
+  "navigation": {{"pattern": "must be the EXACT navigation_pattern label from the PRD, verbatim", "structure": "how that one pattern's items are organized/ordered", "mobile_behavior": "how that SAME pattern adapts on mobile — not a different pattern"}},
   "notifications_and_feedback": {{"success": "...", "error": "...", "loading": "...", "empty": "..."}},
-  "roles_permissions_matrix": [{{"role": "...", "view": true, "edit": true, "approve": false, "reject": false}}],
+  "roles_permissions_matrix": [{{"role": "must be a role name that appears in the PRD's roles_and_permissions", "permissions": ["only actions that role's PRD permissions list actually grants, e.g. 'view', 'create', 'edit own records' — include 'approve'/'reject'/'moderate' ONLY if the PRD explicitly grants that role such an action"]}}],
   "responsive_requirements": {{"desktop": "...", "tablet": "...", "mobile": "..."}},
   "accessibility": ["...", "..."]
 }}"""
@@ -101,8 +122,11 @@ Respond ONLY with JSON in exactly this shape:
     def mock_response(self, context: ProjectContext) -> dict:
         ba = context.get_contribution(AgentRole.BUSINESS_ANALYST)
         pm = context.get_contribution(AgentRole.PRODUCT_MANAGER)
+        prd = context.get_contribution(AgentRole.PRODUCT_REQUIREMENTS)
         ba_output = ba.output if ba else {}
         pm_output = pm.output if pm else {}
+        prd_output = prd.output if prd else {}
+        navigation_pattern = prd_output.get("navigation_pattern") or "Top navigation bar (desktop and mobile)"
 
         modules = ck.select_modules(context)
         roles = ck.build_roles(modules, context)
@@ -154,7 +178,14 @@ Respond ONLY with JSON in exactly this shape:
         for r in roles:
             is_admin = r["role"] == "Admin"
             is_support = r["role"] == "Support Agent"
-            roles_permissions_matrix.append({"role": r["role"], "view": True, "edit": not is_support, "approve": is_admin, "reject": is_admin})
+            permissions = ["View own data", "Update own profile"]
+            if is_admin:
+                permissions = ["View all records", "Manual override (with recorded reason)", "Moderate/approve/reject flagged content", "Access reporting and audit logs"]
+            elif is_support:
+                permissions = ["View records relevant to an open ticket", "Respond to and close tickets"]
+            else:
+                permissions += ["Create/edit own records", "Cancel/withdraw own in-progress records"]
+            roles_permissions_matrix.append({"role": r["role"], "permissions": permissions})
 
         return {
             "summary": f"UX specification covering {len(screens)} screens and {len(flows)} user flows derived from {len(stories)} user stories across {len(modules)} modules.",
@@ -165,9 +196,9 @@ Respond ONLY with JSON in exactly this shape:
             "interactions": interactions,
             "forms": forms,
             "navigation": {
-                "primary": "Left sidebar (desktop) / bottom tab bar (mobile) exposing Dashboard plus one entry per core module",
-                "secondary": "Account settings and support accessible from a persistent header menu",
-                "mobile": "Bottom tab bar collapses secondary items into a 'More' menu",
+                "pattern": navigation_pattern,
+                "structure": f"Exposes Dashboard plus one entry per core module ({', '.join(m['name'] for m in modules[:5])}), with account settings and support reachable from the same {navigation_pattern.split('(')[0].strip().lower()}.",
+                "mobile_behavior": f"The same {navigation_pattern.split('(')[0].strip().lower()} adapts responsively on mobile, collapsing secondary items into an overflow/'More' entry rather than switching to a different navigation structure.",
             },
             "notifications_and_feedback": {
                 "success": "Toast/banner confirming the action, auto-dismissing after a few seconds",

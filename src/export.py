@@ -555,6 +555,7 @@ def export_prd(context: ProjectContext) -> Artefact:
         "functional_requirements": fr_text,
         "roles_and_permissions": roles_text,
         "product_business_rules": o.get("product_business_rules", []),
+        "navigation_pattern": o.get("navigation_pattern", "Not specified"),
         "navigation_behavior": o.get("navigation_behavior", "Not specified"),
         "notifications_and_confirmations": o.get("notifications_and_confirmations", []),
         "validation_and_error_handling": o.get("validation_and_error_handling", "Not specified"),
@@ -663,12 +664,10 @@ def export_ux_product_flow(context: ProjectContext) -> Artefact:
     notif_text = _kv_block(notif)
 
     matrix = o.get("roles_permissions_matrix", [])
-    matrix_rows = "\n".join(
-        f"| {r.get('role', '?')} | {'Yes' if r.get('view') else 'No'} | {'Yes' if r.get('edit') else 'No'} | "
-        f"{'Yes' if r.get('approve') else 'No'} | {'Yes' if r.get('reject') else 'No'} |"
+    matrix_text = "\n".join(
+        f"- **{r.get('role', '?')}:** " + (", ".join(r.get("permissions", [])) or "No permissions specified")
         for r in matrix
-    )
-    matrix_text = f"| Role | View | Edit | Approve | Reject |\n|---|---|---|---|---|\n{matrix_rows}" if matrix else "None specified."
+    ) or "None specified."
 
     responsive_text = _kv_block(o.get("responsive_requirements", {}))
 

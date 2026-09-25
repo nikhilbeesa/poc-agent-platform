@@ -29,7 +29,9 @@
 ## 8. Product Business Rules
 {{product_business_rules}}
 
-## 9. Navigation Behavior
+## 9. Navigation Pattern
+{{navigation_pattern}}
+
 {{navigation_behavior}}
 
 ## 10. Notifications & Confirmations

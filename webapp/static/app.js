@@ -232,7 +232,9 @@ async function openDashboardDetail(id) {
 }
 
 function renderHistoryDoc(markdown) {
-  $('#history-doc-viewer').innerHTML = window.marked ? marked.parse(markdown) : markdown;
+  const viewer = $('#history-doc-viewer');
+  viewer.innerHTML = window.marked ? marked.parse(markdown) : markdown;
+  viewer.scrollTop = 0;
 }
 
 $('#btn-history-download-current').addEventListener('click', () => {
@@ -866,7 +868,14 @@ function renderArtefacts(artefacts) {
 }
 
 function renderDoc(markdown) {
-  $('#doc-viewer').innerHTML = window.marked ? marked.parse(markdown) : markdown;
+  const viewer = $('#doc-viewer');
+  viewer.innerHTML = window.marked ? marked.parse(markdown) : markdown;
+  // Switching artifacts replaces this element's content but not the
+  // element itself, so the browser keeps whatever scroll position was
+  // left over from the PREVIOUS document — on a shorter new document
+  // that can even leave the viewer scrolled past its own content.
+  // Always land at the top of the newly-selected document.
+  viewer.scrollTop = 0;
 }
 
 $('#btn-download-current').addEventListener('click', () => {

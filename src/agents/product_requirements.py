@@ -117,6 +117,22 @@ Rules:
   requirement unassigned to any of the three, and never contradict the
   business analyst's own P0-P3 prioritization or the discovery answers'
   stated scope decisions.
+- navigation_pattern is the single source of truth for navigation: pick
+  ONE pattern and state it as a short, exact label. Every other document
+  in this package (most importantly the UX/Product Flow Specification)
+  will be told to reuse that exact label verbatim rather than choosing
+  its own — so do not hedge with "or" between two different structures,
+  and do not describe a hybrid unless it is genuinely one coherent,
+  named pattern (e.g. "Sidebar (desktop) + hamburger drawer (mobile)" is
+  fine as ONE pattern; "Top nav bar, OR a sidebar, OR a hamburger menu"
+  is not).
+- roles_and_permissions (and security_privacy_access_constraints.roles)
+  is the single source of truth for who can do what. Do not grant an
+  action to a role here that the functional requirements don't actually
+  support, and do not leave an action mentioned elsewhere in the PRD
+  ungoverned by a role here — the UX spec will build its permission
+  matrix strictly from this list and cannot invent additional
+  capabilities for any role.
 
 Respond ONLY with JSON in exactly this shape:
 {{
@@ -135,7 +151,8 @@ Respond ONLY with JSON in exactly this shape:
   }}],
   "roles_and_permissions": [{{"role": "...", "permissions": ["..."]}}],
   "product_business_rules": ["...", "..."],
-  "navigation_behavior": "...",
+  "navigation_pattern": "EXACTLY ONE short label naming the single navigation pattern for the whole product, e.g. 'Top navigation bar (desktop and mobile)' or 'Left sidebar (desktop) + bottom tab bar (mobile)' — never describe two different structures as both in use",
+  "navigation_behavior": "1-3 sentences elaborating on navigation_pattern (what's in it, ordering, what's primary vs secondary) — must be a direct elaboration of navigation_pattern, never a different or additional pattern",
   "notifications_and_confirmations": ["...", "..."],
   "validation_and_error_handling": "...",
   "state_behaviors": {{"loading": "...", "empty": "...", "success": "...", "failure": "...", "processing": "..."}},
@@ -301,7 +318,8 @@ Respond ONLY with JSON in exactly this shape:
             "functional_requirements": functional_requirements,
             "roles_and_permissions": roles_and_permissions,
             "product_business_rules": [f"{b['id']}: {b['rule']}" for b in ba_output.get("business_rules", [])] or ["Only authenticated users may perform core actions"],
-            "navigation_behavior": f"Primary navigation surfaces the core {domain} workflow first ({', '.join(e['name'] for e in epics[:4])}); secondary items (settings, account, support) are accessible but not primary.",
+            "navigation_pattern": "Top navigation bar (desktop and mobile)",
+            "navigation_behavior": f"A single top navigation bar surfaces the core {domain} workflow first ({', '.join(e['name'] for e in epics[:4])}); secondary items (settings, account, support) are accessible from it but not primary.",
             "notifications_and_confirmations": [f"{n['event']} — delivered via {n['channel']}" for n in ba_output.get("notifications_matrix", [])[:12]] or [
                 "Success confirmation after completing the core workflow action",
                 "Error message with a clear next step when an action fails",
