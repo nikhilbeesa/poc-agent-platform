@@ -11,8 +11,9 @@ ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
 
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504, 529}
-MAX_RETRIES = 3
-RETRY_BASE_DELAY = 1.5
+MAX_RETRIES = 5
+RETRY_BASE_DELAY = 2.0
+RETRY_MAX_DELAY = 20.0
 
 
 def _is_retryable(exc: Exception) -> bool:
@@ -35,7 +36,8 @@ class LLMClient:
             except Exception as e:
                 last_error = e
                 if attempt < MAX_RETRIES - 1 and _is_retryable(e):
-                    time.sleep(RETRY_BASE_DELAY * (2 ** attempt))
+                    delay = min(RETRY_BASE_DELAY * (2 ** attempt), RETRY_MAX_DELAY)
+                    time.sleep(delay)
                     continue
                 raise
         raise last_error

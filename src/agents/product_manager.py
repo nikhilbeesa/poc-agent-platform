@@ -56,6 +56,14 @@ Also produce a priority table (High/Medium/Low with a short note) for
 every story, tied to the originating requirement's priority (P0/P1 ->
 High, P2 -> Medium, P3 -> Low).
 
+CRITICAL — naming and priority fidelity: use each module's EXACT name
+from the list above as its epic name, and each FR's exact name in story
+titles — never a shortened form or synonym. A story's priority must
+follow its FR's priority exactly as stated above (P0/P1 -> High, P2 ->
+Medium, P3 -> Low); never raise a P2/P3 story to High/P0, because the
+PRD's MVP scope is taken from those same priorities and a mismatch shows
+up as a scope contradiction later.
+
 CRITICAL — related_fr_ids must be accurate, not just plausible: each
 story's related_fr_ids must reference ONLY the FR id(s) it's actually
 converting. Never link a story to an FR from an unrelated capability for

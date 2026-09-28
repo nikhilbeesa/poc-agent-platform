@@ -42,6 +42,10 @@ User stories: {pm_output.get('stories', [])}
 Data entities: {ba_output.get('data_entities', [])}
 Business rules (PRD-formalized, includes IDs): {prd_output.get('product_business_rules', []) or ba_output.get('business_rules', [])}
 
+The PRD's MVP scope: {prd_output.get('mvp_scope', [])}
+The PRD's Phase 2 scope: {prd_output.get('phase_2_scope', [])}
+The PRD's future scope / out of scope: {prd_output.get('future_scope', [])} / {prd_output.get('out_of_scope', [])}
+
 The PRD's navigation_pattern is: {prd_output.get('navigation_pattern', 'Not specified — infer one consistent pattern from navigation_behavior below and use it everywhere in this document')}
 The PRD's navigation_behavior is: {prd_output.get('navigation_behavior', 'Not specified')}
 The PRD's roles_and_permissions are: {prd_output.get('roles_and_permissions', [])}
@@ -91,6 +95,32 @@ least one user flow — there must be no functional requirement left with
 no screen and no flow. Before finalizing, check every FR id off this
 list; if one has no home, add the screen/flow it needs rather than
 leaving it out.
+
+CRITICAL SCOPE FIDELITY: the PRD's MVP scope above decides what is in
+the primary navigation. Only modules whose functional requirements are in
+the MVP scope may appear as core/primary navigation items or main
+screens. A module that belongs to Phase 2 or future scope must NOT be a
+core navigation item — either leave it out of the navigation entirely or
+list it under a clearly labeled "Phase 2 (not in MVP)" note with no
+active screen. If a user story references an out-of-MVP requirement,
+keep its flow but mark it with the phase it belongs to. Never let the
+UX spec quietly include a screen the PRD excludes from the current phase.
+
+CRITICAL NAMING FIDELITY: name every screen, navigation item, and module
+after the EXACT module/capability name used in the Modules list above and
+the PRD — never a shortened form, synonym, or generic label (e.g. do not
+call "Billing & Privacy" just "Settings", or "Preventive Scheduling
+Engine" just "Preventive Engine"). If one screen legitimately covers two
+modules, name it with both exact names.
+
+CRITICAL ROLE-RESTRICTION ENFORCEMENT: for every restriction in the
+roles above, roles_and_permissions, or access_restrictions (e.g. "System
+Admin has restricted access to sensitive data"), the screens that role can
+reach must define the interface-level safeguard in that screen's states or
+interactions — masked fields, a warning/confirmation modal, a re-
+authentication step, an access-logged notice — and name the role it
+applies to. A generic admin screen with no stated safeguard for a
+restricted role is incomplete.
 
 CRITICAL BUSINESS RULE TRACEABILITY: every business rule id listed above
 (e.g. BR-001) must appear — by its ID — in at least one screen's

@@ -86,6 +86,9 @@ Business analyst's findings:
 - Roles: {ba_output.get('roles', [])}
 - Integrations: {ba_output.get('integrations', [])}
 - Constraints: {ba_output.get('constraints', [])}
+- MVP prioritization (P0-P3 / out of scope — the BRD's own scope decision): {ba_output.get('mvp_prioritization', {})}
+- Release strategy / phases: {ba_output.get('release_strategy', [])}
+- Out of scope / deferred: {ba_output.get('scope_out', [])} / {ba_output.get('future_enhancements', [])}
 
 Product manager's epics and stories: {pm_output.get('epics', [])} / {pm_output.get('stories', [])}
 
@@ -117,6 +120,18 @@ Rules:
   requirement unassigned to any of the three, and never contradict the
   business analyst's own P0-P3 prioritization or the discovery answers'
   stated scope decisions.
+- SCOPE FIDELITY: the BRD's MVP prioritization above is the scope
+  decision — do not re-decide it. mvp_scope = exactly the FRs the BRD
+  lists under P0 and P1; phase_2_scope = its P2; future_scope = its P3
+  plus deferred/future enhancements. If you believe an FR belongs in a
+  different phase, keep the BRD's placement and note the concern in an
+  open question instead — the user stories and UX spec are built from
+  the BRD's priorities, so a different split here creates a mismatch.
+- NAMING FIDELITY: refer to every module/capability by the EXACT name it
+  has in the BRD's module list (and FR names by their BRD names) — never
+  a shortened form or synonym (e.g. not "Preventive Engine" for
+  "Preventive Scheduling Engine"). The UX spec will reuse these names
+  verbatim, so drift here becomes drift in the interface.
 - navigation_pattern is the single source of truth for navigation: pick
   ONE pattern and state it as a short, exact label. Every other document
   in this package (most importantly the UX/Product Flow Specification)
