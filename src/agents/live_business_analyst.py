@@ -148,6 +148,27 @@ def _normalize_priority(p) -> str:
     return p if p in ("P0", "P1", "P2", "P3") else "P1"
 
 
+def _coerce_items(raw, fields: tuple[str, ...]) -> list[dict]:
+    """A model — especially a smaller/lite one — sometimes flattens an item
+    that was supposed to be an object into a plain string (e.g. a
+    requirement as a bare sentence instead of {"name": ..., "description":
+    ...}). Downstream code (_assign_ids in particular) does item["id"] = ...
+    on every entry, which raises TypeError on a str. Rather than crash or
+    silently drop the content, a string item is salvaged into a dict with
+    the string copied into every one of `fields` (so whichever field a
+    later reader looks at, e.g. "name" for a requirement or "rule" for a
+    business rule, is populated) — imperfect structure, but the generated
+    content survives. Anything that's neither a dict nor a non-empty string
+    (None, a number, an empty string) is dropped."""
+    out = []
+    for it in ch.as_list(raw):
+        if isinstance(it, dict):
+            out.append(it)
+        elif isinstance(it, str) and it.strip():
+            out.append({f: it.strip() for f in fields})
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Stage 1 — plan
 # ---------------------------------------------------------------------------
@@ -292,6 +313,9 @@ def _build_module_chunks(context, client, plan, prev_chunks, notes):
                   hash_of=hash_of, needles_of=needles_of, make_prompt=make_prompt,
                   key_field="module_id", list_key="modules", client=client, batch_size=1, max_tokens=7000)
     chunks, stats = ch.generate_units(**kwargs)
+    for v in chunks.values():
+        v["requirements"] = _coerce_items(v.get("requirements"), ("name", "description"))
+        v["business_rules"] = _coerce_items(v.get("business_rules"), ("rule",))
 
     # A module that came back too thin gets one targeted regeneration.
     thin = [u for u in units if len(chunks[u["key"]].get("requirements", []) or []) < MIN_FR]
@@ -364,6 +388,8 @@ def _assign_ids(order, chunks, reused, prev_ids, list_key, prefix, width=3):
             continue
         old = list(prev_ids.get(mid, []))
         for item in chunks[mid].get(list_key, []):
+            if not isinstance(item, dict):
+                continue  # defensive: should already be sanitized upstream
             if old:
                 item["id"] = old.pop(0)
             else:
