@@ -224,6 +224,10 @@ Respond ONLY with JSON in exactly this shape:
   "release_milestones": [{{"milestone": "...", "description": "..."}}]
 }}"""
 
+    def generate_live(self, context: ProjectContext, client) -> dict:
+        from agents import live_product_requirements
+        return live_product_requirements.generate(context, client)
+
     def mock_response(self, context: ProjectContext) -> dict:
         ba = context.get_contribution(AgentRole.BUSINESS_ANALYST)
         pm = context.get_contribution(AgentRole.PRODUCT_MANAGER)

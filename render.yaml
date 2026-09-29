@@ -4,9 +4,12 @@ services:
     env: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn wsgi:app --timeout 120
+    startCommand: gunicorn wsgi:app --workers 1 --threads 8 --timeout 120
     # --timeout 120: gunicorn's default worker timeout is 30s, which is
     # too short once LLM calls + automatic retries are factored in.
+    # --workers 1 --threads 8: live generation runs as an in-process background
+    # job (webapp/jobs.py) whose state lives in this one process, and threads let
+    # the browser's polling requests be served while a job is running.
     envVars:
       - key: LLM_PROVIDER
         sync: false   # "anthropic" or "gemini" — set manually

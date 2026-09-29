@@ -109,6 +109,31 @@ Rules:
 - Assign each business rule a unique ID: BR-001, BR-002, ...
 - Assign each NFR a unique ID: NFR-001, NFR-002, ...
 - Assign each user story a unique ID: US-001, US-002, ...
+- MODULE REGISTRATION: every functional requirement's "module" field must
+  be the exact ID of one module from your modules list (e.g. "MOD-03").
+  Every module must own at least one functional requirement — if a module
+  has none, either add the requirements it exists for (e.g. an Admin
+  module needs its own moderation/dispute/mediation requirements, not
+  just borrowed ones filed under another module) or remove the module.
+- ROLE COVERAGE: every capability you grant a role in "roles" (e.g.
+  "Rate providers", "Set pricing", "Mediation", "Register/Log in") must be
+  backed by at least one functional requirement. Do not list a permission
+  no requirement implements.
+- MVP PRIORITIZATION FORMAT: every entry in mvp_prioritization must be
+  written "FR-xxx — Requirement Name", and every FR must appear in
+  exactly one tier, so the PRD can copy the scope split exactly. Deferred
+  ideas with no FR yet go in future_enhancements, not in a tier.
+- STORY IDS: user_stories_summary must have exactly one entry per
+  functional requirement, and the story for FR-0NN must use ID US-0NN
+  (FR-007 -> US-007). The Product Manager's full backlog uses the same
+  numbering, so a different mapping here would give the same ID two
+  different meanings across documents.
+- TRACEABILITY: traceability_matrix must have one row per functional
+  requirement, and release_strategy must cover every phase through
+  general availability, not just the first one.
+- GLOSSARY: define every actor/role alias you use (e.g. "Provider =
+  Professional Wedding Photographer", "Customer = Couple") so a synonym
+  is a documented alias rather than an inconsistency.
 - Do not invent unsupported business information, compliance claims, or
   authoritative KPI targets. If something is unknown, explicitly mark it
   TBD or as an assumption/open question rather than guessing.
@@ -169,6 +194,10 @@ Respond ONLY with JSON in exactly this shape:
   "future_enhancements": ["...", "..."],
   "glossary": [{{"term": "...", "definition": "..."}}]
 }}"""
+
+    def generate_live(self, context: ProjectContext, client) -> dict:
+        from agents import live_business_analyst
+        return live_business_analyst.generate(context, client)
 
     def mock_response(self, context: ProjectContext) -> dict:
         answers = {q.id: q.answer for q in context.discovery_questions if q.answer}

@@ -170,6 +170,10 @@ Respond ONLY with JSON in exactly this shape:
   "accessibility": ["...", "..."]
 }}"""
 
+    def generate_live(self, context: ProjectContext, client) -> dict:
+        from agents import live_ux_product_flow
+        return live_ux_product_flow.generate(context, client)
+
     def mock_response(self, context: ProjectContext) -> dict:
         ba = context.get_contribution(AgentRole.BUSINESS_ANALYST)
         pm = context.get_contribution(AgentRole.PRODUCT_MANAGER)

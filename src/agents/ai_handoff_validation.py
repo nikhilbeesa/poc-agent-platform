@@ -35,12 +35,106 @@ REQUIRED_ROLES = [
 
 class AIHandoffValidationAgent(BaseAgent):
     role = AgentRole.AI_HANDOFF_VALIDATION
-    max_output_tokens = 4000
+    max_output_tokens = 8000
+
+    @staticmethod
+    def _digest(context: ProjectContext) -> str:
+        """A compact, structured digest of the four documents for the LLM
+        validator. Dumping every document's raw output (76 FRs, 76 stories,
+        32 screens, 76 flows...) buries the signal in >100k tokens that a
+        lite model can't review; the structural facts it needs — names, IDs,
+        roles, scope, navigation — fit in a few thousand."""
+        get = lambda role: (context.get_contribution(role).output if context.get_contribution(role) else {})
+        ba, pm, prd, ux = (get(AgentRole.BUSINESS_ANALYST), get(AgentRole.PRODUCT_MANAGER),
+                           get(AgentRole.PRODUCT_REQUIREMENTS), get(AgentRole.UX_PRODUCT_FLOW))
+        if not any((ba.get("requirements"), pm.get("stories"))):
+            # small/legacy outputs: fall back to the raw dump
+            return "\n\n".join(f"--- {c.agent.value} ---\n{c.output}" for c in context.agent_contributions)
+        frs_by_mod = {}
+        for r in ba.get("requirements", []):
+            frs_by_mod.setdefault(r.get("module"), []).append(f"{r['id']} {r['name']} ({r.get('priority')}, actor {r.get('actor')})")
+        lines = ["--- BUSINESS REQUIREMENTS (digest) ---",
+                 f"Target users: {ba.get('target_users', '')}",
+                 "Roles: " + "; ".join(f"{r.get('role')}: {str(r.get('restricted', ''))[:140]}" for r in ba.get("roles", [])),
+                 "Glossary terms: " + ", ".join(g.get("term", "") for g in ba.get("glossary", []) if isinstance(g, dict)),
+                 f"Modules ({len(ba.get('modules', []))}) and their requirements:"]
+        for m in ba.get("modules", []):
+            lines.append(f"  {m['id']} {m['name']}: " + "; ".join(frs_by_mod.get(m["name"], [])))
+        lines.append("Business rules: " + " | ".join(f"{b['id']}: {b['rule'][:110]}" for b in ba.get("business_rules", [])))
+        lines.append("MVP prioritization counts: " + ", ".join(f"{k}={len(v)}" for k, v in (ba.get("mvp_prioritization") or {}).items()))
+        lines += ["", "--- USER STORIES (digest) ---",
+                  f"{len(pm.get('stories', []))} stories, {len(pm.get('epics', []))} epics. Epics: " + "; ".join(e["name"] for e in pm.get("epics", [])),
+                  "Story roles: " + ", ".join(sorted({s.get("role", "") for s in pm.get("stories", [])}))]
+        lines += ["", "--- PRD (digest) ---",
+                  f"Overview: {str(prd.get('product_overview', ''))[:400]}",
+                  f"Target users: {prd.get('target_users', '')}",
+                  "Roles & permissions: " + " | ".join(f"{r['role']}: {', '.join(r.get('permissions', []))[:220]}" for r in prd.get("roles_and_permissions", [])),
+                  f"Navigation pattern: {prd.get('navigation_pattern', '')} — {prd.get('navigation_behavior', '')}",
+                  f"Scope: MVP={len(prd.get('mvp_scope', []))} FRs, Phase 2={len(prd.get('phase_2_scope', []))}, Future={len(prd.get('future_scope', []))}",
+                  f"Detailed FR entries: {len(prd.get('functional_requirements', []))}"]
+        lines += ["", "--- UX / PRODUCT FLOW (digest) ---",
+                  f"Navigation: {(ux.get('navigation') or {}).get('pattern', '')} — {str((ux.get('navigation') or {}).get('structure', ''))[:500]}",
+                  f"{len(ux.get('screens', []))} screens, {len(ux.get('user_flows', []))} flows, {len(ux.get('screen_states', []))} states, "
+                  f"{len(ux.get('interactions', []))} interactions, {len(ux.get('forms', []))} forms",
+                  "Screens: " + "; ".join(f"{s['id']} {s['name']} [{s.get('primary_role', '')}]" for s in ux.get("screens", [])),
+                  "UX roles: " + ", ".join(r.get("role", "") for r in ux.get("roles_permissions_matrix", []))]
+        return "\n".join(lines)
+
+    @staticmethod
+    def depth_findings(context: ProjectContext) -> list[dict]:
+        """Deterministic structural checks the LLM can't be trusted to notice
+        (same idea as the coverage matrix): each finding is a missing_information
+        entry naming exact IDs, so the resolve loop can regenerate exactly the
+        implicated items. Live mode only — mock output is complete by construction."""
+        get = lambda role: (context.get_contribution(role).output if context.get_contribution(role) else {})
+        ba, pm, ux, prd = (get(AgentRole.BUSINESS_ANALYST), get(AgentRole.PRODUCT_MANAGER),
+                           get(AgentRole.UX_PRODUCT_FLOW), get(AgentRole.PRODUCT_REQUIREMENTS))
+        findings = []
+        if not ba.get("requirements"):
+            return findings
+        docs = "UX / Product Flow Specification"
+        flow_frs = {f for fl in ux.get("user_flows", []) for f in fl.get("related_requirement_ids", [])}
+        no_flow = [r["id"] for r in ba["requirements"] if r["id"] not in flow_frs]
+        if no_flow:
+            findings.append({"missing_item": f"No user flow for requirement(s) {', '.join(no_flow[:25])}",
+                             "affected_document": docs,
+                             "impact_on_design_generation": "The Design AI Agent has no path to design for these requirements.",
+                             "recommended_action": f"Add a user flow for each of: {', '.join(no_flow)}."})
+        state_screens = {st.get("screen_id") for st in ux.get("screen_states", [])}
+        no_state = [s["id"] for s in ux.get("screens", []) if s["id"] not in state_screens]
+        if no_state:
+            findings.append({"missing_item": f"No screen states for screen(s) {', '.join(no_state[:25])}",
+                             "affected_document": docs,
+                             "impact_on_design_generation": "Loading/empty/success/failure states would be improvised.",
+                             "recommended_action": f"Define loading, empty, success and failure states for: {', '.join(no_state)}."})
+        screen_text = " ".join(" ".join(s.get("business_rules", [])) for s in ux.get("screens", [])) + \
+                      " ".join(" ".join(fl.get("decision_points", []) + fl.get("error_paths", [])) for fl in ux.get("user_flows", []))
+        untraced = [b["id"] for b in ba.get("business_rules", []) if b["id"] not in screen_text]
+        if untraced:
+            findings.append({"missing_item": f"Business rule(s) {', '.join(untraced[:25])} are not enforced on any screen or flow",
+                             "affected_document": docs,
+                             "impact_on_design_generation": "The rule has no interface enforcement point.",
+                             "recommended_action": f"Add the enforcing screen business_rules entry or flow decision point for: {', '.join(untraced)}."})
+        ba_roles = {r.get("role") for r in ba.get("roles", [])}
+        ux_roles = {r.get("role") for r in ux.get("roles_permissions_matrix", [])}
+        prd_roles = {r.get("role") for r in prd.get("roles_and_permissions", [])}
+        bad = sorted((ux_roles | prd_roles) - ba_roles)
+        if bad:
+            findings.append({"missing_item": f"Role name(s) {', '.join(bad)} do not match the Business Requirements roles ({', '.join(sorted(ba_roles))})",
+                             "affected_document": "Product Requirements Document",
+                             "impact_on_design_generation": "Role labels would differ between documents.",
+                             "recommended_action": "Use the exact role names defined in the Business Requirements."})
+        story_frs = {f for s in pm.get("stories", []) for f in s.get("related_fr_ids", [])}
+        no_story = [r["id"] for r in ba["requirements"] if r["id"] not in story_frs]
+        if no_story:
+            findings.append({"missing_item": f"No user story for requirement(s) {', '.join(no_story[:25])}",
+                             "affected_document": "User Stories",
+                             "impact_on_design_generation": "Requirements without stories cannot be traced to screens.",
+                             "recommended_action": f"Write a user story for each of: {', '.join(no_story)}."})
+        return findings
 
     def build_prompt(self, context: ProjectContext) -> str:
-        contributions_summary = "\n\n".join(
-            f"--- {c.agent.value} ---\n{c.output}" for c in context.agent_contributions
-        )
+        contributions_summary = self._digest(context)
         matrix = cov.compute_coverage_matrix(context)
         matrix_lines = "\n".join(
             f"- {r['capability']} [{', '.join(r['fr_ids']) or 'no FR ids'}]: "
@@ -285,6 +379,12 @@ Respond ONLY with JSON in exactly this shape:
         # (again) guarantees the matrix in the final artifact is always the
         # real one, never a model's paraphrase of it.
         matrix = cov.compute_coverage_matrix(context)
+        import agents.base as _base
+        if _base.get_client() is not None:
+            existing = {m.get("missing_item") for m in contribution.output.get("missing_information", [])}
+            for finding in self.depth_findings(context):
+                if finding["missing_item"] not in existing:
+                    contribution.output.setdefault("missing_information", []).append(finding)
         contribution.output["coverage_matrix"] = matrix["rows"]
         contribution.output["capability_summary"] = matrix["totals"]
         contribution.output["missing_capabilities"] = matrix["missing_capabilities"]

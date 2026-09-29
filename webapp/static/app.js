@@ -35,6 +35,52 @@ function el(tag, attrs = {}, children = []) {
 function unlock(panelId) { $(panelId).classList.remove('is-locked'); }
 
 async function api(path, opts = {}) {
+  const data = await rawApi(path, opts);
+  // Live-mode steps run as background jobs (they make many LLM calls and can
+  // take minutes): the POST answers with a job id and we poll until it's done,
+  // then hand back exactly what the synchronous endpoint would have returned.
+  if (data && data.job_id) return pollJob(data.job_id);
+  return data;
+}
+
+function showJobProgress(lines) {
+  const log = $('#agent-log');
+  let box = $('#job-progress');
+  if (!lines) { if (box) box.remove(); return; }
+  if (!box) box = log.appendChild(el('div', { id: 'job-progress', class: 'log-progress' }));
+  box.textContent = lines.slice(-3).map((l) => '   ⋯ ' + l).join('\n');
+  box.style.whiteSpace = 'pre-wrap';
+  log.scrollTop = log.scrollHeight;
+}
+
+async function pollJob(jobId) {
+  const started = Date.now();
+  let failures = 0;
+  try {
+    while (Date.now() - started < 30 * 60 * 1000) {
+      await new Promise((r) => setTimeout(r, 2000));
+      let snap;
+      try {
+        snap = await rawApi(`/api/job/${jobId}`);
+        failures = 0;
+      } catch (e) {
+        if (/unknown or expired job/.test(e.message)) {
+          throw new Error('The server restarted while generating — please try again.');
+        }
+        if (++failures >= 5) throw e;   // tolerate a few network blips
+        continue;
+      }
+      if (snap.status === 'error') throw new Error(snap.error || 'generation failed');
+      if (snap.status === 'done') return snap.result;
+      showJobProgress(snap.progress && snap.progress.length ? snap.progress : ['working…']);
+    }
+    throw new Error('Generation is taking unusually long (over 30 minutes) — please try again.');
+  } finally {
+    showJobProgress(null);
+  }
+}
+
+async function rawApi(path, opts = {}) {
   const res = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
   let data;
   try {

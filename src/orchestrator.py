@@ -162,9 +162,13 @@ def _roles_from_coverage_matrix(validation_output: dict) -> set:
 def _notes_from_validation_issues(validation_output: dict) -> list[str]:
     notes = []
     for c in validation_output.get("conflicts_found", []):
-        notes.append(f"{c.get('id', 'CONFLICT')}: {c.get('conflicting_information', '')} Recommended fix: {c.get('recommended_resolution', '')}".strip())
+        docs = ", ".join(c.get("documents_involved", []) or [])
+        tag = f" [docs: {docs}]" if docs else ""
+        notes.append(f"{c.get('id', 'CONFLICT')}{tag}: {c.get('conflicting_information', '')} Recommended fix: {c.get('recommended_resolution', '')}".strip())
     for m in validation_output.get("missing_information", []):
-        notes.append(f"Missing: {m.get('missing_item', '')} (affects {m.get('affected_document', '')}). Recommended action: {m.get('recommended_action', '')}".strip())
+        doc = m.get("affected_document", "")
+        tag = f" [docs: {doc}]" if doc else ""
+        notes.append(f"Missing{tag}: {m.get('missing_item', '')} (affects {doc}). Recommended action: {m.get('recommended_action', '')}".strip())
     return notes
 
 

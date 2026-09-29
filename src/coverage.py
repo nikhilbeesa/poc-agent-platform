@@ -26,6 +26,8 @@ functional_requirements["id"] / screens["related_requirement_ids"]).
 """
 from __future__ import annotations
 
+import re
+
 from context import AgentRole, ProjectContext
 
 COMPLETE = "✅ Complete"
@@ -179,6 +181,53 @@ def _mentions_module(blob: str, mod_name: str, module_key: str | None) -> bool:
     return False
 
 
+def _norm(text) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", str(text or "").lower()).strip()
+
+
+def _build_module_resolver(modules: list):
+    """Returns resolve(value) -> module name | None.
+
+    A requirement's "module" field comes from an LLM and is not reliably the
+    module's exact display name: it is often the module ID ("MOD-01"),
+    "MOD-01: Authentication & Profile", or a differently-cased/punctuated
+    name. Matching it to the module name by exact string equality made every
+    FR look unregistered (0% coverage, all capabilities "Missing") even when
+    each FR clearly carried its module, and that false result then drove the
+    validator's "Module-to-Requirement Registration" complaint that no
+    amount of re-running could clear."""
+    by_id, by_name = {}, {}
+    for m in modules:
+        name = m.get("name") or "Unspecified module"
+        if m.get("id"):
+            by_id[_norm(m["id"])] = name
+        if m.get("key"):
+            by_id[_norm(m["key"])] = name
+        by_name[_norm(name)] = name
+
+    def resolve(value):
+        if not value:
+            return None
+        raw = str(value)
+        n = _norm(raw)
+        if n in by_id:
+            return by_id[n]
+        if n in by_name:
+            return by_name[n]
+        # "MOD-01: Authentication & Profile" / "MOD-01 - ..." -> pull the ID out
+        for tok in re.findall(r"[A-Za-z]+[- ]?\d+", raw):
+            t = _norm(tok)
+            if t in by_id:
+                return by_id[t]
+        # name embedded in a longer string, or a string embedded in the name
+        for nm_norm, nm in by_name.items():
+            if nm_norm and (nm_norm in n or (len(n) > 3 and n in nm_norm)):
+                return nm
+        return None
+
+    return resolve
+
+
 def compute_coverage_matrix(context: ProjectContext) -> dict:
     """Builds the capability x document coverage matrix for the AI
     Handoff Validation report, purely from the 4 upstream agents'
@@ -231,9 +280,10 @@ def compute_coverage_matrix(context: ProjectContext) -> dict:
         ba_o.get("privacy_compliance"),
     )
 
+    resolve_module = _build_module_resolver(modules)
     frs_by_module_name: dict[str, list] = {}
     for r in requirements:
-        mod = r.get("module") or "Unspecified module"
+        mod = resolve_module(r.get("module")) or r.get("module") or "Unspecified module"
         frs_by_module_name.setdefault(mod, []).append(r)
 
     if not modules:

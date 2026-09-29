@@ -77,6 +77,14 @@ these:
 {locked_block}{current_block}{previous_block}
 """
 
+    def generate_live(self, context: ProjectContext, client) -> dict:
+        """LIVE-mode generation. Default: one prompt, one JSON reply. The
+        four content agents override this with chunked generation (see
+        chunked.py) because a single reply can't hold a full-depth document."""
+        prompt = self.build_prompt(context)
+        raw = call_llm(client, prompt, max_tokens=self.max_output_tokens)
+        return self.parse_response(raw)
+
     def mock_response(self, context: ProjectContext) -> dict:
         raise NotImplementedError
 
@@ -90,9 +98,7 @@ these:
             if client is None:
                 output = self.mock_response(context)
             else:
-                prompt = self.build_prompt(context)
-                raw = call_llm(client, prompt, max_tokens=self.max_output_tokens)
-                output = self.parse_response(raw)
+                output = self.generate_live(context, client)
         except Exception as e:
             log_agent_call(logger, context.project_id, self.role.value, "failed", {"error": str(e)})
             raise

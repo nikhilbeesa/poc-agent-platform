@@ -20,6 +20,7 @@ from knowledge.bootstrap_seed_data import bootstrap  # noqa: E402
 from knowledge.store import get_knowledge_store  # noqa: E402
 from llm_client import get_client  # noqa: E402
 from orchestrator import AGENT_PIPELINE, resolve_handoff_issues  # noqa: E402
+import jobs  # noqa: E402
 from project_store import get_project_store  # noqa: E402
 
 app = Flask(__name__, static_folder=str(Path(__file__).resolve().parent / "static"))
@@ -44,6 +45,15 @@ DEMO_DELAY = 0.5
 def _demo_pace():
     if get_client() is None:
         time.sleep(DEMO_DELAY)
+
+
+def _run_maybe_async(project_id, work):
+    """Mock mode is instant, so it answers directly. Live mode makes many LLM
+    calls (minutes), so it becomes a background job the browser polls — see
+    jobs.py."""
+    if get_client() is None:
+        return jsonify(work())
+    return jsonify({"job_id": jobs.start(project_id, work), "async": True}), 202
 
 
 AGENT_META = [
@@ -150,36 +160,24 @@ def run_agent(project_id, index):
 
     _demo_pace()
 
-    is_last_agent = AGENT_PIPELINE[index].role == AgentRole.AI_HANDOFF_VALIDATION
-    if is_last_agent:
-        # NOTE: this deliberately does NOT run the full multi-round
-        # gap-correction loop synchronously here — chaining several LLM
-        # calls (validation + re-running implicated agents, repeated up to
-        # MAX_GAP_CORRECTION_ROUNDS times) inside one HTTP request risked
-        # exceeding hosting platforms' request timeouts, which surfaces to
-        # the browser as an HTML error page instead of JSON (a fetch().json()
-        # parse error) — confusing and looks like a crash even though the
-        # work was actually still in progress server-side. Auto-repair
-        # instead happens as a short chain of separate requests driven by
-        # the frontend calling /resolve repeatedly — see runAgentPipeline()
-        # in app.js. This single call just runs validation once (fast).
-        contribution = AGENT_PIPELINE[index].run(ctx)
-        return jsonify({
+    def work():
+        # NOTE: the last agent deliberately runs validation ONCE here and does
+        # not chain the multi-round gap-correction loop — auto-repair is a
+        # short chain of separate /resolve requests driven by the frontend
+        # (see runAgentPipeline() in app.js), so no single request or job
+        # grows without bound.
+        agent = AGENT_PIPELINE[index]
+        contribution = agent.run(ctx)
+        return {
             "agent": contribution.agent.value,
             "summary": contribution.summary,
-            "output": contribution.output,
-            "consistency_notes": ctx.consistency_notes,
-        })
+            # the UI only needs the full output for the validator's verdict; the
+            # content agents' outputs run to megabytes at full depth
+            "output": contribution.output if contribution.agent == AgentRole.AI_HANDOFF_VALIDATION else {},
+            "consistency_notes": ctx.consistency_notes if contribution.agent == AgentRole.AI_HANDOFF_VALIDATION else [],
+        }
 
-    agent = AGENT_PIPELINE[index]
-    contribution = agent.run(ctx)
-
-    return jsonify({
-        "agent": contribution.agent.value,
-        "summary": contribution.summary,
-        "output": contribution.output,
-        "consistency_notes": ctx.consistency_notes if contribution.agent == AgentRole.AI_HANDOFF_VALIDATION else [],
-    })
+    return _run_maybe_async(project_id, work)
 
 
 @app.route("/api/project/<project_id>/export", methods=["POST"])
@@ -246,41 +244,52 @@ def resolve_issues(project_id):
         return jsonify({"error": "agent pipeline is not complete yet"}), 400
 
     _demo_pace()
-    result = resolve_handoff_issues(ctx)
-    if not result.get("resolved"):
-        return jsonify(result)
 
-    ctx = export_all_artefacts(ctx)
-    val = ctx.get_contribution(AgentRole.AI_HANDOFF_VALIDATION)
+    def work():
+        result = resolve_handoff_issues(ctx)
+        if not result.get("resolved"):
+            return result
+        export_all_artefacts(ctx)
+        val = ctx.get_contribution(AgentRole.AI_HANDOFF_VALIDATION)
 
-    store = get_project_store()
-    store.save({
-        "id": ctx.project_id,
-        "business_idea": ctx.business_idea_raw,
-        "domain": ctx.domain_classification,
-        "domain_confidence": ctx.domain_confidence,
-        "stage": ctx.stage.value,
-        "handoff_status": val.output.get("final_handoff_status") if val else None,
-        "consistency_notes": ctx.consistency_notes,
-        "artefacts": [
-            {"type": a.type, "title": a.title, "content_markdown": a.content_markdown}
-            for a in ctx.artefacts
-        ],
-    })
+        store = get_project_store()
+        store.save({
+            "id": ctx.project_id,
+            "business_idea": ctx.business_idea_raw,
+            "domain": ctx.domain_classification,
+            "domain_confidence": ctx.domain_confidence,
+            "stage": ctx.stage.value,
+            "handoff_status": val.output.get("final_handoff_status") if val else None,
+            "consistency_notes": ctx.consistency_notes,
+            "artefacts": [
+                {"type": a.type, "title": a.title, "content_markdown": a.content_markdown}
+                for a in ctx.artefacts
+            ],
+        })
 
-    return jsonify({
-        **result,
-        "validation_output": val.output if val else None,
-        "consistency_notes": ctx.consistency_notes,
-        "agents": [
-            {"agent": c.agent.value, "summary": c.summary}
-            for c in ctx.agent_contributions
-        ],
-        "artefacts": [
-            {"type": a.type, "title": a.title, "content_markdown": a.content_markdown}
-            for a in ctx.artefacts
-        ],
-    })
+        return {
+            **result,
+            "validation_output": val.output if val else None,
+            "consistency_notes": ctx.consistency_notes,
+            "agents": [
+                {"agent": c.agent.value, "summary": c.summary}
+                for c in ctx.agent_contributions
+            ],
+            "artefacts": [
+                {"type": a.type, "title": a.title, "content_markdown": a.content_markdown}
+                for a in ctx.artefacts
+            ],
+        }
+
+    return _run_maybe_async(project_id, work)
+
+
+@app.route("/api/job/<job_id>", methods=["GET"])
+def job_status(job_id):
+    snap = jobs.snapshot(job_id)
+    if snap is None:
+        return jsonify({"error": "unknown or expired job"}), 404
+    return jsonify(snap)
 
 
 @app.route("/api/history", methods=["GET"])

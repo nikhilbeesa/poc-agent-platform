@@ -56,6 +56,10 @@ Also produce a priority table (High/Medium/Low with a short note) for
 every story, tied to the originating requirement's priority (P0/P1 ->
 High, P2 -> Medium, P3 -> Low).
 
+CRITICAL — story IDs: the story for FR-0NN must use ID US-0NN
+(FR-007 -> US-007), so the BRD's story summary, this backlog, and the UX
+spec all give each ID one meaning.
+
 CRITICAL — naming and priority fidelity: use each module's EXACT name
 from the list above as its epic name, and each FR's exact name in story
 titles — never a shortened form or synonym. A story's priority must
@@ -87,6 +91,10 @@ Respond ONLY with JSON in exactly this shape:
   }}],
   "priorities": [{{"story_id": "US-001", "priority": "High|Medium|Low", "notes": "..."}}]
 }}"""
+
+    def generate_live(self, context: ProjectContext, client) -> dict:
+        from agents import live_product_manager
+        return live_product_manager.generate(context, client)
 
     def mock_response(self, context: ProjectContext) -> dict:
         modules = ck.select_modules(context)

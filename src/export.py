@@ -139,8 +139,8 @@ def export_business_requirements(context: ProjectContext) -> Artefact:
 
     modules = _table(["Module ID", "Module", "Purpose"], [[m.get("id", ""), m.get("name", ""), m.get("purpose", "")] for m in o.get("modules", [])])
 
-    requirements = _table(["ID", "Requirement Name", "Description", "Primary Actor", "Priority", "Rationale", "Dependencies", "Status"],
-                           [[r.get("id", ""), r.get("name", ""), r.get("description", ""), r.get("actor") or r.get("module", ""),
+    requirements = _table(["ID", "Requirement Name", "Module", "Description", "Primary Actor", "Priority", "Rationale", "Dependencies", "Status"],
+                           [[r.get("id", ""), r.get("name", ""), r.get("module", ""), r.get("description", ""), r.get("actor", ""),
                              r.get("priority", ""), r.get("rationale", ""), ", ".join(r.get("dependencies", []) or []) or "None",
                              r.get("status", "Draft")] for r in o.get("requirements", [])])
 
