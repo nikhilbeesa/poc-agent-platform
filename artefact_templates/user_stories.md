@@ -25,7 +25,8 @@
 ## 7. Story Backlog
 
 *Each story below includes preconditions, trigger, main/alternative/exception
-flow, business rules, and Given/When/Then acceptance criteria.*
+flow, data validation rules, exact error messages, empty states, edge cases,
+business rules, and Given/When/Then acceptance criteria.*
 
 {{stories_list}}
 

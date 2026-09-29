@@ -131,6 +131,63 @@ class AIHandoffValidationAgent(BaseAgent):
                              "affected_document": "User Stories",
                              "impact_on_design_generation": "Requirements without stories cannot be traced to screens.",
                              "recommended_action": f"Write a user story for each of: {', '.join(no_story)}."})
+        findings += AIHandoffValidationAgent._content_depth_findings(ba, pm)
+        return findings
+
+    @staticmethod
+    def _content_depth_findings(ba: dict, pm: dict) -> list[dict]:
+        """Depth checks the ID-level coverage matrix can't see: every user story must carry
+        validation rules, error messages, an empty-state entry and edge cases; the BRD must
+        carry flow diagrams, an assessed/owned risk register and key parameters."""
+        findings = []
+        stories = pm.get("stories", [])
+        for label, key in (("data validation rules", "data_validation"), ("exact error messages", "error_messages"),
+                           ("an empty-state entry (or 'Not applicable — reason')", "empty_states"),
+                           ("edge cases", "edge_cases")):
+            missing = [s["id"] for s in stories if not [x for x in (s.get(key) or []) if str(x).strip()]]
+            if missing:
+                findings.append({
+                    "missing_item": f"User stories {', '.join(missing[:25])} have no {label}",
+                    "affected_document": "User Stories",
+                    "impact_on_design_generation": "QA and the Design AI would have to invent this behaviour.",
+                    "recommended_action": f"Add {label} to each of: {', '.join(missing)}."})
+        few_ac = [s["id"] for s in stories if len(s.get("acceptance_criteria") or []) < 4]
+        if few_ac:
+            findings.append({
+                "missing_item": f"User stories {', '.join(few_ac[:25])} have fewer than 4 acceptance criteria",
+                "affected_document": "User Stories",
+                "impact_on_design_generation": "Happy path, validation, error, empty-state and edge cases are not all testable.",
+                "recommended_action": f"Expand the acceptance criteria to cover validation, errors, empty state and edge cases for: {', '.join(few_ac)}."})
+        brd = "Business Requirements Document"
+        if len(ba.get("flow_diagrams") or []) < 2:
+            findings.append({
+                "missing_item": "The Business Requirements have fewer than 2 envisioned flow diagrams",
+                "affected_document": brd,
+                "impact_on_design_generation": "The intended end-to-end flows are not visualised.",
+                "recommended_action": "Add flow_diagrams (Mermaid flowcharts) for the core journey, transaction flow and support/admin flow."})
+        risks = ba.get("risks") or []
+        unassessed = [r.get("risk", "")[:50] for r in risks if not r.get("score")]
+        no_owner = [r.get("risk", "")[:50] for r in risks if not str(r.get("owner", "")).strip()]
+        if unassessed or no_owner or len(risks) < 8:
+            bits = []
+            if unassessed:
+                bits.append(f"{len(unassessed)} risk(s) lack a likelihood/severity assessment")
+            if no_owner:
+                bits.append(f"{len(no_owner)} risk(s) have no owner")
+            if len(risks) < 8:
+                bits.append(f"only {len(risks)} risks are listed")
+            findings.append({
+                "missing_item": "Risk register is incomplete: " + "; ".join(bits),
+                "affected_document": brd,
+                "impact_on_design_generation": "Risks cannot be ranked or acted on.",
+                "recommended_action": "Revise the risks section: 10+ product-specific risks, each with likelihood, severity, owner, "
+                                      "trigger and a concrete mitigation."})
+        if len(ba.get("key_parameters") or []) < 8:
+            findings.append({
+                "missing_item": "Key business parameters (timeouts, windows, thresholds, limits) are missing or too few",
+                "affected_document": brd,
+                "impact_on_design_generation": "Vague rules such as 'a period of inactivity' cannot be designed or tested.",
+                "recommended_action": "Add key_parameters: 12+ concrete values or explicit TBD decisions the requirements depend on."})
         return findings
 
     def build_prompt(self, context: ProjectContext) -> str:

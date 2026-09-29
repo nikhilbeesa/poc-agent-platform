@@ -178,3 +178,13 @@ status logic isn't cosmetic.
   mode use a handful of genuinely-checkable rules (e.g. ID cross-
   referencing, role alignment) as a stand-in for the LLM's broader
   judgment in live mode.
+
+## Document depth (v2)
+
+Generated documents now include, by design:
+
+- **User stories:** per-story *Data validation*, *Error messages*, *Empty states* and *Edge cases* sections, plus 5–6 acceptance criteria covering them.
+- **Business Requirements:** Mermaid *envisioned flow diagrams* (section 13), a ranked *risk register* with likelihood, severity, derived rating, owner and trigger (section 33), and *key business parameters* (section 18) — undecided values appear as "TBD" and are also listed under Open Questions.
+- **AI Handoff Validation** checks for these and reports what is missing (live mode).
+
+Cost note: live runs make roughly 4 extra requests (smaller story batches plus one extra BRD call). Tunable with `LLM_MAX_RPM` / `LLM_MAX_PARALLEL`.

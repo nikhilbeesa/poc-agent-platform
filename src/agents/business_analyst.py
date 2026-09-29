@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from agents.base import BaseAgent  # noqa: E402
 from context import AgentRole, ProjectContext  # noqa: E402
+import chunked as ch  # noqa: E402
 import content_kit as ck  # noqa: E402
 
 
@@ -418,7 +419,9 @@ Respond ONLY with JSON in exactly this shape:
                 "Regulatory constraints: TBD pending confirmation of launch geography.",
             ],
             "dependencies": [d["integration"] for d in integrations] + ["Legal/compliance review prior to launch"],
-            "risks": risks,
+            "risks": ch.normalize_risks(risks),
+            "flow_diagrams": ch.normalize_flow_diagrams(ck.build_flow_diagrams(modules, context, current_flow, future_flow)),
+            "key_parameters": ch.normalize_key_parameters(ck.build_key_parameters(modules, context)),
             "mvp_prioritization": {**mvp, "out_of_scope": mvp_out},
             "user_stories_summary": [
                 {"id": s["id"], "title": s["feature"], "actor": s["role"], "story": s["story"],

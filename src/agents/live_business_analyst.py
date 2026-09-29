@@ -44,6 +44,7 @@ PATCHABLE = [
     "data_entities", "data_relationships", "data_classification", "notifications_matrix",
     "payment_requirements", "admin_operations", "reporting", "analytics_events",
     "security_requirements", "threats", "privacy_compliance", "accessibility", "integrations", "risks",
+    "flow_diagrams", "key_parameters",
 ]
 
 _NEW_MODULE_HINT = re.compile(r"no module or\s+functional requirement|add a dedicated module|not represented", re.I)
@@ -111,8 +112,14 @@ CROSS_B_SHAPE = """{
   "privacy_compliance": "...",
   "accessibility": ["..."],
   "integrations": [{"integration": "...", "purpose": "...", "requirements": "..."}],
-  "risks": [{"risk": "...", "impact": "...", "consequence": "...", "mitigation": "..."}],
+  "risks": [{"risk": "...", "category": "...", "likelihood": "Low|Medium|High", "severity": "Low|Medium|High", "impact": "...", "consequence": "...", "mitigation": "a concrete control or action", "owner": "exact role name", "trigger": "the early-warning signal that this risk is materialising"}],
   "glossary": [{"term": "...", "definition": "..."}]
+}"""
+
+
+CROSS_C_SHAPE = """{
+  "flow_diagrams": [{"title": "...", "description": "one sentence", "mermaid": "flowchart TD\\n    A[\\"Start\\"] --> B{\\"Decision?\\"}\\n    B -->|Yes| C[\\"Step\\"]\\n    B -->|No| D[\\"Other step\\"]"}],
+  "key_parameters": [{"parameter": "...", "value": "a concrete value or 'TBD — needs business decision'", "status": "Proposed default|Confirmed|TBD", "related": "FR or BR ids", "owner": "exact role name"}]
 }"""
 
 
@@ -359,18 +366,52 @@ def _crosscut(context, client, plan, requirements):
         "You are a senior business analyst writing the operations, security and risk sections of a "
         "Business Requirements Document.\n\n" + common +
         "Minimums: security_requirements 8+; threats 6+; accessibility 6+ (target WCAG 2.2 AA unless "
-        "told otherwise); integrations 4+; risks 8+; glossary 15+ terms — including every actor/role "
+        "told otherwise); integrations 4+; risks 10+; glossary 15+ terms — including every actor/role "
         "alias used anywhere (e.g. \"Provider = the professional photographers\") so a synonym is a "
         "documented alias, not an inconsistency. If the product has no payments at all, set "
         "payment_requirements to null. Never invent a compliance claim; say applicable regulation "
-        "must be confirmed for the launch geography.\n\nRespond ONLY with JSON in exactly this shape:\n"
+        "must be confirmed for the launch geography.\n\n"
+        "RISK ASSESSMENT RULES: every risk must be specific to THIS product (not generic boilerplate) and "
+        "carry a likelihood AND a severity (Low/Medium/High, judged honestly — not everything is High), "
+        "an owner (one of the exact role names above), and a trigger (the observable early-warning "
+        "signal). A mitigation must be a concrete control or action, never just 'build the feature'. "
+        "Cover, where relevant: fraud/chargebacks/abuse, third-party API or vendor changes, "
+        "delivery/logistics/supply, regulatory & consent compliance, availability/performance, "
+        "customer-retention/churn, data security & privacy, operational capacity, and product-specific "
+        "safety or quality risks.\n\nRespond ONLY with JSON in exactly this shape:\n"
         + CROSS_B_SHAPE
     )
-    ra, rb = ch.run_parallel("Cross-cutting sections", [
+    c = (
+        ch.tag("ba.crosscut_c") +
+        "You are a senior business analyst adding two things to a Business Requirements Document.\n\n" + common +
+        "1. flow_diagrams: 4-6 envisioned flow diagrams as VALID Mermaid `flowchart TD` source covering the "
+        "core end-to-end user journey, the main transaction/checkout or booking flow (with its failure "
+        "branch), any recurring/subscription/lifecycle flow, the return/refund/dispute or support flow, "
+        "and the admin/operations fulfilment flow — whichever apply to THIS product. Each: 6-14 nodes, "
+        "at least one decision diamond, node text in double quotes with NO parentheses or special "
+        "characters inside labels, and the mermaid field a single string with \\n line breaks.\n"
+        "2. key_parameters: 12+ concrete business parameters the requirements depend on (session timeout, "
+        "password policy, payment/refund/return windows, delivery or lead-time SLAs, order/quantity "
+        "limits, retention periods, retry counts, thresholds, fees...). Give a sensible proposed default "
+        "value with status 'Proposed default', or 'TBD — needs business decision' with status TBD when "
+        "it depends on facts you do not have. Never present an invented number as confirmed.\n\n"
+        "Respond ONLY with JSON in exactly this shape:\n" + CROSS_C_SHAPE
+    )
+
+    def safe_c():
+        try:
+            return ch.call_json(client, c, max_tokens=7000)
+        except ch.LLMTruncated:
+            return {}
+        except RuntimeError:
+            return {}  # depth extras must never fail the whole BRD; the code fallbacks + validation cover it
+
+    ra, rb, rc = ch.run_parallel("Cross-cutting sections", [
         lambda: ch.call_json(client, a, max_tokens=9000),
-        lambda: ch.call_json(client, b, max_tokens=8000),
+        lambda: ch.call_json(client, b, max_tokens=9000),
+        safe_c,
     ])
-    return {**ra, **rb}
+    return {**ra, **rb, **(rc or {})}
 
 
 # ---------------------------------------------------------------------------
@@ -567,7 +608,7 @@ def generate(context: ProjectContext, client) -> dict:
                                           "notifications_matrix", "reporting", "analytics_events",
                                           "payment_requirements", "admin_operations", "security_requirements",
                                           "threats", "privacy_compliance", "accessibility", "integrations",
-                                          "risks", "glossary") if k in prev_out}
+                                          "risks", "glossary", "flow_diagrams", "key_parameters") if k in prev_out}
     else:
         # IDs must exist before the cross-cutting prompt lists FRs, so assign them first
         tmp = _assemble(context, plan, narrative, chunks, set(), {}, {})
@@ -583,6 +624,8 @@ def generate(context: ProjectContext, client) -> dict:
     if revising:
         out["summary"] = _summary_with_counts(prev_narrative_summary, out)
 
+    _finalize_depth_sections(out)
+
     # chunk fingerprints + which top-level keys are narrative (for the next revision)
     out["_chunk_src"] = {mid: c.get("_src") for mid, c in chunks.items()}
     out["_narrative_keys"] = [k for k in narrative.keys() if k != "summary"]
@@ -591,6 +634,20 @@ def generate(context: ProjectContext, client) -> dict:
     ch.report(f"Business requirements: {len(out['modules'])} modules, {len(out['requirements'])} FRs "
               f"({stats['generated']} module(s) generated, {stats['reused']} reused).")
     return out
+
+
+def _finalize_depth_sections(out: dict) -> None:
+    """Code-side guarantees for the depth sections, applied on every run/revision:
+    risks get a derived rating and are ranked; flow diagrams are validated with a
+    deterministic fallback built from the future/current-state flow text; key
+    parameters are normalised."""
+    out["risks"] = ch.normalize_risks(out.get("risks"))
+    out["flow_diagrams"] = ch.normalize_flow_diagrams(
+        out.get("flow_diagrams"),
+        [("Envisioned future-state flow", out.get("future_state_flow", "")),
+         ("Current-state flow (as-is)", out.get("current_state_flow", ""))],
+    )
+    out["key_parameters"] = ch.normalize_key_parameters(out.get("key_parameters"))
 
 
 def _summary_with_counts(summary: str, out: dict) -> str:

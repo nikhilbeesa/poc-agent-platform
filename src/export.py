@@ -224,6 +224,42 @@ def export_business_requirements(context: ProjectContext) -> Artefact:
         "prepared_for": "Downstream Product, UX, and Design AI agents",
     })
 
+    # --- depth sections: envisioned flow diagrams, ranked risk register, key parameters ---
+    diagrams = o.get("flow_diagrams") or []
+    future_flow_section = str(o.get("future_state_flow", "Not specified"))
+    if diagrams:
+        future_flow_section += "\n\n**Envisioned flow diagrams**\n\n" + "\n\n".join(
+            f"*{d.get('title', 'Flow')}*" + (f" — {d['description']}" if d.get("description") else "")
+            + f"\n\n```mermaid\n{d.get('mermaid', '')}\n```" for d in diagrams
+        )
+
+    risk_rows = [
+        [r.get("risk", ""), r.get("category", "") or "-", r.get("likelihood") or "Not assessed",
+         r.get("severity") or r.get("impact", "") or "Not assessed",
+         f"{r.get('rating', 'Not assessed')} ({r.get('score', 0)})" if r.get("score") else "Not assessed",
+         r.get("owner", "") or "Unassigned", r.get("trigger", "") or "-",
+         r.get("consequence", "") or r.get("impact", ""), r.get("mitigation", "")]
+        for r in o.get("risks", [])
+    ]
+    risks_section = (
+        "*Rating = Likelihood x Severity (Low=1, Medium=2, High=3): 6-9 High, 3-4 Medium, 1-2 Low. "
+        "Risks are listed highest-rated first.*\n\n"
+        + _table(["Risk", "Category", "Likelihood", "Severity", "Rating", "Owner", "Early-warning trigger",
+                  "Consequence", "Mitigation"], risk_rows)
+    )
+
+    kp = o.get("key_parameters") or []
+    key_parameters_section = ""
+    if kp:
+        key_parameters_section = (
+            "\n\n**Key business parameters and thresholds**\n\n"
+            "*Concrete values the requirements depend on. \"Proposed default\" values need business confirmation; "
+            "\"TBD\" items are listed under Open Questions.*\n\n"
+            + _table(["Parameter", "Value", "Status", "Related", "Owner"],
+                     [[p.get("parameter", ""), p.get("value", ""), p.get("status", ""), p.get("related", "") or "-",
+                       p.get("owner", "") or "-"] for p in kp])
+        )
+
     values = {
         "project_name": _project_name(context),
         "domain_classification": context.domain_classification or "Unclassified",
@@ -244,12 +280,12 @@ def export_business_requirements(context: ProjectContext) -> Artefact:
         "current_state_process": o.get("current_state_process", "Not specified"),
         "current_state_flow": o.get("current_state_flow", "Not specified"),
         "future_state_process": o.get("future_state_process", "Not specified"),
-        "future_state_flow": o.get("future_state_flow", "Not specified"),
+        "future_state_flow": future_flow_section,
         "user_journeys": user_journeys,
         "modules": modules,
         "requirements": requirements,
         "module_details": module_details,
-        "business_rules": business_rules,
+        "business_rules": business_rules + key_parameters_section,
         "nfrs": nfrs,
         "data_entities": data_entities,
         "data_relationships": data_relationships,
@@ -266,8 +302,7 @@ def export_business_requirements(context: ProjectContext) -> Artefact:
         "assumptions": o.get("assumptions", []),
         "constraints": o.get("constraints", []),
         "dependencies": o.get("dependencies", []),
-        "risks": _table(["Risk", "Impact", "Consequence", "Mitigation"],
-                         [[r.get("risk", ""), r.get("impact", ""), r.get("consequence", ""), r.get("mitigation", "")] for r in o.get("risks", [])]),
+        "risks": risks_section,
         "mvp_prioritization": mvp_prioritization,
         "user_stories_summary": user_stories_summary,
         "acceptance_criteria_summary": acceptance_criteria_summary,
@@ -275,7 +310,10 @@ def export_business_requirements(context: ProjectContext) -> Artefact:
         "release_strategy": release_strategy,
         "future_enhancements": o.get("future_enhancements", []),
         "glossary": glossary,
-        "open_questions": o.get("open_questions", []),
+        "open_questions": list(o.get("open_questions", [])) + [
+            f"Decision needed — {p['parameter']}: {p['value']}"
+            for p in o.get("key_parameters", []) if str(p.get("status", "")).upper() == "TBD"
+        ],
     }
     content = _fill_template(template, values)
     return Artefact(id=str(uuid.uuid4()), type="business_requirements",
@@ -329,7 +367,8 @@ def export_user_stories(context: ProjectContext) -> Artefact:
         "each story keeps a direct `related_fr_ids` reference back to its "
         "source requirement so the two documents stay traceable. Stories are "
         "not a restatement of the requirement; each adds actor-level detail "
-        "(preconditions, trigger, main/alternative/exception flow, and "
+        "(preconditions, trigger, main/alternative/exception flow, data "
+        "validation rules, exact error messages, empty states, edge cases, and "
         "Given/When/Then acceptance criteria) that the requirement itself "
         "does not specify."
     )
@@ -365,6 +404,12 @@ def export_user_stories(context: ProjectContext) -> Artefact:
             lines.append(f"  {i}. {step}")
         lines.append(f"\n**Alternative flow:** {s.get('alternative_flow', 'None')}")
         lines.append(f"**Exception flow:** {s.get('exception_flow', 'None')}")
+        for label, key in (("Data validation", "data_validation"), ("Error messages", "error_messages"),
+                           ("Empty states", "empty_states"), ("Edge cases", "edge_cases")):
+            items = s.get(key) or []
+            if items:
+                lines.append(f"\n**{label}:**")
+                lines.extend(f"- {i}" for i in items)
         if s.get("business_rules"):
             lines.append("\n**Business rules:**")
             lines.extend(f"- {r}" for r in s["business_rules"])

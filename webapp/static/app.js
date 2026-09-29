@@ -277,9 +277,28 @@ async function openDashboardDetail(id) {
   }
 }
 
+// Turns ```mermaid code blocks into rendered diagrams. Purely progressive: if the
+// mermaid library didn't load or a diagram is invalid, the readable source stays.
+function renderMermaidBlocks(viewer) {
+  if (!window.mermaid) return;
+  try {
+    const blocks = viewer.querySelectorAll('pre > code.language-mermaid');
+    blocks.forEach((code) => {
+      const div = document.createElement('div');
+      div.className = 'mermaid';
+      div.textContent = code.textContent;
+      code.parentElement.replaceWith(div);
+    });
+    if (blocks.length) {
+      window.mermaid.run({ nodes: viewer.querySelectorAll('.mermaid'), suppressErrors: true }).catch(() => {});
+    }
+  } catch (e) { /* keep the source visible */ }
+}
+
 function renderHistoryDoc(markdown) {
   const viewer = $('#history-doc-viewer');
   viewer.innerHTML = window.marked ? marked.parse(markdown) : markdown;
+  renderMermaidBlocks(viewer);
   viewer.scrollTop = 0;
 }
 
@@ -916,6 +935,7 @@ function renderArtefacts(artefacts) {
 function renderDoc(markdown) {
   const viewer = $('#doc-viewer');
   viewer.innerHTML = window.marked ? marked.parse(markdown) : markdown;
+  renderMermaidBlocks(viewer);
   // Switching artifacts replaces this element's content but not the
   // element itself, so the browser keeps whatever scroll position was
   // left over from the PREVIOUS document — on a shorter new document

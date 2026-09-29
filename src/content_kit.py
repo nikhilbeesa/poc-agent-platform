@@ -923,8 +923,101 @@ RISK_BANK = [
 ]
 
 
+# Likelihood / owner / early-warning trigger per RISK_BANK entry (same order).
+# Severity is the bank's own High/Medium level; the rating is derived in code.
+RISK_META = [
+    ("Medium", "Product Owner", "Onboarding funnel drop-off above the target set at launch"),
+    ("Low", "Engineering Lead", "Payment error rate above 2% or gateway status page incident"),
+    ("Medium", "Operations Lead", "Search-to-order conversion stalls for two consecutive weeks"),
+    ("Low", "Engineering Lead", "Anomalous data-export volume or failed-login spike in security logs"),
+    ("Medium", "Compliance Officer", "Launch geography confirmed or a regulator inquiry received"),
+    ("Medium", "Operations Lead", "Chargeback rate or duplicate/fake-account signups rising"),
+    ("Medium", "Engineering Lead", "Vendor announces a pricing or API change"),
+    ("High", "Product Owner", "Requests outside P0/P1 accepted into the sprint after scope freeze"),
+]
+
+# Extra, always-relevant operational risks (risk, category, severity, likelihood, consequence, mitigation, owner, trigger)
+RISK_EXTRA = [
+    ("Delivery/fulfilment delays or failures for orders and bookings", "Operational", "Medium", "Medium",
+     "Late or failed fulfilment increases support load and refunds",
+     "Publish realistic lead times, set carrier/partner SLAs, and alert operations on overdue orders",
+     "Operations Lead", "Share of orders past their promised date exceeds 5%"),
+    ("Failed renewals, churn or poor retention of returning users", "Business", "Medium", "Medium",
+     "Recurring revenue and lifetime value fall below plan",
+     "Retry failed payments on a schedule, send pre-renewal reminders, and review churn reasons monthly",
+     "Product Owner", "Month-over-month retention drops below the target set at launch"),
+]
+
+
 def build_risks() -> list[dict]:
-    return [{"risk": r, "category": cat, "impact": i, "consequence": c, "mitigation": m} for r, cat, i, c, m in RISK_BANK]
+    out = []
+    for (r, cat, sev, c, m), (lik, owner, trig) in zip(RISK_BANK, RISK_META):
+        out.append({"risk": r, "category": cat, "likelihood": lik, "severity": sev, "impact": c,
+                    "consequence": c, "mitigation": m, "owner": owner, "trigger": trig})
+    for r, cat, sev, lik, c, m, owner, trig in RISK_EXTRA:
+        out.append({"risk": r, "category": cat, "likelihood": lik, "severity": sev, "impact": c,
+                    "consequence": c, "mitigation": m, "owner": owner, "trigger": trig})
+    return out
+
+
+def build_key_parameters(modules, context) -> list[dict]:
+    """Generic, domain-neutral business parameters. Values are PROPOSED defaults or
+    explicit TBDs — never presented as confirmed."""
+    keys = {m["key"] for m in modules}
+    rows = [
+        ("Session inactivity timeout", "30 minutes of inactivity", "Proposed default", "BR-003"),
+        ("Password policy", "Minimum 8 characters, letters and numbers", "Proposed default", "BR-001"),
+        ("Failed-login lockout", "5 attempts, then 15-minute lock", "Proposed default", ""),
+        ("Email verification link validity", "24 hours", "Proposed default", ""),
+        ("Standard SLA for support responses", "TBD — needs business decision", "TBD", ""),
+        ("Data retention after account deletion", "TBD — needs legal/compliance decision", "TBD", ""),
+        ("Search results page size", "24 items per page", "Proposed default", ""),
+        ("Notification retry policy", "3 retries with exponential back-off", "Proposed default", ""),
+    ]
+    if "payments" in keys or any("pay" in k for k in keys):
+        rows += [
+            ("Payment retry policy", "3 attempts over 72 hours", "Proposed default", ""),
+            ("Refund / cancellation window", "TBD — needs business decision", "TBD", ""),
+            ("Platform fee / commission", "TBD — needs business decision", "TBD", ""),
+        ]
+    rows += [("Launch geography and applicable regulation", "TBD — needs legal confirmation", "TBD", "")]
+    return [{"parameter": a, "value": b, "status": c, "related": d, "owner": "Product Owner"} for a, b, c, d in rows]
+
+
+def build_flow_diagrams(modules, context, current_flow: str, future_flow: str) -> list[dict]:
+    """Envisioned flows as Mermaid. Diagram 1 is derived from the BRD's own future-state
+    flow text so the picture always agrees with the prose; the rest are standard
+    lifecycle flows every product of this kind needs."""
+    keys = {m["key"] for m in modules}
+    vocab = get_vocab(context.domain_classification)
+    from chunked import flow_from_arrows  # local import: avoids a hard module cycle
+    diagrams = []
+    main = flow_from_arrows(future_flow, "LR")
+    if main:
+        diagrams.append({"title": "Envisioned end-to-end flow (future state)",
+                         "description": "The primary journey from discovery to completion.", "mermaid": main})
+    cur = flow_from_arrows(current_flow, "LR")
+    if cur:
+        diagrams.append({"title": "Current-state flow (as-is)",
+                         "description": "How the process works today, for comparison.", "mermaid": cur})
+    diagrams.append({"title": "Account registration and sign-in",
+        "description": "Sign-up, verification and login with failure handling.",
+        "mermaid": "flowchart TD\n    A[\"Visitor opens sign-up\"] --> B[\"Enters email and password\"]\n"
+                   "    B --> C{\"Input valid and email unique?\"}\n    C -->|No| D[\"Show field errors\"]\n    D --> B\n"
+                   "    C -->|Yes| E[\"Create account and send verification\"]\n    E --> F[\"User verifies email\"]\n"
+                   "    F --> G[\"Signed in to dashboard\"]"})
+    if "payments" in keys or any("pay" in k for k in keys):
+        diagrams.append({"title": f"{vocab['transaction'].title()} and payment flow",
+            "description": "Payment authorisation with failure and retry branch.",
+            "mermaid": "flowchart TD\n    A[\"Review order summary\"] --> B[\"Enter payment details\"]\n"
+                       "    B --> C{\"Payment authorised?\"}\n    C -->|Yes| D[\"Confirm and send receipt\"]\n"
+                       "    C -->|No| E[\"Show error and offer retry\"]\n    E --> B\n    D --> F[\"Update records and notify parties\"]"})
+    diagrams.append({"title": "Support and issue resolution",
+        "description": "How a problem raised by a user is handled.",
+        "mermaid": "flowchart TD\n    A[\"User reports an issue\"] --> B[\"Ticket created and acknowledged\"]\n"
+                   "    B --> C[\"Support reviews and verifies\"]\n    C --> D{\"Resolvable directly?\"}\n"
+                   "    D -->|Yes| E[\"Resolve and notify user\"]\n    D -->|No| F[\"Escalate to administrator\"]\n    F --> E"})
+    return diagrams
 
 
 def build_glossary(modules, context) -> list[dict]:
@@ -1034,6 +1127,74 @@ _STORY_FLOW_TEMPLATES = {
 }
 
 
+_STORY_DEPTH = {
+    "create": {
+        "validation": ["Required fields must be completed before submit; blank required fields are rejected",
+                       "Text fields are trimmed and limited to a sensible maximum length; unsupported characters are rejected",
+                       "Values that must be unique (e.g. email, name) are checked before the record is saved"],
+        "errors": ["A required field is blank -> \"Please complete this required field.\"",
+                   "A value already exists -> \"This value is already in use. Please choose another.\"",
+                   "The save fails on the server -> \"We couldn't save your changes. Please try again.\""],
+        "empty": ["No records exist yet -> \"Nothing here yet.\" with a primary call-to-action to add the first one"],
+        "edge": ["User double-clicks Submit -> only one record is created (duplicate submissions are ignored)",
+                 "Session expires while the form is open -> user signs in again and the entered data is preserved",
+                 "Network drops during save -> the user sees a retry option and no partial record is stored"],
+    },
+    "edit": {
+        "validation": ["Changed fields follow the same rules as when they were first created",
+                       "A record can only be changed by a user permitted to change it"],
+        "errors": ["A changed value is invalid -> \"Please correct the highlighted fields.\"",
+                   "The record was changed by someone else -> \"This item was updated elsewhere. Reload to see the latest version.\""],
+        "empty": ["Not applicable — this action only operates on an existing record"],
+        "edge": ["Two users edit the same record at once -> the later save is rejected with a conflict message (no silent overwrite)",
+                 "User leaves with unsaved changes -> a confirmation prompt appears before changes are discarded"],
+    },
+    "admin": {
+        "validation": ["A reason/note is required for reject, suspend and override decisions",
+                       "The decision is accepted only while the record is still in its pending state"],
+        "errors": ["Record already actioned by another admin -> \"This item has already been processed.\"",
+                   "Reason left blank on a reject/suspend -> \"Please enter a reason for this decision.\""],
+        "empty": ["The review queue is empty -> \"Nothing is waiting for review.\" with a link back to the dashboard"],
+        "edge": ["Two admins act on the same item simultaneously -> the first decision wins and the second sees a conflict message",
+                 "Target user or record was deleted meanwhile -> the action is cancelled with an explanatory message"],
+    },
+    "browse": {
+        "validation": ["Search text is trimmed and limited to a maximum length; special characters are handled safely",
+                       "Filter values must come from the available options; sort options are limited to the supported list"],
+        "errors": ["The search service is unavailable -> \"We couldn't load results. Please try again.\"",
+                   "An invalid filter combination is requested -> \"Those filters can't be combined. Reset filters to continue.\""],
+        "empty": ["No results match -> \"No results match your search or filters.\" with a Reset filters button and suggestions"],
+        "edge": ["Very long or empty query -> empty query shows the default list; over-long input is truncated with a notice",
+                 "Filters that would return zero results are disabled or hidden to avoid dead ends"],
+    },
+    "settings": {
+        "validation": ["Values must match the allowed format for each setting (e.g. valid email/phone format)",
+                       "Changes that affect security (password, email) require re-authentication"],
+        "errors": ["A setting value is invalid -> \"Please enter a valid value.\"",
+                   "Saving fails -> \"Your settings weren't saved. Please try again.\""],
+        "empty": ["Not applicable — settings always have default values"],
+        "edge": ["User changes a setting on two devices at once -> the most recent save is applied and the other device refreshes",
+                 "Session expires before save -> user re-authenticates and the change is kept"],
+    },
+    "detail": {
+        "validation": ["All required inputs for this action must be present and in a valid format before it is processed",
+                       "The action is only allowed when the record is in a state that permits it"],
+        "errors": ["Required input is missing or invalid -> \"Please check the highlighted fields and try again.\"",
+                   "The action isn't permitted in the current state -> \"This action isn't available right now.\"",
+                   "A connected service times out -> \"This is taking longer than expected. Please try again.\""],
+        "empty": ["No related data exists yet -> \"Nothing to show yet.\" with guidance on how to get started"],
+        "edge": ["The action is triggered twice in quick succession -> it is processed once (idempotent)",
+                 "A dependent service times out mid-action -> no partial result is stored and the user can retry safely"],
+    },
+}
+
+
+def _story_depth(bucket: str, actor: str) -> dict:
+    d = _STORY_DEPTH.get(bucket, _STORY_DEPTH["detail"])
+    return {"data_validation": list(d["validation"]), "error_messages": list(d["errors"]),
+            "empty_states": list(d["empty"]), "edge_cases": list(d["edge"])}
+
+
 def build_stories(frs, modules, context) -> list[dict]:
     vocab = get_vocab(context.domain_classification)
     module_to_epic = {m["key"]: f"EPIC-{i:03d}" for i, m in enumerate(modules, start=1)}
@@ -1091,7 +1252,14 @@ def build_stories(frs, modules, context) -> list[dict]:
                 f"Given {actor.lower()} lacks the permissions required for this action, when they attempt to {clause}, then the system denies the action and does not reveal data beyond what {actor.lower()} is authorized to see.",
             ],
             "related_fr_ids": [fr["id"]],
+            **_story_depth(bucket, actor),
         })
+        d = stories[-1]
+        if not d["empty_states"][0].startswith("Not applicable"):
+            d["acceptance_criteria"].append(
+                f"Given there is no data to show, when {actor.lower()} opens this area, then the system displays the defined empty-state message with a clear next action.")
+        d["acceptance_criteria"].append(
+            f"Given an edge case such as a duplicate submission or an expired session, when {actor.lower()} attempts to {clause}, then the system behaves as defined in the edge cases and never leaves partial data.")
 
     # Second pass: derive cross-story dependencies for backlog planning, in
     # addition to the FR-level dependency each story already carries above.

@@ -409,3 +409,110 @@ def as_list(value: Any) -> list:
 
 def as_str_list(value: Any) -> list[str]:
     return [str(v) for v in as_list(value)]
+
+
+# --------------------------------------------------------------------------
+# BRD depth helpers: risk scoring, Mermaid flow diagrams, key parameters
+# (shared by the live and mock Business Analyst so both produce identical shapes)
+# --------------------------------------------------------------------------
+_LEVELS = {"low": 1, "medium": 2, "med": 2, "moderate": 2, "high": 3, "critical": 3, "very high": 3}
+
+
+def _level(value: Any) -> int:
+    return _LEVELS.get(str(value or "").strip().lower(), 0)
+
+
+def risk_rating(likelihood: Any, severity: Any) -> tuple[str, int]:
+    """Deterministic rating = likelihood x severity (each 1-3). Computed in code
+    so the ranking is never a model's opinion. Unassessed -> ("Not assessed", 0)."""
+    l, s = _level(likelihood), _level(severity)
+    if not l or not s:
+        return "Not assessed", 0
+    score = l * s
+    label = "High" if score >= 6 else "Medium" if score >= 3 else "Low"
+    return label, score
+
+
+def normalize_risks(risks: Any) -> list[dict]:
+    """Keeps every risk, canonicalises likelihood/severity to Low/Medium/High,
+    adds a derived rating + score and sorts highest-first."""
+    out = []
+    for r in as_list(risks):
+        if not isinstance(r, dict) or not str(r.get("risk", "")).strip():
+            continue
+        r = dict(r)
+        sev = r.get("severity") or (r.get("impact") if _level(r.get("impact")) else "")
+        for key, val in (("likelihood", r.get("likelihood")), ("severity", sev)):
+            lv = _level(val)
+            r[key] = {1: "Low", 2: "Medium", 3: "High"}.get(lv, "Not assessed")
+        r["rating"], r["score"] = risk_rating(r["likelihood"], r["severity"])
+        for key in ("category", "owner", "trigger", "impact", "consequence", "mitigation"):
+            r[key] = str(r.get(key) or "").strip()
+        out.append(r)
+    out.sort(key=lambda x: -x["score"])
+    return out
+
+
+_MERMAID_START = ("flowchart", "graph", "sequencediagram", "statediagram")
+
+
+def _label(text: str) -> str:
+    return re.sub(r'["\[\]{}()<>|`]', "", str(text)).strip()[:60] or "Step"
+
+
+def flow_from_arrows(text: str, direction: str = "LR") -> str:
+    """Deterministic fallback: 'A -> B -> C' becomes a Mermaid flowchart."""
+    steps = [s for s in (p.strip() for p in re.split(r"\s*(?:->|→)\s*", str(text or ""))) if s]
+    if len(steps) < 3:
+        return ""
+    lines = [f"flowchart {direction}"]
+    for i, s in enumerate(steps):
+        lines.append(f'    N{i}["{_label(s)}"]')
+    lines.append("    " + " --> ".join(f"N{i}" for i in range(len(steps))))
+    return "\n".join(lines)
+
+
+def sanitize_mermaid(src: Any) -> str:
+    """Returns cleaned Mermaid source, or "" if it doesn't look renderable."""
+    text = str(src or "").strip()
+    text = re.sub(r"^```(?:mermaid)?\s*|\s*```$", "", text).strip()
+    lines = [ln.rstrip() for ln in text.splitlines() if ln.strip()]
+    if len(lines) < 3 or not lines[0].strip().lower().startswith(_MERMAID_START):
+        return ""
+    if len(re.findall(r"-->|---|->>|==>", "\n".join(lines[1:]))) < 2:
+        return ""
+    return "\n".join(lines)
+
+
+def normalize_flow_diagrams(items: Any, fallbacks: list[tuple[str, str]] = ()) -> list[dict]:
+    """Valid diagrams only; fallbacks are (title, 'A -> B -> C') pairs used when
+    the model returned none/invalid ones, so the BRD always has diagrams."""
+    out = []
+    for d in as_list(items):
+        if not isinstance(d, dict):
+            continue
+        src = sanitize_mermaid(d.get("mermaid"))
+        if src:
+            out.append({"title": str(d.get("title") or "Flow").strip(),
+                        "description": str(d.get("description") or "").strip(), "mermaid": src})
+    if len(out) < 2:
+        have = {d["title"] for d in out}
+        for title, arrows in fallbacks:
+            src = flow_from_arrows(arrows)
+            if src and title not in have:
+                out.append({"title": title, "description": "Generated from the end-to-end flow described above.", "mermaid": src})
+    return out
+
+
+def normalize_key_parameters(items: Any) -> list[dict]:
+    out = []
+    for p in as_list(items):
+        if not isinstance(p, dict) or not str(p.get("parameter", "")).strip():
+            continue
+        status = str(p.get("status") or "").strip()
+        value = str(p.get("value") or "").strip() or "TBD"
+        if not status:
+            status = "TBD" if value.upper().startswith("TBD") else "Proposed default"
+        out.append({"parameter": str(p["parameter"]).strip(), "value": value, "status": status,
+                    "related": str(p.get("related") or "").strip(), "owner": str(p.get("owner") or "").strip()})
+    return out
