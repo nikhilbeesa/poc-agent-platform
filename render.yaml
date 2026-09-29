@@ -21,3 +21,7 @@ services:
         sync: false
       - key: SUPABASE_KEY
         sync: false
+      - key: LLM_MAX_RPM
+        value: "12"    # stay under Gemini free tier's 15 requests/min (raise on a paid tier)
+      - key: LLM_MAX_PARALLEL
+        value: "4"
