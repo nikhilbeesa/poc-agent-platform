@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from chunked import extract_json  # noqa: E402
 from context import AgentContribution, AgentRole, ProjectContext  # noqa: E402
 from llm_client import call_llm, get_client  # noqa: E402
 from logging_config import get_logger, log_agent_call  # noqa: E402
@@ -82,14 +83,28 @@ these:
         four content agents override this with chunked generation (see
         chunked.py) because a single reply can't hold a full-depth document."""
         prompt = self.build_prompt(context)
-        raw = call_llm(client, prompt, max_tokens=self.max_output_tokens)
-        return self.parse_response(raw)
+        last_err: Exception | None = None
+        for _ in range(3):
+            raw = call_llm(client, prompt, max_tokens=self.max_output_tokens)
+            try:
+                return self.parse_response(raw)
+            except (ValueError, json.JSONDecodeError) as e:  # bad JSON: re-ask
+                last_err = e
+                prompt += (
+                    f"\n\nYour previous reply could not be parsed as valid JSON ({e}). "
+                    "Reply again with ONLY the JSON object in exactly the requested shape "
+                    "- no commentary, no code fences."
+                )
+        raise RuntimeError(f"model did not return valid JSON after 3 attempts: {last_err}")
 
     def mock_response(self, context: ProjectContext) -> dict:
         raise NotImplementedError
 
     def parse_response(self, text: str) -> dict:
-        return json.loads(text)
+        data = extract_json(text)
+        if not isinstance(data, dict):
+            raise ValueError(f"expected a JSON object, got {type(data).__name__}")
+        return data
 
     def run(self, context: ProjectContext) -> AgentContribution:
         log_agent_call(logger, context.project_id, self.role.value, "started")

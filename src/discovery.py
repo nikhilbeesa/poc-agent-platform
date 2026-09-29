@@ -8,7 +8,8 @@ from context import DiscoveryQuestion, ProjectContext, ProjectStage, QuestionSta
 from knowledge.bootstrap_seed_data import bootstrap  # noqa: E402
 from knowledge.learn import learn_domain  # noqa: E402
 from knowledge.store import get_knowledge_store  # noqa: E402
-from llm_client import get_client  # noqa: E402
+from chunked import call_json, salvage_array_items  # noqa: E402
+from llm_client import LLMTruncated, get_client  # noqa: E402
 from logging_config import get_logger, log_agent_call  # noqa: E402
 
 logger = get_logger()
@@ -48,9 +49,12 @@ Business idea: "{idea_text}"
 
 Respond ONLY with JSON, no other text:
 {{"domain": "...", "confidence": 0.0}}"""
-    text = client.generate(prompt, max_tokens=200)
-    data = json.loads(text)
-    return data["domain"], float(data["confidence"])
+    data = call_json(client, prompt, max_tokens=200)
+    try:
+        confidence = float(data.get("confidence", 0.5))
+    except (TypeError, ValueError):
+        confidence = 0.5
+    return str(data["domain"]), confidence
 
 
 _STOPWORDS = {"a", "an", "the", "app", "apps", "platform", "tool", "that", "for", "people", "can", "and", "to", "of", "where", "who", "with", "their", "your", "you", "helps", "let", "lets", "allow", "allows", "connecting"}
@@ -202,9 +206,35 @@ applies (e.g. mutually-exclusive ranges, a single either/or choice). Set
 
 Respond ONLY with JSON, no other text:
 {{"questions": [{{"id": "short_id", "text": "...", "category": "...", "options": ["..."], "multi_select": false}}]}}"""
-    text = client.generate(prompt, max_tokens=8000)
-    data = json.loads(text)
-    return [DiscoveryQuestion(**q) for q in data["questions"]]
+    # A long, open-ended list: parse defensively (fences / trailing commas /
+    # re-ask on bad JSON), and if the reply is cut off at the token limit keep
+    # every question that was completed instead of failing the whole run.
+    try:
+        data = call_json(client, prompt, max_tokens=12000)
+        raw_questions = data.get("questions") or []
+    except LLMTruncated as e:
+        raw_questions = salvage_array_items(e.partial, "questions")
+        if not raw_questions:
+            raise
+    questions: list[DiscoveryQuestion] = []
+    seen: set[str] = set()
+    for i, q in enumerate(raw_questions):
+        if not isinstance(q, dict) or not str(q.get("text", "")).strip():
+            continue
+        qid = str(q.get("id") or f"q{i + 1}")
+        if qid in seen:
+            qid = f"{qid}_{i + 1}"
+        seen.add(qid)
+        options = q.get("options") or []
+        if not isinstance(options, list):
+            options = []
+        questions.append(DiscoveryQuestion(
+            id=qid, text=str(q["text"]), category=str(q.get("category") or "general"),
+            options=[str(o) for o in options], multi_select=bool(q.get("multi_select", False)),
+        ))
+    if not questions:
+        raise RuntimeError("model returned no usable discovery questions")
+    return questions
 
 
 def _mock_followups(context: ProjectContext) -> list[DiscoveryQuestion]:

@@ -88,6 +88,28 @@ def extract_json(text: str) -> Any:
         return json.loads(re.sub(r",\s*([}\]])", r"\1", candidate))
 
 
+def salvage_array_items(partial: str, list_key: str) -> list[dict]:
+    """Recovers the COMPLETE objects from a truncated `{"<list_key>": [ {...}, {...}, {...` reply
+    so a cut-off long list degrades to "fewer items" instead of failing."""
+    text = partial or ""
+    m = re.search(rf'"{re.escape(list_key)}"\s*:\s*\[', text)
+    if not m:
+        return []
+    dec = json.JSONDecoder()
+    pos, items = m.end(), []
+    while True:
+        nxt = re.compile(r"[\s,]*").match(text, pos).end()
+        if nxt >= len(text) or text[nxt] != "{":
+            break
+        try:
+            obj, pos = dec.raw_decode(text, nxt)
+        except json.JSONDecodeError:
+            break  # the last, cut-off object
+        if isinstance(obj, dict):
+            items.append(obj)
+    return items
+
+
 def call_json(client, prompt: str, max_tokens: int = 6000, expect: type = dict) -> Any:
     """One LLM call that must return JSON of type `expect`. Re-asks (up to
     JSON_ATTEMPTS) if the reply isn't valid JSON. LLMTruncated is NOT

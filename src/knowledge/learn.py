@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from knowledge.store import get_knowledge_store  # noqa: E402
+from chunked import call_json  # noqa: E402
 from llm_client import call_llm, get_client  # noqa: E402
 from logging_config import get_logger, log_agent_call  # noqa: E402
 
@@ -41,8 +42,12 @@ once, false if exactly one applies.
 
 Respond ONLY with JSON:
 {{"name": "Short Domain Name", "description": "...", "typical_modules": ["..."], "seed_questions": [{{"id": "short_id", "text": "...", "category": "...", "options": ["..."], "multi_select": false}}]}}"""
-    raw = call_llm(client, prompt, max_tokens=600)
-    return json.loads(raw)
+    data = call_json(client, prompt, max_tokens=2000)
+    data.setdefault("name", proposed_name.replace("_", " ").title())
+    data.setdefault("description", "")
+    data["typical_modules"] = [str(m) for m in (data.get("typical_modules") or [])]
+    data["seed_questions"] = [q for q in (data.get("seed_questions") or []) if isinstance(q, dict)]
+    return data
 
 
 def _mock_learn(idea_text: str, proposed_name: str) -> dict:
