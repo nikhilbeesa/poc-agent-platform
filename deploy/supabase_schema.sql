@@ -61,3 +61,13 @@ drop policy if exists "poc demo — allow all" on projects;
 create policy "poc demo — allow all" on projects for all using (true) with check (true);
 
 create index if not exists projects_created_at_idx on projects (created_at desc);
+
+-- Draft / resume + full-process history (added later; idempotent).
+-- `status`     'draft' while discovery/agents are unfinished, 'complete' once artefacts exist.
+-- `questions`  every discovery question with its status + answer, so a reopened project can show and edit them.
+-- `agent_log`  the AI-agent run summaries, so a reopened project can show the whole process.
+alter table projects add column if not exists status text not null default 'complete';
+alter table projects add column if not exists questions jsonb not null default '[]'::jsonb;
+alter table projects add column if not exists agent_log jsonb not null default '[]'::jsonb;
+alter table projects add column if not exists updated_at timestamptz not null default now();
+create index if not exists projects_updated_at_idx on projects (updated_at desc);

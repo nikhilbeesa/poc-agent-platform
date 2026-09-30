@@ -992,31 +992,31 @@ def build_flow_diagrams(modules, context, current_flow: str, future_flow: str) -
     vocab = get_vocab(context.domain_classification)
     from chunked import flow_from_arrows  # local import: avoids a hard module cycle
     diagrams = []
-    main = flow_from_arrows(future_flow, "LR")
+    main = flow_from_arrows(future_flow)
     if main:
         diagrams.append({"title": "Envisioned end-to-end flow (future state)",
                          "description": "The primary journey from discovery to completion.", "mermaid": main})
-    cur = flow_from_arrows(current_flow, "LR")
+    cur = flow_from_arrows(current_flow)
     if cur:
         diagrams.append({"title": "Current-state flow (as-is)",
                          "description": "How the process works today, for comparison.", "mermaid": cur})
     diagrams.append({"title": "Account registration and sign-in",
         "description": "Sign-up, verification and login with failure handling.",
-        "mermaid": "flowchart TD\n    A[\"Visitor opens sign-up\"] --> B[\"Enters email and password\"]\n"
+        "mermaid": "flowchart TD\n    A([\"Visitor opens sign-up\"]) --> B[\"Enters email and password\"]\n"
                    "    B --> C{\"Input valid and email unique?\"}\n    C -->|No| D[\"Show field errors\"]\n    D --> B\n"
                    "    C -->|Yes| E[\"Create account and send verification\"]\n    E --> F[\"User verifies email\"]\n"
-                   "    F --> G[\"Signed in to dashboard\"]"})
+                   "    F --> G([\"Signed in to dashboard\"])"})
     if "payments" in keys or any("pay" in k for k in keys):
         diagrams.append({"title": f"{vocab['transaction'].title()} and payment flow",
             "description": "Payment authorisation with failure and retry branch.",
-            "mermaid": "flowchart TD\n    A[\"Review order summary\"] --> B[\"Enter payment details\"]\n"
+            "mermaid": "flowchart TD\n    A([\"Review order summary\"]) --> B[\"Enter payment details\"]\n"
                        "    B --> C{\"Payment authorised?\"}\n    C -->|Yes| D[\"Confirm and send receipt\"]\n"
-                       "    C -->|No| E[\"Show error and offer retry\"]\n    E --> B\n    D --> F[\"Update records and notify parties\"]"})
+                       "    C -->|No| E[\"Show error and offer retry\"]\n    E --> B\n    D --> F([\"Update records and notify parties\"])"})
     diagrams.append({"title": "Support and issue resolution",
         "description": "How a problem raised by a user is handled.",
-        "mermaid": "flowchart TD\n    A[\"User reports an issue\"] --> B[\"Ticket created and acknowledged\"]\n"
+        "mermaid": "flowchart TD\n    A([\"User reports an issue\"]) --> B[\"Ticket created and acknowledged\"]\n"
                    "    B --> C[\"Support reviews and verifies\"]\n    C --> D{\"Resolvable directly?\"}\n"
-                   "    D -->|Yes| E[\"Resolve and notify user\"]\n    D -->|No| F[\"Escalate to administrator\"]\n    F --> E"})
+                   "    D -->|Yes| E([\"Resolve and notify user\"])\n    D -->|No| F[\"Escalate to administrator\"]\n    F --> E"})
     return diagrams
 
 
@@ -1129,9 +1129,12 @@ _STORY_FLOW_TEMPLATES = {
 
 _STORY_DEPTH = {
     "create": {
-        "validation": ["Required fields must be completed before submit; blank required fields are rejected",
-                       "Text fields are trimmed and limited to a sensible maximum length; unsupported characters are rejected",
-                       "Values that must be unique (e.g. email, name) are checked before the record is saved"],
+        "validation": [
+                       {"field": "Name / title", "type": "Text", "mandatory": "Mandatory", "rule": "Cannot be blank; trimmed; 2-100 characters; unsupported characters rejected"},
+                       {"field": "Email", "type": "Email", "mandatory": "Mandatory", "rule": "Valid email format; must be unique — checked before the record is saved"},
+                       {"field": "Description", "type": "Text", "mandatory": "Optional", "rule": "Up to 1,000 characters; may be left empty"},
+                       {"field": "Attachment", "type": "File upload", "mandatory": "Optional", "rule": "Allowed formats and size limit enforced before upload"},
+        ],
         "errors": ["A required field is blank -> \"Please complete this required field.\"",
                    "A value already exists -> \"This value is already in use. Please choose another.\"",
                    "The save fails on the server -> \"We couldn't save your changes. Please try again.\""],
@@ -1141,8 +1144,11 @@ _STORY_DEPTH = {
                  "Network drops during save -> the user sees a retry option and no partial record is stored"],
     },
     "edit": {
-        "validation": ["Changed fields follow the same rules as when they were first created",
-                       "A record can only be changed by a user permitted to change it"],
+        "validation": [
+                       {"field": "Changed fields", "type": "Same as create", "mandatory": "Mandatory", "rule": "Follow exactly the same rules as when first created"},
+                       {"field": "Record ownership", "type": "Permission check", "mandatory": "Mandatory", "rule": "Only a user permitted to change the record may save changes"},
+                       {"field": "Optional fields", "type": "Text", "mandatory": "Optional", "rule": "May be cleared; an emptied optional field is stored as empty, not as invalid"},
+        ],
         "errors": ["A changed value is invalid -> \"Please correct the highlighted fields.\"",
                    "The record was changed by someone else -> \"This item was updated elsewhere. Reload to see the latest version.\""],
         "empty": ["Not applicable — this action only operates on an existing record"],
@@ -1150,8 +1156,11 @@ _STORY_DEPTH = {
                  "User leaves with unsaved changes -> a confirmation prompt appears before changes are discarded"],
     },
     "admin": {
-        "validation": ["A reason/note is required for reject, suspend and override decisions",
-                       "The decision is accepted only while the record is still in its pending state"],
+        "validation": [
+                       {"field": "Decision", "type": "Selection", "mandatory": "Mandatory", "rule": "One of approve / reject / suspend / override"},
+                       {"field": "Reason / note", "type": "Text", "mandatory": "Mandatory", "rule": "Required for reject, suspend and override; 10-500 characters"},
+                       {"field": "Record state", "type": "System check", "mandatory": "Mandatory", "rule": "Decision accepted only while the record is still pending"},
+        ],
         "errors": ["Record already actioned by another admin -> \"This item has already been processed.\"",
                    "Reason left blank on a reject/suspend -> \"Please enter a reason for this decision.\""],
         "empty": ["The review queue is empty -> \"Nothing is waiting for review.\" with a link back to the dashboard"],
@@ -1159,8 +1168,12 @@ _STORY_DEPTH = {
                  "Target user or record was deleted meanwhile -> the action is cancelled with an explanatory message"],
     },
     "browse": {
-        "validation": ["Search text is trimmed and limited to a maximum length; special characters are handled safely",
-                       "Filter values must come from the available options; sort options are limited to the supported list"],
+        "validation": [
+                       {"field": "Search text", "type": "Text", "mandatory": "Optional", "rule": "Trimmed; maximum 100 characters; special characters handled safely; empty shows the default list"},
+                       {"field": "Filters", "type": "Selection", "mandatory": "Optional", "rule": "Values must come from the available options"},
+                       {"field": "Sort order", "type": "Selection", "mandatory": "Optional", "rule": "Limited to the supported sort options; a default applies if none is chosen"},
+                       {"field": "Page / page size", "type": "Number", "mandatory": "Optional", "rule": "Positive whole numbers within the supported range"},
+        ],
         "errors": ["The search service is unavailable -> \"We couldn't load results. Please try again.\"",
                    "An invalid filter combination is requested -> \"Those filters can't be combined. Reset filters to continue.\""],
         "empty": ["No results match -> \"No results match your search or filters.\" with a Reset filters button and suggestions"],
@@ -1168,8 +1181,11 @@ _STORY_DEPTH = {
                  "Filters that would return zero results are disabled or hidden to avoid dead ends"],
     },
     "settings": {
-        "validation": ["Values must match the allowed format for each setting (e.g. valid email/phone format)",
-                       "Changes that affect security (password, email) require re-authentication"],
+        "validation": [
+                       {"field": "Setting value", "type": "Text / Selection", "mandatory": "Mandatory", "rule": "Must match the allowed format for that setting (e.g. valid email or phone number)"},
+                       {"field": "Notification preferences", "type": "Boolean", "mandatory": "Optional", "rule": "On/off toggles; defaults apply when unset"},
+                       {"field": "Current password", "type": "Password", "mandatory": "Mandatory", "rule": "Required only for security-affecting changes (password, email); re-authentication enforced"},
+        ],
         "errors": ["A setting value is invalid -> \"Please enter a valid value.\"",
                    "Saving fails -> \"Your settings weren't saved. Please try again.\""],
         "empty": ["Not applicable — settings always have default values"],
@@ -1177,8 +1193,11 @@ _STORY_DEPTH = {
                  "Session expires before save -> user re-authenticates and the change is kept"],
     },
     "detail": {
-        "validation": ["All required inputs for this action must be present and in a valid format before it is processed",
-                       "The action is only allowed when the record is in a state that permits it"],
+        "validation": [
+                       {"field": "Required input(s)", "type": "Text", "mandatory": "Mandatory", "rule": "Must be present and in a valid format before the action is processed"},
+                       {"field": "Optional input(s)", "type": "Text", "mandatory": "Optional", "rule": "May be left empty; validated only when provided"},
+                       {"field": "Record state", "type": "System check", "mandatory": "Mandatory", "rule": "Action allowed only when the record is in a state that permits it"},
+        ],
         "errors": ["Required input is missing or invalid -> \"Please check the highlighted fields and try again.\"",
                    "The action isn't permitted in the current state -> \"This action isn't available right now.\"",
                    "A connected service times out -> \"This is taking longer than expected. Please try again.\""],

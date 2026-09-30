@@ -100,6 +100,14 @@ def generate_discovery_questions(context: ProjectContext) -> ProjectContext:
     for q in questions:
         if not q.options:
             q.options, q.multi_select = _infer_options(q.category, q.text)
+    # Always finish with an open question, so the user can hand over anything the
+    # generated questions did not cover (documents, constraints, integrations,
+    # references, known requirements...). It is optional and free-text.
+    if not any(q.id == ADDITIONAL_INFO_QUESTION_ID for q in questions):
+        questions.append(DiscoveryQuestion(
+            id=ADDITIONAL_INFO_QUESTION_ID, text=ADDITIONAL_INFO_QUESTION_TEXT,
+            category=ADDITIONAL_INFO_CATEGORY, options=[], multi_select=False,
+        ))
     context.discovery_questions = questions
     log_agent_call(logger, context.project_id, "discovery_engine", "completed", {"step": "generate_questions", "count": len(questions)})
     return context
@@ -149,7 +157,15 @@ _OPTION_BANK: list[tuple[tuple[str, ...], list[str], bool]] = [
 ]
 
 
-_FREE_TEXT_CATEGORIES = {"value_proposition", "differentiation", "vision", "risks", "naming"}
+ADDITIONAL_INFO_QUESTION_ID = "additional_information"
+ADDITIONAL_INFO_CATEGORY = "additional_information"
+ADDITIONAL_INFO_QUESTION_TEXT = (
+    "Is there any additional information or data you'd like to provide that our questions "
+    "may not have covered? (For example: specific requirements, constraints, integrations, "
+    "reference products, data you already have, or anything else the team should know.)"
+)
+
+_FREE_TEXT_CATEGORIES = {"value_proposition", "differentiation", "vision", "risks", "naming", ADDITIONAL_INFO_CATEGORY}
 
 
 def _infer_options(category: str, text: str) -> tuple[list[str], bool]:

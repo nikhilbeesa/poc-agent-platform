@@ -166,6 +166,29 @@ Verified in testing: deliberately running the pipeline with the UX
 document missing correctly forces `NOT READY FOR DESIGN AGENT` — the
 status logic isn't cosmetic.
 
+## Workflow & document updates (v3)
+
+**Drafts, resume and full-process history**
+- Every project is saved from the moment discovery starts, and again after every answer or skip. Closing the tab never loses work: the dashboard shows the project as a `DRAFT · n/m answered` row with **Resume →** (and **Discard**), and it reopens on the first unanswered question. The URL carries `#project=<id>`, so a refresh or "reopen closed tab" also resumes it.
+- The typed business idea is kept locally until discovery is run.
+- Opening a finished project restores the *whole* process — the idea, every question with its answer, the agent run, and the five documents. Use **Edit** on any answer, then **Re-run AI Agents**; the previous package stays saved until the new one replaces it.
+- If the server restarts mid-session, the project is rebuilt from its saved record.
+- **Supabase users must run the new block at the bottom of `deploy/supabase_schema.sql`** (adds `status`, `questions`, `agent_log`, `updated_at`; idempotent).
+
+**Run / resolve controls**
+- **Run AI Agents** disables itself the instant it is clicked (and the server also refuses a second concurrent run). It re-enables only if an agent fails, as **Retry AI Agents**, which continues from the agent that failed instead of starting over.
+- **Resolve issues** is shown only after the automatic resolution rounds have finished and issues still remain.
+- **Download all** produces a single `.zip` (built in the browser, no extra library).
+
+**Discovery**
+- The questionnaire always ends with an optional free-text question asking for any additional information the generated questions may not have covered. It is passed to every agent like any other answer.
+
+**Documents**
+- *Process-flow diagrams* follow flowchart notation: one rounded Start and one or more End terminators, rectangles for steps, diamonds for decisions with labelled Yes/No branches, single-direction arrows with right-angle connectors, and colour-coded node types. Each diagram sits on its own light canvas card with a legend. Live-mode prompts require this notation and `chunked.standardize_mermaid` applies the styling to every diagram, including model-written ones.
+- *Data validation* in each user story is a table: **Field · Field type · Mandatory / Optional · Validation rule**. Legacy `"Field: rule"` strings are converted (type and mandatory inferred) by `chunked.normalize_validation_rules`.
+- *Definition of Ready* and *Definition of Done* are now generated **inside each user story**, built from that story's own dependencies, fields, messages and acceptance criteria. The former shared sections were removed (the document now has 13 sections).
+- The document viewer uses the full available width; tables scroll inside their own wrapper instead of squeezing or overflowing.
+
 ## Known limitations
 
 - Mock mode output is deterministic and occasionally grammatically
@@ -188,3 +211,23 @@ Generated documents now include, by design:
 - **AI Handoff Validation** checks for these and reports what is missing (live mode).
 
 Cost note: live runs make roughly 4 extra requests (smaller story batches plus one extra BRD call). Tunable with `LLM_MAX_RPM` / `LLM_MAX_PARALLEL`.
+
+## Recent changes (workflow & document upgrades)
+
+**Documents**
+- **Process-flow diagrams** follow standard flowchart notation: rounded Start/End terminators, rectangular process steps, diamond decisions with every branch labelled (Yes/No), single-direction arrows and right-angle connector lines. Each diagram sits on its own light canvas card with a notation legend, and node types are colour-coded. (`chunked.standardize_mermaid`, Mermaid `curve: step` in `index.html`.)
+- **Data validation** in every user story is a table: *Field | Field type | Mandatory / Optional | Validation rule*. The live Product Manager agent is asked for structured objects; legacy `"Field: rule"` strings are normalised so type and mandatory/optional are never blank (`chunked.normalize_validation_rules`).
+- **Definition of Ready / Done** is written **per story** (built from that story's own dependencies, fields, messages and acceptance criteria) instead of once for the whole backlog. The two global sections were removed from the template.
+- Document viewer uses the **full available width** for text and tables (tables scroll inside their own wrapper).
+- **Download all** produces a single `.zip` (client-side, no extra library).
+
+**Discovery & workflow**
+- A final optional free-text question — *"any additional information or data…?"* — is always appended (`discovery.ADDITIONAL_INFO_QUESTION_ID`).
+- **Run AI Agents** locks on the first click; it re-enables only if an agent fails and then reads *Retry AI Agents* and resumes from the failed agent.
+- **Resolve issues** appears only after the automatic resolution rounds have finished and issues still remain.
+- **Drafts:** the project is saved on creation and after every answer/skip. Closing the tab loses nothing — the URL carries `#project=<id>`, and the dashboard shows *DRAFT · n/m answered* with **Resume** and **Discard**. The idea text is also kept locally until discovery starts.
+- **Reopening a finished project** shows the whole process — idea, every question with its answer (editable), the agent run and the documents. Edit answers and use **Re-run AI Agents**; the previous package stays in storage until the new one replaces it.
+
+**API additions:** `GET /api/project/<id>/session` (reopen/resume), `DELETE /api/project/<id>` (discard unfinished drafts only).
+
+**Database:** re-run `deploy/supabase_schema.sql` (idempotent) to add `status`, `questions`, `agent_log` and `updated_at` to `projects`. Local-file storage needs no migration. Projects saved before this version still open (documents only — their questions were never recorded).

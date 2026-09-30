@@ -63,7 +63,7 @@ def test():
     old = json.loads(json.dumps(out2))
     for s in old["stories"]:
         s["_src"] = "stale"
-    assert lpm.STORY_SCHEMA_VERSION in "v2-depth"
+    assert lpm.STORY_SCHEMA_VERSION != "v2-depth"   # bumped when validation became a structured table
 
     # 5. BRD helpers tolerate junk
     assert ch.normalize_risks("junk") == [] and ch.normalize_key_parameters([1, None, {"parameter": "x"}])[0]["status"] == "TBD"
@@ -90,6 +90,41 @@ def test():
     weak = {"risks": [{"risk": "r", "score": 0, "owner": ""}], "flow_diagrams": [], "key_parameters": []}
     kinds = " ".join(x["missing_item"] for x in V._content_depth_findings(weak, {"stories": []}))
     assert "flow diagrams" in kinds and "Risk register" in kinds and "Key business parameters" in kinds
+
+    # 8. structured data validation: every rule has field + type + Mandatory/Optional, even for legacy strings
+    rules = ch.normalize_validation_rules([
+        "Email: required, valid format, unique",
+        "Note: optional, up to 200 characters",
+        {"field": "Start date", "type": "Date / time", "mandatory": True, "rule": "not in the past"},
+        {"field": "Nickname", "mandatory": "Optional", "rule": "2-30 characters"},
+    ])
+    assert [r["mandatory"] for r in rules] == ["Mandatory", "Optional", "Mandatory", "Optional"]
+    assert rules[0]["type"] == "Email" and rules[2]["type"] == "Date / time" and all(r["type"] and r["rule"] for r in rules)
+    assert all(set(r) == {"field", "type", "mandatory", "rule"} for r in out["stories"][0]["data_validation"])
+
+    # 9. process-flow diagrams follow the notation standard: Start/End terminators, decisions as diamonds, node classes
+    for d in ba["flow_diagrams"]:
+        m = d["mermaid"]
+        assert "([" in m and "classDef terminator" in m and "class " in m, d["title"]
+    dec = [d for d in ba["flow_diagrams"] if "{" in d["mermaid"]]
+    assert dec and all("classDef decision" in d["mermaid"] and "|Yes|" in d["mermaid"] for d in dec)
+    assert ch.standardize_mermaid(ch.standardize_mermaid(dec[0]["mermaid"])) == ch.standardize_mermaid(dec[0]["mermaid"])  # idempotent
+
+    # 10. Definition of Ready / Done live inside EACH story, not as one shared section
+    from export import export_user_stories
+    doc = export_user_stories(c).content_markdown
+    n = len(pm["stories"])
+    assert doc.count("**Definition of Ready**") == n and doc.count("**Definition of Done**") == n
+    assert "## 12. Definition of Ready" not in doc and "## 13. Definition of Done" not in doc
+    assert doc.count("| Field | Field type | Mandatory / Optional | Validation rule |") == n
+
+    # 11. discovery always ends with the optional "anything else?" question
+    from discovery import ADDITIONAL_INFO_QUESTION_ID, generate_discovery_questions
+    from context import ProjectContext as _PC
+    dc = _PC(business_idea_raw="An app where people can book home cleaners")
+    dc.domain_classification = "booking_platform"
+    generate_discovery_questions(dc)
+    assert dc.discovery_questions[-1].id == ADDITIONAL_INFO_QUESTION_ID and not dc.discovery_questions[-1].options
     print("depth sections: all scenarios pass")
 
 

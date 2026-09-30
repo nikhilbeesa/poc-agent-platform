@@ -412,6 +412,76 @@ def as_str_list(value: Any) -> list[str]:
 
 
 # --------------------------------------------------------------------------
+# Structured field-level data-validation rules (field / type / mandatory / rule)
+# --------------------------------------------------------------------------
+_FIELD_TYPE_HINTS = (
+    ("Email", ("email", "e-mail")),
+    ("Password", ("password", "passcode", "pin")),
+    ("Phone number", ("phone", "mobile number", "contact number")),
+    ("Date / time", ("date", "time", "datetime", "deadline", "dob", "birthday", "expiry")),
+    ("Currency / amount", ("price", "amount", "fee", "cost", "budget", "salary", "payment total")),
+    ("Number", ("quantity", "count", "number of", "age", "rating", "score", "limit", "percent")),
+    ("URL", ("url", "link", "website")),
+    ("File upload", ("file", "photo", "image", "attachment", "document", "upload", "logo", "avatar")),
+    ("Boolean", ("toggle", "checkbox", "consent", "agree", "accept terms", "opt-in", "opt in")),
+    ("Selection", ("dropdown", "select", "status", "category", "type", "role", "allowed values", "one of")),
+)
+
+
+def infer_field_type(field: str, rule: str = "") -> str:
+    hay = f"{field} {rule}".lower()
+    # decide on the field name first, then fall back to the rule text
+    for haystack in (field.lower(), hay):
+        for label, keys in _FIELD_TYPE_HINTS:
+            if any(k in haystack for k in keys):
+                return label
+    return "Text"
+
+
+def _mandatory_label(value: Any, rule: str) -> str:
+    if isinstance(value, bool):
+        return "Mandatory" if value else "Optional"
+    text = str(value or "").strip().lower()
+    if text:
+        if text in ("no", "false", "n") or any(w in text for w in ("optional", "non-mandatory", "non mandatory", "not mandatory", "not required")):
+            return "Optional"
+        if text in ("yes", "true", "y") or any(w in text for w in ("mandatory", "required")):
+            return "Mandatory"
+    low = rule.lower()
+    if any(w in low for w in ("optional", "may be blank", "may be left empty", "not required")):
+        return "Optional"
+    return "Mandatory"
+
+
+def normalize_validation_rules(items: Any) -> list[dict]:
+    """Every data-validation entry becomes {field, type, mandatory, rule}.
+    Accepts the structured objects the model is asked for, and also legacy
+    'Field: rule' strings, inferring type and mandatory/optional when absent
+    so the two columns are never blank."""
+    out = []
+    for it in as_list(items):
+        if isinstance(it, dict):
+            field = str(it.get("field") or it.get("name") or it.get("input") or "Input").strip()
+            rule = str(it.get("rule") or it.get("validation") or it.get("description") or "").strip()
+            ftype = str(it.get("type") or it.get("data_type") or "").strip() or infer_field_type(field, rule)
+            mand = _mandatory_label(it.get("mandatory", it.get("required")), rule)
+        else:
+            raw = str(it).strip()
+            if not raw:
+                continue
+            head, sep, tail = raw.partition(":")
+            if sep and 0 < len(head) <= 50 and "->" not in head:
+                field, rule = head.strip(), tail.strip()
+            else:
+                field, rule = "Input", raw
+            ftype, mand = infer_field_type(field, rule), _mandatory_label(None, rule)
+        if not field and not rule:
+            continue
+        out.append({"field": field or "Input", "type": ftype, "mandatory": mand, "rule": rule or "Must be valid"})
+    return out
+
+
+# --------------------------------------------------------------------------
 # BRD depth helpers: risk scoring, Mermaid flow diagrams, key parameters
 # (shared by the live and mock Business Analyst so both produce identical shapes)
 # --------------------------------------------------------------------------
@@ -457,19 +527,64 @@ _MERMAID_START = ("flowchart", "graph", "sequencediagram", "statediagram")
 
 
 def _label(text: str) -> str:
-    return re.sub(r'["\[\]{}()<>|`]', "", str(text)).strip()[:60] or "Step"
+    return re.sub(r'[\"\[\]{}()<>|`]', "", str(text)).strip()[:60] or "Step"
 
 
-def flow_from_arrows(text: str, direction: str = "LR") -> str:
-    """Deterministic fallback: 'A -> B -> C' becomes a Mermaid flowchart."""
+# Flowchart notation standard applied to every generated process-flow diagram:
+#   - rounded "stadium" terminators for the single Start and the End node(s)
+#   - rectangles for process steps
+#   - diamonds for decisions, with every outgoing arrow labelled (Yes / No ...)
+#   - top-to-bottom flow, single-direction arrows, orthogonal (right-angle) lines
+#     (the line style itself is set in the viewer's Mermaid config: curve "step")
+# The classes below only colour the node types so they can be told apart at a glance.
+_FLOW_CLASSDEFS = (
+    "    classDef terminator fill:#d1fae5,stroke:#047857,stroke-width:2px,color:#064e3b\n"
+    "    classDef decision fill:#fef3c7,stroke:#b45309,stroke-width:2px,color:#78350f\n"
+    "    classDef process fill:#e0f2fe,stroke:#0369a1,stroke-width:1.5px,color:#0c4a6e"
+)
+
+
+def standardize_mermaid(src: str) -> str:
+    """Adds node-type styling (terminator / decision / process) to a flowchart.
+    Idempotent, and a no-op for non-flowchart diagrams."""
+    text = str(src or "").strip()
+    first = text.splitlines()[0].strip().lower() if text else ""
+    if not first.startswith(("flowchart", "graph")) or "classDef" in text:
+        return text
+    terminators = re.findall(r'^\s*(\w+)\(\[', text, flags=re.M)
+    decisions = re.findall(r'^\s*(\w+)\{', text, flags=re.M)
+    # a node's shape is declared once but the id is reused in later edges, so
+    # also catch inline declarations such as `B --> C{"Valid?"}`
+    terminators += re.findall(r'(?:-->|---)\s*(?:\|[^|]*\|\s*)?(\w+)\(\[', text)
+    decisions += re.findall(r'(?:-->|---)\s*(?:\|[^|]*\|\s*)?(\w+)\{', text)
+    terminators, decisions = sorted(set(terminators)), sorted(set(decisions))
+    declared = set(terminators) | set(decisions)
+    processes = sorted(set(re.findall(r'(?:^|\s|>)(\w+)\["', text, flags=re.M)) - declared)
+    out = [text, _FLOW_CLASSDEFS]
+    if terminators:
+        out.append(f"    class {','.join(terminators)} terminator")
+    if decisions:
+        out.append(f"    class {','.join(decisions)} decision")
+    if processes:
+        out.append(f"    class {','.join(processes)} process")
+    return "\n".join(out)
+
+
+def flow_from_arrows(text: str, direction: str = "TD") -> str:
+    """Deterministic fallback: 'A -> B -> C' becomes a standards-conformant Mermaid
+    flowchart (Start / End terminators, process rectangles, top-to-bottom)."""
     steps = [s for s in (p.strip() for p in re.split(r"\s*(?:->|→)\s*", str(text or ""))) if s]
     if len(steps) < 3:
         return ""
     lines = [f"flowchart {direction}"]
+    last = len(steps) - 1
     for i, s in enumerate(steps):
-        lines.append(f'    N{i}["{_label(s)}"]')
+        if i in (0, last):
+            lines.append(f'    N{i}(["{_label(s)}"])')
+        else:
+            lines.append(f'    N{i}["{_label(s)}"]')
     lines.append("    " + " --> ".join(f"N{i}" for i in range(len(steps))))
-    return "\n".join(lines)
+    return standardize_mermaid("\n".join(lines))
 
 
 def sanitize_mermaid(src: Any) -> str:
@@ -481,7 +596,7 @@ def sanitize_mermaid(src: Any) -> str:
         return ""
     if len(re.findall(r"-->|---|->>|==>", "\n".join(lines[1:]))) < 2:
         return ""
-    return "\n".join(lines)
+    return standardize_mermaid("\n".join(lines))
 
 
 def normalize_flow_diagrams(items: Any, fallbacks: list[tuple[str, str]] = ()) -> list[dict]:

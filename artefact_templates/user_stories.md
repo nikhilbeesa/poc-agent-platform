@@ -24,9 +24,7 @@
 
 ## 7. Story Backlog
 
-*Each story below includes preconditions, trigger, main/alternative/exception
-flow, data validation rules, exact error messages, empty states, edge cases,
-business rules, and Given/When/Then acceptance criteria.*
+*Each story below includes preconditions, trigger, main/alternative/exception flow, a data validation table (field, field type, mandatory/optional, rule), exact error messages, empty states, edge cases, business rules, Given/When/Then acceptance criteria, and its own Definition of Ready and Definition of Done.*
 
 {{stories_list}}
 
@@ -44,14 +42,8 @@ business rules, and Given/When/Then acceptance criteria.*
 ## 11. Story Traceability
 {{story_traceability}}
 
-## 12. Definition of Ready
-{{definition_of_ready}}
-
-## 13. Definition of Done
-{{definition_of_done}}
-
-## 14. Open Questions
+## 12. Open Questions
 {{open_questions}}
 
-## 15. Story Completeness Summary
+## 13. Story Completeness Summary
 {{completeness_summary}}

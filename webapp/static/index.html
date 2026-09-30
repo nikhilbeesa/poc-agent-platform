@@ -8,7 +8,20 @@
 <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
-<script>window.addEventListener('load', function () { if (window.mermaid) { window.mermaid.initialize({ startOnLoad: false, securityLevel: 'strict' }); } });</script>
+<script>
+window.addEventListener('load', function () {
+  if (window.marked) { window.marked.setOptions({ breaks: true, gfm: true }); }
+  if (window.mermaid) {
+    // Standard flowchart rendering: light diagram canvas, orthogonal (right-angle) connector
+    // lines with arrowheads, top-to-bottom flow. Node-type colours come from each diagram's classDefs.
+    window.mermaid.initialize({
+      startOnLoad: false, securityLevel: 'strict', theme: 'default',
+      themeVariables: { fontFamily: 'IBM Plex Sans, system-ui, sans-serif', fontSize: '14px', lineColor: '#334155', primaryTextColor: '#0f172a' },
+      flowchart: { curve: 'step', htmlLabels: true, useMaxWidth: true, nodeSpacing: 45, rankSpacing: 55, padding: 12 }
+    });
+  }
+});
+</script>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -53,33 +66,16 @@
             <tr>
               <th>Business idea</th>
               <th>Domain</th>
+              <th>Status</th>
               <th>Docs</th>
               <th>Handoff status</th>
-              <th>Created</th>
+              <th>Last updated</th>
+              <th></th>
             </tr>
           </thead>
           <tbody id="dash-table-body"></tbody>
         </table>
       </div>
-    </div>
-  </section>
-
-  <!-- ==================== DASHBOARD: PROJECT DETAIL ==================== -->
-  <section class="panel" id="dashboard-detail-view" hidden>
-    <span class="tick tick-tl"></span><span class="tick tick-tr"></span><span class="tick tick-bl"></span><span class="tick tick-br"></span>
-    <div class="panel-head">
-      <span class="panel-num">HOME</span>
-      <span class="panel-title">Project Detail</span>
-    </div>
-    <div class="panel-body">
-      <button class="btn btn-ghost" id="btn-history-back">← Back to dashboard</button>
-      <div class="history-detail-meta" id="history-detail-meta"></div>
-      <div class="artefact-controls">
-        <button class="btn" id="btn-history-download-current">⬇ Download this document (.md)</button>
-        <button class="btn btn-ghost" id="btn-history-download-all">⬇ Download all 5 (.md)</button>
-      </div>
-      <div class="tabs" id="history-tabs"></div>
-      <div class="doc-viewer" id="history-doc-viewer"></div>
     </div>
   </section>
 
@@ -108,6 +104,7 @@
           <button class="chip" data-idea="A tool that helps small farms track crop yields and equipment maintenance">unseen domain ⚡</button>
         </div>
         <button class="btn btn-primary" id="btn-submit-idea">Run discovery →</button>
+        <div class="draft-note" id="draft-note" hidden>💾 Your progress is saved automatically. If you close this tab you can pick up exactly where you left off from the dashboard.</div>
         <div class="hint" id="learned-banner" hidden>
           <span class="hint-icon">⚡</span> No existing domain matched this idea — the knowledge engine is learning and persisting a new one now.
         </div>
@@ -168,6 +165,7 @@
         <div id="discovery-review" hidden>
           <h3 class="df-review-title">Review your product idea</h3>
           <p class="df-review-sub">These answers will be used by the AI agents to generate your product requirements, user stories, architecture recommendations, and other project documentation.</p>
+          <div class="reopen-note" id="reopen-note" hidden>This project already has generated documents. Change any answer below with <strong>Edit</strong>, then click <strong>Re-run AI Agents</strong> to regenerate the package.</div>
           <div id="df-review-groups"></div>
           <div class="df-review-ready">
             <div class="df-review-ready-title">Ready to generate?</div>
@@ -191,6 +189,7 @@
       </div>
       <div class="panel-body">
         <div class="lock-msg">Complete discovery to dispatch the agent team.</div>
+        <div class="agent-note" id="agent-note" hidden></div>
         <svg class="schematic" id="schematic" viewBox="0 0 900 160" preserveAspectRatio="xMidYMid meet"></svg>
         <div class="agent-log" id="agent-log"></div>
         <div class="qa-verdict" id="qa-verdict" hidden></div>
@@ -210,7 +209,7 @@
         <div class="lock-msg">Run the agent team to generate the handoff package.</div>
         <div class="artefact-controls" id="artefact-controls" hidden>
           <button class="btn" id="btn-download-current">⬇ Download this document (.md)</button>
-          <button class="btn btn-ghost" id="btn-download-all">⬇ Download all 5 (.md)</button>
+          <button class="btn btn-ghost" id="btn-download-all">⬇ Download all 5 (.zip)</button>
         </div>
         <div class="tabs" id="artefact-tabs" hidden></div>
         <div class="doc-viewer" id="doc-viewer"></div>

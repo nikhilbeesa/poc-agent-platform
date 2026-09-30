@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import chunked as ch  # noqa: E402
 from context import AgentRole, Artefact, ProjectContext, ProjectStage  # noqa: E402
 from logging_config import get_logger, log_agent_call  # noqa: E402
 
@@ -325,6 +326,59 @@ def export_business_requirements(context: ProjectContext) -> Artefact:
 # 2. User Stories Document
 # ---------------------------------------------------------------------------
 
+def _story_dor_dod(story: dict, rules: list, screens: list, flows: list) -> tuple[list, list]:
+    """Definition of Ready / Done for ONE story, built from that story's own content
+    (its dependencies, fields, messages and acceptance criteria) rather than a
+    generic checklist shared by the whole backlog."""
+    sid = story.get("id", "This story")
+    frs = ", ".join(story.get("related_fr_ids", [])) or "its source requirement"
+    deps = story.get("dependencies") or []
+    n_flow = len(story.get("main_flow") or [])
+    n_ac = len(story.get("acceptance_criteria") or [])
+    n_msg = len(story.get("error_messages") or [])
+    n_edge = len([e for e in (story.get("edge_cases") or []) if str(e).strip()])
+    n_rules = len(story.get("business_rules") or [])
+    mandatory = [r["field"] for r in rules if r["mandatory"] == "Mandatory"]
+    optional = [r["field"] for r in rules if r["mandatory"] == "Optional"]
+    empties = story.get("empty_states") or []
+    has_empty = bool(empties) and not str(empties[0]).startswith("Not applicable")
+
+    dor = [
+        f"{sid} is linked to {story.get('epic_id') or 'an epic'} and traces back to {frs}.",
+        f"Actor ({story.get('role', 'role')}), preconditions and trigger are written down and agreed.",
+        f"The main flow ({n_flow} steps), the alternative flow and the exception flow are described.",
+        f"Data validation is defined for {len(rules)} field(s), each with a field type and marked Mandatory or Optional"
+        + (f" ({len(mandatory)} mandatory, {len(optional)} optional)." if rules else "."),
+        f"{n_ac} Given/When/Then acceptance criteria are written and testable, including validation, error and permission cases.",
+        (f"Dependencies {', '.join(deps)} are Done or sequenced ahead of this story." if deps
+         else "No story dependencies — this story can be started independently."),
+        (f"The {n_rules} business rule(s) listed above are confirmed with the Product Owner." if n_rules
+         else "No module-level business rules apply beyond the validation above."),
+        "Any Open Question (see Open Questions) that blocks this story is resolved.",
+        "The story is small enough to be completed within one sprint and has been estimated by the team.",
+    ]
+    dod = [
+        f"All {n_ac} acceptance criteria pass, including the negative and permission cases.",
+        f"Behaviour matches {frs} and the business rule(s) referenced in the story.",
+        (f"All {len(rules)} field validations are enforced on both client and server; mandatory fields "
+         f"({', '.join(mandatory[:4])}{'…' if len(mandatory) > 4 else ''}) reject blank input and field types are checked."
+         if mandatory else f"All {len(rules)} field validations are enforced on both client and server, with field types checked."
+         if rules else "Permission and state checks described in the validation section are enforced server-side."),
+        f"The {n_msg} error message(s) are shown with the exact wording defined in this story." if n_msg
+        else "Failures show a specific, user-friendly message rather than a generic error.",
+        ("The empty state is implemented with its message and call-to-action." if has_empty
+         else "Empty state is not applicable to this story and has been confirmed as such."),
+        f"The {n_edge} edge case(s) are handled and verified, and no partial data is ever saved." if n_edge
+        else "Boundary and unusual situations do not leave partial data behind.",
+        ("UX review completed against " + ", ".join(screens + flows) + "." if (screens or flows)
+         else "UX screens/flows for this story are reviewed once the UX Product Flow Specification is available."),
+        (f"No regression in dependency stories {', '.join(deps)}." if deps else "No regression in existing functionality."),
+        "Code is peer-reviewed, automated tests are added and passing, and the story is deployed to the test environment.",
+        "The Product Owner has accepted the story in the demo/review.",
+    ]
+    return dor, dod
+
+
 def export_user_stories(context: ProjectContext) -> Artefact:
     pm = context.get_contribution(AgentRole.PRODUCT_MANAGER)
     ba = context.get_contribution(AgentRole.BUSINESS_ANALYST)
@@ -388,6 +442,16 @@ def export_user_stories(context: ProjectContext) -> Artefact:
           ", ".join(fr_to_stories.get(r.get("id", ""), [])) or "Not yet covered"] for r in requirements],
     )
 
+    screens = ux_o.get("screens", [])
+    flows = ux_o.get("user_flows", [])
+    story_to_screens, story_to_flows = {}, {}
+    for sc in screens:
+        for sid in sc.get("related_story_ids", []):
+            story_to_screens.setdefault(sid, []).append(sc["id"])
+    for fl in flows:
+        for sid in fl.get("related_story_ids", []):
+            story_to_flows.setdefault(sid, []).append(fl["id"])
+
     def _render_story(s: dict) -> str:
         lines = [
             f"### {s.get('id', '?')} — {s.get('feature', 'Untitled')}",
@@ -404,7 +468,12 @@ def export_user_stories(context: ProjectContext) -> Artefact:
             lines.append(f"  {i}. {step}")
         lines.append(f"\n**Alternative flow:** {s.get('alternative_flow', 'None')}")
         lines.append(f"**Exception flow:** {s.get('exception_flow', 'None')}")
-        for label, key in (("Data validation", "data_validation"), ("Error messages", "error_messages"),
+        rules = ch.normalize_validation_rules(s.get("data_validation"))
+        if rules:
+            lines.append("\n**Data validation:**\n")
+            lines.append(_table(["Field", "Field type", "Mandatory / Optional", "Validation rule"],
+                                [[r["field"], r["type"], r["mandatory"], r["rule"]] for r in rules]))
+        for label, key in (("Error messages", "error_messages"),
                            ("Empty states", "empty_states"), ("Edge cases", "edge_cases")):
             items = s.get(key) or []
             if items:
@@ -416,7 +485,12 @@ def export_user_stories(context: ProjectContext) -> Artefact:
         if s.get("acceptance_criteria"):
             lines.append("\n**Acceptance criteria:**")
             lines.extend(f"- {c}" for c in s["acceptance_criteria"])
-        return "\n".join(lines) + "\n"
+        dor, dod = _story_dor_dod(s, rules, story_to_screens.get(s.get("id"), []), story_to_flows.get(s.get("id"), []))
+        lines.append("\n**Definition of Ready** *(all must be true before development starts):*")
+        lines.extend(f"- [ ] {i}" for i in dor)
+        lines.append("\n**Definition of Done** *(all must be true before this story is accepted):*")
+        lines.extend(f"- [ ] {i}" for i in dod)
+        return "\n".join(lines) + "\n\n---\n"
 
     stories_list = "\n".join(_render_story(s) for s in stories) or "None generated"
 
@@ -443,15 +517,6 @@ def export_user_stories(context: ProjectContext) -> Artefact:
         release_rows.append([s["id"], s.get("feature", ""), pri, release])
     release_mapping = _table(["Story ID", "Feature", "Priority", "Suggested Release"], release_rows)
 
-    screens = ux_o.get("screens", [])
-    flows = ux_o.get("user_flows", [])
-    story_to_screens, story_to_flows = {}, {}
-    for sc in screens:
-        for sid in sc.get("related_story_ids", []):
-            story_to_screens.setdefault(sid, []).append(sc["id"])
-    for fl in flows:
-        for sid in fl.get("related_story_ids", []):
-            story_to_flows.setdefault(sid, []).append(fl["id"])
     traceability_rows = [
         [s["id"], s.get("epic_id", ""), ", ".join(s.get("related_fr_ids", [])) or "N/A",
          ", ".join(story_to_screens.get(s["id"], [])) or ("Pending UX handoff" if not ux_o else "N/A"),
@@ -459,22 +524,6 @@ def export_user_stories(context: ProjectContext) -> Artefact:
         for s in stories
     ]
     story_traceability = _table(["Story ID", "Epic ID", "Related FR", "Related UX Screen(s)", "Related UX Flow(s)"], traceability_rows)
-
-    definition_of_ready = _bullets([
-        "The story has a unique ID and belongs to an epic.",
-        "Actor, preconditions, and trigger are specified.",
-        "The main flow and at least one exception path are described.",
-        "At least 2 Given/When/Then acceptance criteria are written and testable.",
-        "Any story dependencies listed in Section 9 are either already Done or explicitly sequenced ahead of this one.",
-        "Any open question in Section 14 that blocks this specific story has been resolved.",
-    ])
-    definition_of_done = _bullets([
-        "All acceptance criteria for the story pass.",
-        "The behavior matches the related functional requirement (FR) and business rule(s) referenced in the story.",
-        "Relevant error/exception paths from the story have been implemented and verified, not just the main flow.",
-        "The corresponding UX screen(s)/flow(s), where mapped in Section 11, have been reviewed against the story.",
-        "No known regression to a dependency story listed in Section 9.",
-    ])
 
     open_questions = ba_o.get("open_questions", []) or ["None outstanding — all discovery questions were answered"]
 
@@ -508,8 +557,6 @@ def export_user_stories(context: ProjectContext) -> Artefact:
         "dependencies_blockers": dependencies_blockers,
         "release_mapping": release_mapping,
         "story_traceability": story_traceability,
-        "definition_of_ready": definition_of_ready,
-        "definition_of_done": definition_of_done,
         "open_questions": open_questions,
         "completeness_summary": completeness_summary,
     }

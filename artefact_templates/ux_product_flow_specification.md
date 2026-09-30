@@ -3,9 +3,7 @@
 **Project:** {{project_name}}
 **Generated:** {{generated_date}}
 
-*This is the primary document intended for the external Design AI Agent.
-It describes what each screen must contain and how it must behave — not
-visual designs.*
+*This is the primary document intended for the external Design AI Agent. It describes what each screen must contain and how it must behave — not visual designs.*
 
 ## 1. Application Information Architecture
 {{information_architecture}}

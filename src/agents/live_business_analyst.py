@@ -118,7 +118,7 @@ CROSS_B_SHAPE = """{
 
 
 CROSS_C_SHAPE = """{
-  "flow_diagrams": [{"title": "...", "description": "one sentence", "mermaid": "flowchart TD\\n    A[\\"Start\\"] --> B{\\"Decision?\\"}\\n    B -->|Yes| C[\\"Step\\"]\\n    B -->|No| D[\\"Other step\\"]"}],
+  "flow_diagrams": [{"title": "...", "description": "one sentence", "mermaid": "flowchart TD\\n    A([\\"Start\\"]) --> B{\\"Decision?\\"}\\n    B -->|Yes| C[\\"Step\\"]\\n    B -->|No| D[\\"Other step\\"]\\n    C --> E([\\"End\\"])\\n    D --> E"}],
   "key_parameters": [{"parameter": "...", "value": "a concrete value or 'TBD — needs business decision'", "status": "Proposed default|Confirmed|TBD", "related": "FR or BR ids", "owner": "exact role name"}]
 }"""
 
@@ -389,7 +389,12 @@ def _crosscut(context, client, plan, requirements):
         "branch), any recurring/subscription/lifecycle flow, the return/refund/dispute or support flow, "
         "and the admin/operations fulfilment flow — whichever apply to THIS product. Each: 6-14 nodes, "
         "at least one decision diamond, node text in double quotes with NO parentheses or special "
-        "characters inside labels, and the mermaid field a single string with \\n line breaks.\n"
+        "characters inside labels, and the mermaid field a single string with \\n line breaks. "
+        "Follow standard flowchart notation strictly: exactly ONE Start node and at least one End node, "
+        "both drawn as rounded terminators (`A([\"Start\"])`, `Z([\"End\"])`); process steps as rectangles "
+        "(`B[\"Step\"]`); decisions as diamonds (`C{\"Question?\"}`) whose every outgoing arrow carries a "
+        "label such as |Yes| or |No|; single-direction arrows only, no crossing lines, every path ends at an "
+        "End node, and no orphan nodes.\n"
         "2. key_parameters: 12+ concrete business parameters the requirements depend on (session timeout, "
         "password policy, payment/refund/return windows, delivery or lead-time SLAs, order/quantity "
         "limits, retention periods, retry counts, thresholds, fees...). Give a sensible proposed default "

@@ -76,6 +76,13 @@ def start(project_id: str, work) -> str:
     return job_id
 
 
+def is_running(project_id: str) -> bool:
+    """True while a background generation job for this project is still working."""
+    with _LOCK:
+        jid = _ACTIVE.get(project_id)
+        return bool(jid and _JOBS.get(jid, {}).get("status") == "running")
+
+
 def snapshot(job_id: str) -> dict | None:
     job = _JOBS.get(job_id)
     if job is None:

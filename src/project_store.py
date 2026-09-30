@@ -17,10 +17,17 @@ DATA_DIR = Path(__file__).resolve().parent / "knowledge" / "data" / "projects"
 
 
 def _project_summary(record: dict) -> dict:
+    questions = record.get("questions") or []
+    artefacts = record.get("artefacts") or []
     return {
         "id": record["id"], "business_idea": record["business_idea"], "domain": record.get("domain"),
         "handoff_status": record.get("handoff_status"),
-        "artefact_count": len(record.get("artefacts", [])), "created_at": record.get("created_at"),
+        # "draft" = discovery / agents not finished yet (resumable); "complete" = artefacts exist
+        "status": record.get("status") or ("complete" if artefacts else "draft"),
+        "artefact_count": len(artefacts),
+        "question_count": len(questions),
+        "answered_count": len([q for q in questions if q.get("status") in ("answered", "skipped")]),
+        "created_at": record.get("created_at"), "updated_at": record.get("updated_at"),
     }
 
 
@@ -31,8 +38,21 @@ class ProjectStore:
 
     def save(self, record: dict) -> None:
         record = dict(record)
-        record.setdefault("created_at", datetime.now(timezone.utc).isoformat())
-        (self.data_dir / f"{record['id']}.json").write_text(json.dumps(record, indent=2, default=str))
+        now = datetime.now(timezone.utc).isoformat()
+        path = self.data_dir / f"{record['id']}.json"
+        if not record.get("created_at"):
+            # re-saving a project (draft autosave, re-run) must keep its original creation time
+            try:
+                record["created_at"] = json.loads(path.read_text()).get("created_at") or now
+            except (OSError, ValueError):
+                record["created_at"] = now
+        record["updated_at"] = now
+        path.write_text(json.dumps(record, indent=2, default=str))
+
+    def delete(self, project_id: str) -> None:
+        path = self.data_dir / f"{project_id}.json"
+        if path.exists():
+            path.unlink()
 
     def list_summaries(self, limit: int = 50) -> list:
         files = sorted(self.data_dir.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -59,18 +79,27 @@ class SupabaseProjectStore:
             "domain_confidence": record.get("domain_confidence"), "stage": record.get("stage", "complete"),
             "handoff_status": record.get("handoff_status"), "consistency_notes": record.get("consistency_notes", []),
             "artefacts": record.get("artefacts", []),
+            "status": record.get("status", "complete"), "questions": record.get("questions", []),
+            "agent_log": record.get("agent_log", []),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
+        if record.get("created_at"):
+            payload["created_at"] = record["created_at"]
         headers = {**self._headers, "Prefer": "resolution=merge-duplicates"}
         resp = requests.post(self._endpoint(), headers=headers, json=payload, timeout=15)
         resp.raise_for_status()
 
+    def delete(self, project_id: str) -> None:
+        resp = requests.delete(self._endpoint(f"?id=eq.{project_id}"), headers=self._headers, timeout=15)
+        resp.raise_for_status()
+
     def list_summaries(self, limit: int = 50) -> list:
         resp = requests.get(
-            self._endpoint(f"?select=id,business_idea,domain,handoff_status,artefacts,created_at&order=created_at.desc&limit={limit}"),
+            self._endpoint(f"?select=id,business_idea,domain,handoff_status,status,artefacts,questions,created_at,updated_at&order=updated_at.desc.nullslast&limit={limit}"),
             headers=self._headers, timeout=15,
         )
         resp.raise_for_status()
-        return [_project_summary({**row, "artefacts": row.get("artefacts") or []}) for row in resp.json()]
+        return [_project_summary({**row, "artefacts": row.get("artefacts") or [], "questions": row.get("questions") or []}) for row in resp.json()]
 
     def get(self, project_id: str):
         resp = requests.get(self._endpoint(f"?id=eq.{project_id}&select=*"), headers=self._headers, timeout=15)
@@ -124,3 +153,6 @@ class ResilientProjectStore:
 
     def get(self, project_id: str):
         return self._call("get", project_id)
+
+    def delete(self, project_id: str) -> None:
+        return self._call("delete", project_id)
