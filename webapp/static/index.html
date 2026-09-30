@@ -208,8 +208,10 @@ window.addEventListener('load', function () {
       <div class="panel-body">
         <div class="lock-msg">Run the agent team to generate the handoff package.</div>
         <div class="artefact-controls" id="artefact-controls" hidden>
-          <button class="btn" id="btn-download-current">⬇ Download this document (.md)</button>
-          <button class="btn btn-ghost" id="btn-download-all">⬇ Download all 5 (.zip)</button>
+          <button class="btn" id="btn-download-current">⬇ Download this document (Word .docx)</button>
+          <button class="btn" id="btn-download-all">⬇ Download all 5 (Word .docx, zipped)</button>
+          <button class="btn btn-ghost" id="btn-download-current-md">⬇ .md</button>
+          <button class="btn btn-ghost" id="btn-download-all-md">⬇ All 5 .md (.zip)</button>
         </div>
         <div class="tabs" id="artefact-tabs" hidden></div>
         <div class="doc-viewer" id="doc-viewer"></div>
@@ -220,6 +222,7 @@ window.addEventListener('load', function () {
 
 </div>
 
+<script src="/static/export.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

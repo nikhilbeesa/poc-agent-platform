@@ -33,6 +33,7 @@ poc-agent-platform/
 │   └── static/
 │       ├── index.html
 │       ├── style.css
+│       ├── export.js                    # Client-side Word (.docx) + ZIP export (no library, no server)
 │       └── app.js
 └── src/
     ├── context.py                       # Shared "notebook" every agent reads/writes
@@ -231,3 +232,18 @@ Cost note: live runs make roughly 4 extra requests (smaller story batches plus o
 **API additions:** `GET /api/project/<id>/session` (reopen/resume), `DELETE /api/project/<id>` (discard unfinished drafts only).
 
 **Database:** re-run `deploy/supabase_schema.sql` (idempotent) to add `status`, `questions`, `agent_log` and `updated_at` to `projects`. Local-file storage needs no migration. Projects saved before this version still open (documents only — their questions were never recorded).
+
+
+## Downloading the documents as Word files
+
+Sheet 04 offers each document as a Word file (`.docx`) or as the original Markdown:
+
+- **Download this document (Word .docx)** — the document shown in the viewer.
+- **Download all 5 (Word .docx, zipped)** — one `.zip` with five `.docx` files.
+- **.md / All 5 .md (.zip)** — the original Markdown, unchanged.
+
+The conversion runs entirely in the browser (`webapp/static/export.js`) — there is no server
+round-trip and no extra dependency. Headings, lists, bold/italic/code, links and tables are
+converted to native Word styles; tables with 7+ columns get their own landscape page; Mermaid
+process-flow diagrams are embedded as images (if a diagram can't be drawn, its source text is
+included instead so an export never fails). Files open in Word, LibreOffice and Google Docs.

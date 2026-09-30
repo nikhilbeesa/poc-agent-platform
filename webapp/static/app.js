@@ -114,14 +114,7 @@ function escapeHtml(s) {
   return d.innerHTML;
 }
 
-function downloadMarkdown(filename, content) {
-  const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-}
+// downloadMarkdown / downloadBlob / ZIP writer / Word (.docx) export live in export.js
 
 // Status strings like "READY FOR DESIGN AGENT" have spaces, which can't
 // be used directly as CSS classes — slugify for styling, keep the raw
@@ -1227,80 +1220,42 @@ function renderDoc(markdown) {
   viewer.scrollTop = 0;
 }
 
+// ---- Downloads: Word (.docx) is the primary format; Markdown stays available -------------
+// Runs an async export while showing progress on the button, and reports failures.
+async function withBusyButton(btn, busyText, task) {
+  const original = btn.textContent;
+  btn.disabled = true; btn.textContent = busyText;
+  try { await task((msg) => { btn.textContent = msg; }); }
+  catch (e) { console.error(e); alert('Download failed: ' + (e && e.message ? e.message : e)); }
+  finally { btn.disabled = false; btn.textContent = original; }
+}
+
 $('#btn-download-current').addEventListener('click', () => {
+  const a = currentArtefacts[activeArtefactIndex];
+  if (!a) return;
+  withBusyButton($('#btn-download-current'), 'Preparing Word file…', (progress) =>
+    downloadDocx(`${a.type}.docx`, a.content_markdown, { title: a.title || a.type, onProgress: progress }));
+});
+
+$('#btn-download-current-md').addEventListener('click', () => {
   const a = currentArtefacts[activeArtefactIndex];
   if (a) downloadMarkdown(`${a.type}.md`, a.content_markdown);
 });
 
 // "Download all" -> ONE .zip containing every document (no repeated browser download prompts).
+function packageStamp() { return projectId ? projectId.slice(0, 8) : 'package'; }
+
 $('#btn-download-all').addEventListener('click', () => {
   if (!currentArtefacts.length) return;
-  const files = currentArtefacts.map(a => ({ name: `${a.type}.md`, content: a.content_markdown }));
-  const stamp = projectId ? projectId.slice(0, 8) : 'package';
-  downloadBlob(`specification-package-${stamp}.zip`, buildZip(files));
+  withBusyButton($('#btn-download-all'), 'Preparing Word files…', (progress) =>
+    downloadAllDocxZip(currentArtefacts, `specification-package-${packageStamp()}-word.zip`, progress));
 });
 
-// ============================================================
-// Minimal ZIP writer (store / no compression — the documents are small text files), so the
-// download works with no extra library and no network. Produces a standard .zip.
-// ============================================================
-const CRC_TABLE = (() => {
-  const t = new Uint32Array(256);
-  for (let n = 0; n < 256; n++) {
-    let c = n;
-    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-    t[n] = c >>> 0;
-  }
-  return t;
-})();
-
-function crc32(bytes) {
-  let c = 0xFFFFFFFF;
-  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
-  return (c ^ 0xFFFFFFFF) >>> 0;
-}
-
-function buildZip(files) {
-  const enc = new TextEncoder();
-  const now = new Date();
-  const dosTime = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
-  const dosDate = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
-  const chunks = [], central = [];
-  let offset = 0;
-
-  files.forEach(f => {
-    const name = enc.encode(f.name), data = enc.encode(f.content), crc = crc32(data);
-    const local = new DataView(new ArrayBuffer(30));
-    local.setUint32(0, 0x04034b50, true); local.setUint16(4, 20, true); local.setUint16(6, 0x0800, true); // UTF-8 names
-    local.setUint16(8, 0, true); local.setUint16(10, dosTime, true); local.setUint16(12, dosDate, true);
-    local.setUint32(14, crc, true); local.setUint32(18, data.length, true); local.setUint32(22, data.length, true);
-    local.setUint16(26, name.length, true); local.setUint16(28, 0, true);
-    chunks.push(new Uint8Array(local.buffer), name, data);
-
-    const cen = new DataView(new ArrayBuffer(46));
-    cen.setUint32(0, 0x02014b50, true); cen.setUint16(4, 20, true); cen.setUint16(6, 20, true); cen.setUint16(8, 0x0800, true);
-    cen.setUint16(10, 0, true); cen.setUint16(12, dosTime, true); cen.setUint16(14, dosDate, true);
-    cen.setUint32(16, crc, true); cen.setUint32(20, data.length, true); cen.setUint32(24, data.length, true);
-    cen.setUint16(28, name.length, true); cen.setUint32(42, offset, true);
-    central.push(new Uint8Array(cen.buffer), name);
-
-    offset += 30 + name.length + data.length;
-  });
-
-  const centralSize = central.reduce((n, c) => n + c.length, 0);
-  const end = new DataView(new ArrayBuffer(22));
-  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true);
-  end.setUint32(12, centralSize, true); end.setUint32(16, offset, true);
-  return new Blob([...chunks, ...central, new Uint8Array(end.buffer)], { type: 'application/zip' });
-}
-
-function downloadBlob(filename, blob) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+$('#btn-download-all-md').addEventListener('click', () => {
+  if (!currentArtefacts.length) return;
+  withBusyButton($('#btn-download-all-md'), 'Zipping…', () =>
+    downloadAllMarkdownZip(currentArtefacts, `specification-package-${packageStamp()}-markdown.zip`));
+});
 
 // ============================================================
 // Resume / reopen — restores the WHOLE process for a saved project: the idea, every question
