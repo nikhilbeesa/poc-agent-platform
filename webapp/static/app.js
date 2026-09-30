@@ -300,9 +300,162 @@ function renderMermaidBlocks(viewer) {
       code.parentElement.replaceWith(card);
     });
     if (blocks.length) {
-      window.mermaid.run({ nodes: viewer.querySelectorAll('.mermaid'), suppressErrors: true }).catch(() => {});
+      window.mermaid.run({ nodes: viewer.querySelectorAll('.mermaid'), suppressErrors: true })
+        .then(() => viewer.querySelectorAll('.diagram-card svg').forEach(routeFlowchart))
+        .catch(() => {});
     }
   } catch (e) { /* keep the source visible */ }
+}
+
+// ------------------------------------------------------------------------------------------
+// Standard flowchart connector routing.
+// Mermaid clips every connector to the slanted edge of a diamond, so lines appear to start
+// mid-side and arrowheads float off the borders. After rendering, each connector is re-drawn
+// from the node geometry using the usual flowchart conventions:
+//   - only horizontal / vertical segments (right angles), one arrowhead at the target
+//   - a decision leaves from its left, right or bottom corner point
+//   - other shapes leave from the bottom centre and enter the target's top centre
+//   - a line that goes back up (a retry loop) leaves from the side and re-enters from the side
+// Any edge that cannot be routed cleanly (it would cross another shape) keeps Mermaid's own line.
+// ------------------------------------------------------------------------------------------
+function routeFlowchart(svg) {
+  try {
+    const nodeEls = [...svg.querySelectorAll('g.node')];
+    const paths = [...svg.querySelectorAll('path.flowchart-link')];
+    if (!nodeEls.length || !paths.length) return;
+
+    const boxes = {};
+    nodeEls.forEach((g) => {
+      const m = /flowchart-(.+)-\d+$/.exec(g.id || '');
+      if (!m) return;
+      const t = /translate\(\s*([-\d.]+)[ ,]+([-\d.]+)/.exec(g.getAttribute('transform') || '');
+      if (!t) return;
+      const b = g.getBBox();                       // whole node, in the node's own (centred) coordinates
+      const w = b.width, h = b.height, cx = +t[1] + b.x + w / 2, cy = +t[2] + b.y + h / 2;
+      const isDecision = g.querySelector('polygon') !== null;
+      boxes[m[1]] = { id: m[1], cx, cy, w, h, l: cx - w / 2, r: cx + w / 2, t: cy - h / 2, b: cy + h / 2, dec: isDecision };
+    });
+
+    const labels = [...svg.querySelectorAll('g.edgeLabels > g.edgeLabel')];
+    const used = {};                               // decision exits already taken: id -> {left,right,bottom}
+    const routed = [];
+    const channels = [];                           // x positions already used by loop-back lines
+
+    const hits = (pts, skip) => {
+      for (let i = 0; i < pts.length - 1; i++) {
+        const [x1, y1] = pts[i], [x2, y2] = pts[i + 1];
+        const minx = Math.min(x1, x2), maxx = Math.max(x1, x2), miny = Math.min(y1, y2), maxy = Math.max(y1, y2);
+        for (const k in boxes) {
+          if (skip.includes(k)) continue;
+          const n = boxes[k];
+          if (maxx > n.l + 1 && minx < n.r - 1 && maxy > n.t + 1 && miny < n.b - 1) return true;
+        }
+      }
+      return false;
+    };
+
+    // Distance the arrow tip sits beyond the path end, so the tip can touch the shape border.
+    let tip = 4;
+    const mk = svg.querySelector('marker');
+    if (mk) {
+      const vb = (mk.getAttribute('viewBox') || '0 0 10 10').split(/[ ,]+/).map(Number);
+      const refX = parseFloat(mk.getAttribute('refX') || '5'), mw = parseFloat(mk.getAttribute('markerWidth') || vb[2]);
+      if (vb[2] > 0 && mw > 0 && !isNaN(refX)) tip = Math.max(0, (vb[2] - refX) * (mw / vb[2]));
+    }
+
+    const edges = [];
+    paths.forEach((path, idx) => {
+      // which shapes does this line join? Newer Mermaid puts it in the id (L_A_B_0 / L-A-B-0),
+      // older versions also add LS-A / LE-B classes.
+      const cls = path.getAttribute('class') || '';
+      let s = (/LS-(\S+)/.exec(cls) || [])[1], e = (/LE-(\S+)/.exec(cls) || [])[1];
+      if (!s || !e) {
+        const ids = Object.keys(boxes), esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        outer: for (const a of ids) for (const b of ids) {
+          if (new RegExp('(^|[-_])L[-_]' + esc(a) + '[-_]' + esc(b) + '[-_]\\d+$').test(path.id || '')) { s = a; e = b; break outer; }
+        }
+      }
+      const S = boxes[s], T = boxes[e];
+      if (S && T && S !== T) edges.push({ path, idx, S, T });
+    });
+    // loop-back lines first, so they reserve their corner points before forward lines choose theirs
+    const isBack = (E) => !(E.T.t > E.S.b + 6);
+    edges.sort((x, y) => (isBack(y) ? 1 : 0) - (isBack(x) ? 1 : 0));
+
+    edges.forEach(({ path, idx, S, T }) => {
+      const dx = T.cx - S.cx;
+      const usedS = (used[S.id] = used[S.id] || {}), usedT = (used[T.id] = used[T.id] || {});
+      const cands = [];                                           // candidate routes, best first
+
+      if (T.t > S.b + 6) {                                         // forward: target is below
+        const side = dx < 0 ? 'left' : 'right', sideX = dx < 0 ? S.l : S.r;
+        const sideRoute = () => [[sideX, S.cy], [T.cx, S.cy], [T.cx, T.t]];
+        const zRoute = (f) => { const my = S.b + (T.t - S.b) * f; return [[S.cx, S.b], [S.cx, my], [T.cx, my], [T.cx, T.t]]; };
+        // leave the side, run past the target, come back into the target's facing side
+        const wrapRoute = () => {
+          const inX = dx < 0 ? T.r : T.l, x = dx < 0 ? T.r + 26 : T.l - 26;
+          return [[sideX, S.cy], [x, S.cy], [x, T.cy], [inX, T.cy]];
+        };
+        const canSide = Math.abs(dx) > S.w / 2 + 8 && !usedS[side];
+        const nb = usedS.bottomCount || 0;                          // lines already forking off the bottom point
+        const canBottom = nb < 3;
+        if (Math.abs(dx) < 3 && nb === 0) {
+          const x = (S.cx + T.cx) / 2;                             // centres differ only by rounding
+          cands.push({ pts: [[x, S.b], [x, T.t]], exit: 'bottom' });
+        } else {
+          const fr = [[0.5, 0.3, 0.7], [0.75, 0.25, 0.88], [0.9, 0.12, 0.6]][nb] || [];   // each fork gets its own level
+          const z = canBottom ? fr.map((f) => ({ pts: zRoute(f), exit: 'bottom', seg: S.dec ? 1 : 0 })) : [];
+          if (S.dec) {
+            if (canSide) cands.push({ pts: sideRoute(), exit: side });
+            cands.push(...z);
+          } else {
+            cands.push(...z);
+            if (canSide) cands.push({ pts: sideRoute(), exit: side });
+          }
+          const enter = dx < 0 ? 'right' : 'left';
+          if (canSide && !usedT[enter]) cands.push({ pts: wrapRoute(), exit: side, enter });
+        }
+      } else {                                                      // backward / same level: loop round a side
+        const first = T.cx <= S.cx ? 'left' : 'right';
+        [first, first === 'left' ? 'right' : 'left'].forEach((sd) => {
+          if (usedS[sd] || usedT[sd]) return;
+          let out = sd === 'left' ? Math.min(S.l, T.l) - 34 : Math.max(S.r, T.r) + 34;
+          while (channels.some((c) => Math.abs(c - out) < 14)) out += sd === 'left' ? -16 : 16;   // keep loops apart
+          cands.push({ pts: [[sd === 'left' ? S.l : S.r, S.cy], [out, S.cy], [out, T.cy], [sd === 'left' ? T.l : T.r, T.cy]], exit: sd, enter: sd, channel: out });
+        });
+      }
+      const pick = cands.find((c) => !hits(c.pts, [S.id, T.id]));
+      if (!pick) return;                                           // keep Mermaid's own line
+      usedS[pick.exit] = true;
+      if (pick.exit === 'bottom') usedS.bottomCount = (usedS.bottomCount || 0) + 1;
+      if (pick.enter) usedT[pick.enter] = true;                    // a corner point carries one line only
+      if (pick.channel !== undefined) channels.push(pick.channel);
+      const pts = pick.pts, labelSeg = pick.seg || 0;
+
+      // pull the last point back so the arrow TIP (not its base) lands on the border
+      const n = pts.length, [px, py] = pts[n - 2], last = pts[n - 1];
+      const len = Math.hypot(last[0] - px, last[1] - py) || 1;
+      pts[n - 1] = [last[0] - ((last[0] - px) / len) * tip, last[1] - ((last[1] - py) / len) * tip];
+
+      path.setAttribute('d', 'M' + pts.map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' L'));
+      routed.push({ idx, pts, labelSeg });
+    });
+
+    // put each label on the first segment leaving its decision, on a white plate over the line
+    routed.forEach(({ idx, pts, labelSeg }) => {
+      const lab = labels[idx];
+      if (!lab || !(lab.textContent || '').trim()) return;
+      let a = pts[labelSeg], b = pts[labelSeg + 1];
+      if (Math.hypot(b[0] - a[0], b[1] - a[1]) < 34 && pts[labelSeg + 2]) { a = pts[labelSeg + 1]; b = pts[labelSeg + 2]; }
+      lab.setAttribute('transform', `translate(${((a[0] + b[0]) / 2).toFixed(1)}, ${((a[1] + b[1]) / 2).toFixed(1)})`);
+    });
+
+    // loop-back lines can run outside the box Mermaid measured — widen the drawing to include them
+    const bb = svg.querySelector('g').getBBox();
+    const pad = 12, vb = [bb.x - pad, bb.y - pad, bb.width + pad * 2, bb.height + pad * 2];
+    svg.setAttribute('viewBox', vb.map((v) => v.toFixed(1)).join(' '));
+    svg.style.maxWidth = vb[2].toFixed(0) + 'px';
+  } catch (err) { /* leave Mermaid's own rendering untouched */ }
 }
 
 // Puts every table in a horizontally scrollable wrapper so wide tables use the full width
@@ -818,7 +971,7 @@ async function loadAgentMeta() {
 function nodeX(i) { return NODE_X_START + i * NODE_X_GAP; }
 
 // Process-flow notation: nodes are joined by straight, single-direction, right-angle (horizontal)
-// connectors with arrowheads, on a light canvas so the diagram stands apart from the page.
+// connectors with arrowheads.
 function drawSchematic() {
   const svg = $('#schematic');
   svg.innerHTML = '';
@@ -826,11 +979,6 @@ function drawSchematic() {
 
   const totalWidth = NODE_X_START * 2 + Math.max(0, agentMeta.length - 1) * NODE_X_GAP;
   svg.setAttribute('viewBox', `0 0 ${totalWidth} 160`);
-
-  const bg = document.createElementNS(ns, 'rect');
-  bg.setAttribute('x', 0); bg.setAttribute('y', 0); bg.setAttribute('width', totalWidth); bg.setAttribute('height', 160);
-  bg.setAttribute('rx', 6); bg.setAttribute('class', 'schematic-bg');
-  svg.appendChild(bg);
 
   for (let i = 0; i < agentMeta.length - 1; i++) {
     const x1 = nodeX(i) + NODE_R, x2 = nodeX(i + 1) - NODE_R;

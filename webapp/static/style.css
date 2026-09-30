@@ -216,25 +216,23 @@ textarea:focus, input[type="text"]:focus, .btn:focus-visible, .chip:focus-visibl
 }
 
 /* ---------------- Schematic diagram ---------------- */
-/* Drawn on a light canvas so the process flow stands apart from the dark page. */
 .schematic { width: 100%; height: auto; display: block; margin-bottom: 16px; }
-.schematic-bg { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1; }
-.node-circle { fill: #ffffff; stroke: #94a3b8; stroke-width: 2; transition: stroke 0.3s ease, fill 0.3s ease; }
-.node-circle.active { stroke: #d97706; fill: #fffbeb; animation: pulse 1.1s ease-in-out infinite; }
-.node-circle.done { stroke: #059669; fill: #d1fae5; }
-.node-circle.error { stroke: #dc2626; fill: #fee2e2; }
-.node-index { fill: #64748b; font-family: var(--mono); font-size: 13px; }
-.node-check { opacity: 0; transition: opacity 0.2s ease; font-family: var(--mono); fill: #059669; font-size: 20px; }
+.node-circle { fill: var(--bg-panel); stroke: var(--line-bright); stroke-width: 2; transition: stroke 0.3s ease, fill 0.3s ease; }
+.node-circle.active { stroke: var(--amber); animation: pulse 1.1s ease-in-out infinite; }
+.node-circle.done { stroke: var(--green); fill: rgba(126, 232, 168, 0.12); }
+.node-circle.error { stroke: #ff6b6b; fill: rgba(255, 107, 107, 0.12); }
+.node-index { fill: var(--text-faint); font-family: var(--mono); font-size: 13px; }
+.node-check { opacity: 0; transition: opacity 0.2s ease; font-family: var(--mono); fill: var(--green); font-size: 20px; }
 .node-check.show { opacity: 1; }
-.node-label { font-family: var(--mono); font-size: 10px; fill: #64748b; transition: fill 0.3s ease; }
+.node-label { font-family: var(--mono); font-size: 10px; fill: var(--text-faint); transition: fill 0.3s ease; }
 .node-sublabel { font-size: 9px; opacity: 0.85; }
-.node-label.active { fill: #b45309; }
-.node-label.done { fill: #0f172a; }
-.node-label.error { fill: #b91c1c; }
-.trace-line { stroke: #94a3b8; stroke-width: 2; transition: stroke 0.4s ease; }
-.trace-line.charged { stroke: #0369a1; }
-.trace-arrow { fill: #94a3b8; transition: fill 0.4s ease; }
-.trace-arrow.charged { fill: #0369a1; }
+.node-label.active { fill: var(--amber); }
+.node-label.done { fill: var(--text-dim); }
+.node-label.error { fill: #ff6b6b; }
+.trace-line { stroke: var(--line-bright); stroke-width: 2; transition: stroke 0.4s ease; }
+.trace-line.charged { stroke: var(--cyan); }
+.trace-arrow { fill: var(--line-bright); transition: fill 0.4s ease; }
+.trace-arrow.charged { fill: var(--cyan); }
 
 @keyframes pulse { 0%, 100% { stroke-opacity: 1; } 50% { stroke-opacity: 0.35; } }
 
@@ -338,3 +336,7 @@ textarea[readonly] { opacity: 0.75; cursor: default; }
 .doc-viewer .diagram-card li { color: inherit; max-width: none; margin: 0; }
 .doc-viewer .diagram-card .nodeLabel, .doc-viewer .diagram-card .nodeLabel p { color: #0f172a; }
 .doc-viewer .diagram-card .edgeLabel, .doc-viewer .diagram-card .edgeLabel p { color: #0f172a; background: #ffffff; }
+
+.diagram-card .edgeLabel, .diagram-card .edgeLabel p, .diagram-card .edgeLabel span { background-color: #ffffff !important; color: #0f172a !important; }
+.diagram-card .edgeLabel { font-size: 12px; font-weight: 600; }
+.diagram-card .flowchart-link { stroke-linejoin: miter; }
