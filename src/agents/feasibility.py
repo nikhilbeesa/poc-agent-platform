@@ -63,16 +63,37 @@ def _norm_choice(value, allowed, default):
     return default
 
 
-def finalize(out: dict, llm_verdict: str | None = None) -> dict:
+def finalize(out: dict, llm_verdict: str | None = None, questions: list | None = None) -> dict:
+    """`questions` = the project's discovery questions. They let each flaw point at the answers behind it, so the UI
+    can show ONLY those questions for editing instead of making the person search the whole questionnaire."""
     flaws = out.get("flaws") or []
+    valid = {q.id: q for q in (questions or []) if q.id != "additional_information"}
     for i, f in enumerate(flaws, start=1):
         f["id"] = f"FLAW-{i:02d}"
         f["severity"] = _norm_choice(f.get("severity"), SEVERITIES, "Major")
+        ids = f.get("related_question_ids") or []
+        f["related_question_ids"] = [q for q in dict.fromkeys(str(x).strip() for x in ids) if q in valid][:3]
     order = {s: i for i, s in enumerate(SEVERITIES)}
     flaws.sort(key=lambda f: order[f["severity"]])
     for i, f in enumerate(flaws, start=1):          # renumber after sorting so IDs read top-down
         f["id"] = f"FLAW-{i:02d}"
     out["flaws"] = flaws
+
+    # Answers worth revisiting: only Critical/Major flaws, worst first, one entry per question.
+    revisit: dict[str, dict] = {}
+    for f in flaws:
+        if f["severity"] not in ("Critical", "Major"):
+            continue
+        for qid in f["related_question_ids"]:
+            item = revisit.setdefault(qid, {"question_id": qid, "question": valid[qid].text, "current_answer": valid[qid].answer or "",
+                                            "severity": f["severity"], "reasons": []})
+            item["reasons"].append({"flaw_id": f["id"], "severity": f["severity"], "flaw": f["flaw"],
+                                    "suggestion": f.get("recommended_change", "")})
+    out["questions_to_revisit"] = list(revisit.values())[:8]
+    # Critical/major flaws that no single answer explains (e.g. "no differentiator stated" in a domain that never asked).
+    # The UI lists them too, so the popup never looks like the complete set of problems when it is not.
+    out["unlinked_flaws"] = [{"id": f["id"], "severity": f["severity"], "flaw": f["flaw"], "suggestion": f.get("recommended_change", "")}
+                             for f in flaws if f["severity"] in ("Critical", "Major") and not f["related_question_ids"]]
 
     dims = out.get("feasibility") or {}
     for key, _label in DIMENSIONS:
@@ -185,47 +206,67 @@ def _mock(context: ProjectContext) -> dict:
     # ---------------- flaws ----------------
     flaws: list[dict] = []
 
-    def flaw(sev, area, what, why, fix):
-        flaws.append({"severity": sev, "area": area, "flaw": what, "why_it_matters": why, "recommended_change": fix})
+    def qids(*needles, ids=()):
+        """Ids of the questions behind a flaw: exact ids first, then any question whose category/text mentions a keyword."""
+        found = [q.id for q in context.discovery_questions if q.id in ids]
+        for q in context.discovery_questions:
+            if q.id == "additional_information" or q.id in found:
+                continue
+            if any(n in f"{q.category} {q.text}".lower() for n in needles):
+                found.append(q.id)
+        return found[:3]
+
+    def flaw(sev, area, what, why, fix, related=()):
+        flaws.append({"severity": sev, "area": area, "flaw": what, "why_it_matters": why, "recommended_change": fix,
+                      "related_question_ids": list(related)})
 
     if not differentiation:
         flaw("Major", "Differentiation", "No clear reason for users to choose this product over existing options has been stated.",
              "Without a sharp differentiator the product competes on price and marketing spend, which favours incumbents.",
-             "Define one specific thing this product does better for one specific user group, and test it with 10+ target users before building.")
+             "Define one specific thing this product does better for one specific user group, and test it with 10+ target users before building.",
+             qids("differentiat", "value_proposition", "core value", "unique", "compet"))
     if "no real competitors" in competition.lower():
         flaw("Major", "Market evidence", "The idea assumes there are no real competitors.",
              "Either demand is unproven, or users are solving the problem another way (a substitute) that has not been recognised.",
-             "List what users do today instead — including manual methods — and confirm they would switch and pay.")
+             "List what users do today instead — including manual methods — and confirm they would switch and pay.",
+             qids("compet", "alternative"))
     if two_sided:
         flaw("Major", "Cold start", f"The product needs {vocab['buyer'].lower()}s and {vocab['seller'].lower()}s at the same time; each side only joins if the other is already there.",
              "Two-sided products often fail before reaching the density that makes them useful.",
-             f"Launch in one narrow area or niche, secure the {vocab['seller'].lower()} side first (manually if needed), and set a target for supply density before opening to {vocab['buyer'].lower()}s.")
+             f"Launch in one narrow area or niche, secure the {vocab['seller'].lower()} side first (manually if needed), and set a target for supply density before opening to {vocab['buyer'].lower()}s.",
+             qids("onboard", "vetted", "self-signup", "recruit", "supply side"))
         if has_payments:
             flaw("Major", "Business model", "Users may complete repeat transactions off the platform to avoid fees (disintermediation).",
                  "If the revenue depends on a commission or fee per transaction, leakage directly cuts revenue.",
-                 "Give both sides ongoing reasons to stay (payment protection, guarantees, scheduling, reviews, insurance) and consider subscription or lead-fee models.")
+                 "Give both sides ongoing reasons to stay (payment protection, guarantees, scheduling, reviews, insurance) and consider subscription or lead-fee models.",
+                 qids("monetiz", "revenue", "business_model", "pricing", "commission", "payment"))
     if monetisation and any(w in monetisation.lower() for w in ("not decided", "haven't", "not sure")):
         flaw("Major", "Business model", "How the product will make money has not been decided.",
              "Unit economics drive almost every design and scope decision; leaving them open risks building a product that cannot pay for itself.",
-             "Choose a provisional revenue model and check it with a simple estimate: revenue per user versus acquisition and running cost.")
+             "Choose a provisional revenue model and check it with a simple estimate: revenue per user versus acquisition and running cost.",
+             qids("monetiz", "revenue", "business_model", "pricing", "commission"))
     if len(answered) and len(unsure) / max(1, len(answered) + len(unsure)) >= 0.25:
         flaw("Major", "Undecided fundamentals", f"{len(unsure)} discovery questions were skipped or answered 'not sure'.",
              "Many open decisions mean the specification will contain assumptions that may not hold.",
-             "Resolve the open questions in the questionnaire (use Edit on the review screen) before relying on the specification.")
+             "Resolve the open questions in the questionnaire (use Edit on the review screen) before relying on the specification.",
+             [q.id for q in unsure if q.id != "additional_information"][:3])
     users = planning["users_12m"]
     if users >= 50_000 and any(w in team.lower() for w in ("solo", "small team")):
         flaw("Critical", "Scope vs resources", f"The plan targets up to {users:,} users in year one, but the team is described as '{team}'.",
              "Building, securing, running and supporting a product at this scale usually needs a larger team or a much narrower first release.",
-             "Cut the first release to the smallest useful scope, plan for hundreds of users before thousands, or secure funding/partners for a larger team.")
+             "Cut the first release to the smallest useful scope, plan for hundreds of users before thousands, or secure funding/partners for a larger team.",
+             qids("team", "resourc", "budget", ids=("nfr_users_12m",)))
     if timeline and "within 3 months" in timeline.lower() and len(modules) >= 20:
         flaw("Major", "Scope vs timeline", f"A launch within 3 months is planned, but the product spans {len(modules)} functional modules.",
              "The scope is unlikely to fit the timeline, which leads to rushed quality or missed launch.",
-             "Choose the 5-8 modules needed for a first usable release (the MVP tiers in the BRD show a starting point) and defer the rest.")
+             "Choose the 5-8 modules needed for a first usable release (the MVP tiers in the BRD show a starting point) and defer the rest.",
+             qids("timeline", "launch date", "when do you"))
     sensitive = [k for k, w in (("health", "health"), ("children", "children"), ("identity documents", "identity"), ("payment", "payment")) if w in sens_label]
     if sensitive:
         flaw("Major", "Regulatory", f"The product handles sensitive data ({', '.join(sensitive)}).",
              "Sensitive data brings legal duties, audits and breach liability that increase cost and delay launch.",
-             "Get legal advice on the rules for the launch geography before build; minimise stored data and use specialist providers (for example a hosted payment provider).")
+             "Get legal advice on the rules for the launch geography before build; minimise stored data and use specialist providers (for example a hosted payment provider).",
+             ["nfr_data_sensitivity", "nfr_geography"])
     if any(k in text for k in (" ai ", "ai-powered", "recommend", "machine learning", "chatbot")):
         flaw("Minor", "AI dependence", "Part of the value depends on AI output quality.",
              "Poor or inconsistent AI results damage trust quickly; ongoing model cost also scales with usage.",
@@ -293,7 +334,7 @@ def _mock(context: ProjectContext) -> dict:
         "recommended_changes": changes,
         "must_confirm_before_build": profile["open_questions"][:6],
     }
-    out = finalize(out)
+    out = finalize(out, questions=context.discovery_questions)
     out["verdict_rationale"] = _rationale(out)
     return out
 
@@ -343,6 +384,7 @@ def _live_feasibility_prompt(context: ProjectContext, market: dict, profile: dic
     comp = "; ".join(f"{c.get('name')} ({c.get('type')}, threat {c.get('threat_level')})" for c in market.get("competitors", []))
     diffs = "; ".join(f"{d.get('differentiator')} [{d.get('defensibility')}]" for d in market.get("differentiators", []))
     scale = "\n".join(f"- {r['parameter']}: {r['value']} [{r['basis']}]" for r in profile["scale"]["rows"])
+    qlist = "\n".join(f"- [{q.id}] {q.text} -> {q.answer or '(skipped)'}" for q in context.discovery_questions if q.id != "additional_information")
     return (
         ch.tag("feasibility.assess") +
         "You are a sceptical, experienced startup advisor and solutions architect. Your job is to find out whether this idea will work "
@@ -357,11 +399,14 @@ def _live_feasibility_prompt(context: ProjectContext, market: dict, profile: dic
         "unclear or unproven demand, weak or copyable differentiation, cold-start / network-effect problems, disintermediation, "
         "unit economics that do not work, scope that does not fit the team/timeline/budget, regulatory or data-protection exposure, "
         "dependence on a third party, contradictions between the answers, and answers left as 'not sure'.\n"
+        "For EACH flaw, also list related_question_ids: the ids (from the list below, copied exactly) of the 1-3 discovery answers that "
+        "caused or could fix that flaw, so the founder can change just those answers. Use an empty list if the flaw is not tied to any "
+        "question asked. Never invent ids.\nDISCOVERY QUESTIONS (id, question -> answer):\n" + qlist + "\n\n"
         "Then list the key assumptions that must be validated with real users/data (with how), the recommended changes to the idea "
         "(concrete, ordered by importance), and what must be confirmed before building. Give an overall verdict: GO, GO WITH CHANGES or RETHINK, "
         "with a 2-3 sentence rationale, and your confidence (High, Medium, Low).\n\n"
         'Respond ONLY with JSON:\n{"feasibility": {"desirability": {"rating": "High|Medium|Low", "assessment": "..."}, "technical": {...}, "operational": {...}, "financial": {...}, "legal": {...}}, '
-        '"flaws": [{"severity": "Critical|Major|Minor", "area": "...", "flaw": "...", "why_it_matters": "...", "recommended_change": "..."}], '
+        '"flaws": [{"severity": "Critical|Major|Minor", "area": "...", "flaw": "...", "why_it_matters": "...", "recommended_change": "...", "related_question_ids": ["id"]}], '
         '"assumptions_to_validate": [{"assumption": "...", "how_to_validate": "...", "risk_if_wrong": "..."}], '
         '"recommended_changes": ["..."], "must_confirm_before_build": ["..."], '
         '"verdict": "GO|GO WITH CHANGES|RETHINK", "verdict_rationale": "...", "confidence": "High|Medium|Low"}'
@@ -395,7 +440,16 @@ def _live(context: ProjectContext, client) -> dict:
     diffs = _list_of_dicts(market.get("differentiators"), ("differentiator", "description", "competitors_lacking", "defensibility", "risk_if_copied"))
     for d in diffs:
         d["defensibility"] = _norm_choice(d["defensibility"], ("Strong", "Moderate", "Weak"), "Moderate")
-    flaws = _list_of_dicts(assess.get("flaws"), ("severity", "area", "flaw", "why_it_matters", "recommended_change"))
+    flaws = []
+    for f in assess.get("flaws") or []:
+        if not isinstance(f, dict):
+            continue
+        item = {k: str(f.get(k, "")).strip() for k in ("severity", "area", "flaw", "why_it_matters", "recommended_change")}
+        if not item["flaw"]:
+            continue
+        ids = f.get("related_question_ids")
+        item["related_question_ids"] = ids if isinstance(ids, list) else []   # validated against real ids in finalize()
+        flaws.append(item)
     if not flaws:
         raise RuntimeError("the feasibility model returned no flaws — every idea has some; refusing to produce an empty assessment")
 
@@ -420,7 +474,7 @@ def _live(context: ProjectContext, client) -> dict:
         "recommended_changes": strs(assess.get("recommended_changes")),
         "must_confirm_before_build": strs(assess.get("must_confirm_before_build")) or profile["open_questions"][:6],
     }
-    out = finalize(out, llm_verdict=assess.get("verdict"))
+    out = finalize(out, llm_verdict=assess.get("verdict"), questions=context.discovery_questions)
     if not out["verdict_rationale"]:
         out["verdict_rationale"] = _rationale(out)
     return out

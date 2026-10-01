@@ -935,6 +935,7 @@ $('#btn-run-agents').addEventListener('click', async () => {
   const wasPaused = runState === 'paused';   // captured before the state changes below
   runState = 'running';
   updateRunButton();                 // disabled synchronously, before any await
+  let result = null;
   try {
     unlock('#panel-agents');
     if (!agentMeta.length) await loadAgentMeta();
@@ -946,9 +947,10 @@ $('#btn-run-agents').addEventListener('click', async () => {
     } else {
       logLine(`↻ Retrying from ${agentMeta[nextAgentIndex].label}…`);
     }
-    const result = await runAgentPipeline(nextAgentIndex);
+    result = await runAgentPipeline(nextAgentIndex);
     if (result === true) hasGeneratedBefore = true;
-    runState = result === true ? 'done' : result === 'paused' ? 'paused' : 'error';
+    runState = result === true ? 'done' : result === 'paused' ? 'paused' : result === 'rerun' ? 'idle' : 'error';
+    if (result === 'rerun') nextAgentIndex = 0;
   } catch (e) {
     logLine(`✗ Agent run failed: ${e.message}`);
     $('#agents-status').textContent = 'error';
@@ -956,6 +958,8 @@ $('#btn-run-agents').addEventListener('click', async () => {
   }
   updateRunButton();
   updateResolveButton();   // the run has fully finished (incl. auto-resolution) — only now may Resolve show
+  // The person edited answers in the feasibility popup and asked to re-run: start a fresh run now.
+  if (result === 'rerun') setTimeout(() => $('#btn-run-agents').click(), 0);
 });
 
 // ============================================================
@@ -1071,16 +1075,21 @@ async function runAgentPipeline(startIndex = 0) {
       if (agentMeta[i].role === 'ai_handoff_validation') showQaVerdict(data);
       if (agentMeta[i].role === 'feasibility_assessment' && data.feasibility) {
         showFeasibility(data.feasibility);
-        // An early check is only useful if it can stop wasted work: on a RETHINK verdict, ask first.
+        // An early check is only useful if it can stop wasted work: on a RETHINK verdict, stop and let the
+        // person fix just the answers behind the problems (or continue anyway).
         if (data.feasibility.verdict === 'RETHINK' && startIndex === 0) {
-          const go = confirm('The feasibility check recommends RETHINKING this idea (see the red box for why).\n\n' +
-            'OK = continue and generate the full specification anyway.\nCancel = stop here, so you can revise your answers first.');
-          if (!go) {
-            logLine('⏸ Paused after the feasibility check. Edit your answers, or click "Continue anyway" to generate the specification.');
+          const choice = await openFeasibilityModal(data.feasibility, 'gate');
+          if (choice === 'rerun') {
+            logLine('↻ Answers updated — re-running the feasibility check…');
+            return 'rerun';
+          }
+          if (choice === 'pause') {
+            logLine('⏸ Paused after the feasibility check. Reopen the review from the red box, edit your answers, or click "Continue anyway".');
             $('#agents-status').textContent = 'paused';
             nextAgentIndex = i + 1;
             return 'paused';
           }
+          logLine('▶ Continuing despite the RETHINK verdict.');
         }
       }
     } catch (e) {
@@ -1137,7 +1146,10 @@ async function autoResolveGaps() {
   logLine(`⚠ Reached the auto-resolve round limit (${MAX_AUTO_RESOLVE_ROUNDS}) with some items still flagged — review below, or click "Resolve issues" to try another round.`);
 }
 
+let lastFeasibility = null;
+
 function showFeasibility(f) {
+  lastFeasibility = f;
   const box = $('#feasibility-verdict');
   const slug = f.verdict === 'GO' ? 'go' : f.verdict === 'RETHINK' ? 'rethink' : 'changes';
   box.hidden = false;
@@ -1149,7 +1161,196 @@ function showFeasibility(f) {
     `<span class="feas-counts"> — ${c.critical || 0} critical · ${c.major || 0} major · ${c.minor || 0} minor flaw(s)</span>` +
     `<div class="feas-why">${escapeHtml(f.rationale || '')}</div>${flaws}` +
     `<div class="feas-foot">Full analysis (competitors, differentiators, flaws, recommended changes) is in the first document below once exported.</div>`;
+  const n = (f.revisit || []).length;
+  if (n) {
+    const btn = el('button', { type: 'button', class: 'btn btn-ghost feas-actions', id: 'btn-feas-review',
+                               text: `✎ Review the ${n} answer${n === 1 ? '' : 's'} behind these flaws` });
+    btn.addEventListener('click', () => {
+      if (runState === 'running' || runState === 'external') { alert('Please wait until the agents have finished.'); return; }
+      openFeasibilityModal(lastFeasibility, runState === 'paused' ? 'paused' : 'review').then(handleFeasChoice);
+    });
+    box.appendChild(btn);
+  }
 }
+
+// What to do after the popup is used outside the pipeline (box button): re-run with the new answers, or continue.
+function handleFeasChoice(choice) {
+  if (choice === 'rerun' || choice === 'continue') {
+    if (runState === 'running' || runState === 'external') return;
+    $('#btn-run-agents').click();
+  }
+}
+
+// ---- Feasibility popup -------------------------------------------------------------------
+// Shows ONLY the discovery questions behind the critical/major flaws, each editable in place, so the person
+// does not have to hunt through the whole questionnaire. Resolves with 'rerun' (answers saved), 'continue',
+// or 'pause' (closed without a decision).
+//   mode 'gate'   — opened automatically on a RETHINK verdict, mid-run (offers "Continue anyway")
+//   mode 'paused' — reopened after pausing (offers "Continue anyway")
+//   mode 'review' — opened from the box later (no "Continue anyway")
+let feasModalDraft = {};
+let feasModalResolve = null;
+let feasModalReturnFocus = null;
+
+function feasAnswerParts(q) {
+  const raw = dfAnswers[q.id] || '';
+  return q.multi_select ? raw.split(' | ').map(s => s.trim()).filter(Boolean) : (raw ? [raw] : []);
+}
+
+function buildFeasEditor(q, card) {
+  const wrap = el('div', { class: 'fm-edit' });
+  const current = dfAnswers[q.id] || '';
+  wrap.appendChild(el('div', { class: 'fm-current', text: 'Current answer: ' + (current ? current.split(' | ').join(', ') : '(skipped)') }));
+
+  const report = (text) => {            // record / clear the draft for this question
+    text = (text || '').trim();
+    if (text && text !== current) feasModalDraft[q.id] = text; else delete feasModalDraft[q.id];
+    const changed = q.id in feasModalDraft;
+    card.classList.toggle('changed', changed);
+    const tag = card.querySelector('.fm-changed-tag'); if (tag) tag.hidden = !changed;
+    $('#feas-modal-save').disabled = Object.keys(feasModalDraft).length === 0;
+  };
+
+  if (!(q.options && q.options.length)) {
+    const ta = el('textarea', { class: 'fm-edit-input', rows: '2', placeholder: 'Type your answer…' });
+    ta.value = current;
+    ta.addEventListener('input', () => report(ta.value));
+    wrap.appendChild(ta);
+    return wrap;
+  }
+
+  const multi = !!q.multi_select;
+  const allOptions = q.options.includes(OTHER_LABEL) ? q.options : [...q.options, OTHER_LABEL];
+  const parts = feasAnswerParts(q);
+  const selected = new Set(parts.filter(p => q.options.includes(p)));
+  let otherText = parts.filter(p => !q.options.includes(p)).join(', ');
+  if (otherText) selected.add(OTHER_LABEL);
+
+  const list = el('div', { class: 'df-options fm-options', role: multi ? 'group' : 'radiogroup' });
+  const otherInput = el('input', { type: 'text', class: 'fm-edit-input', placeholder: 'Type your own answer…' });
+  otherInput.value = otherText;
+  otherInput.hidden = !selected.has(OTHER_LABEL);
+
+  const cards = new Map();
+  const compute = () => {
+    const out = [];
+    allOptions.forEach(opt => {
+      if (!selected.has(opt)) return;
+      if (opt === OTHER_LABEL) { if (otherInput.value.trim()) out.push(otherInput.value.trim()); }
+      else out.push(opt);
+    });
+    report(out.join(' | '));
+  };
+  allOptions.forEach(opt => {
+    const c = buildOptionCard(opt, selected.has(opt), multi ? 'checkbox' : 'radio', opt === OTHER_LABEL);
+    cards.set(opt, c);
+    c.addEventListener('click', () => {
+      if (multi) {
+        if (selected.has(opt)) selected.delete(opt); else selected.add(opt);
+      } else {
+        selected.clear(); selected.add(opt);
+      }
+      cards.forEach((cc, o) => { const on = selected.has(o); cc.classList.toggle('selected', on); cc.setAttribute('aria-checked', on ? 'true' : 'false'); });
+      otherInput.hidden = !selected.has(OTHER_LABEL);
+      if (!otherInput.hidden) otherInput.focus();
+      compute();
+    });
+    list.appendChild(c);
+  });
+  otherInput.addEventListener('input', compute);
+  wrap.appendChild(list); wrap.appendChild(otherInput);
+  return wrap;
+}
+
+function openFeasibilityModal(f, mode) {
+  const items = (f.revisit || []).map(r => ({ r, q: questions.find(x => x.id === r.question_id) })).filter(x => x.q);
+  feasModalDraft = {};
+  const verdictSlug = f.verdict === 'GO' ? 'go' : f.verdict === 'RETHINK' ? 'rethink' : 'changes';
+  const kicker = $('#feas-modal-kicker');
+  kicker.className = 'modal-kicker ' + verdictSlug;
+  kicker.textContent = `Feasibility check · ${f.verdict || ''}`;
+  $('#feas-modal-title').textContent = items.length
+    ? `${items.length} answer${items.length === 1 ? '' : 's'} behind the problems found` : 'No specific answer to change';
+  $('#feas-modal-lead').textContent = items.length
+    ? 'Change anything that no longer reflects your plan, then re-run the check — or continue with your current answers.'
+    : 'The problems found are not tied to a single question (see below). You can review all your answers, or continue anyway.';
+
+  const body = $('#feas-modal-body');
+  body.innerHTML = '';
+  if (!items.length) body.appendChild(el('div', { class: 'fm-empty', text: f.rationale || '' }));
+  items.forEach(({ r, q }) => {
+    const card = el('div', { class: 'fm-item' });
+    card.appendChild(el('div', { class: 'fm-top' }, [
+      el('span', { class: 'fm-sev ' + (r.severity === 'Critical' ? 'critical' : 'major'), text: (r.severity || '').toUpperCase() }),
+      el('div', { class: 'fm-q', text: q.text }),
+      el('span', { class: 'fm-changed-tag', text: '● changed', hidden: '' }),
+    ]));
+    const why = el('ul', { class: 'fm-why' });
+    (r.reasons || []).forEach(x => why.appendChild(el('li', { text: x.flaw })));
+    card.appendChild(why);
+    const sug = (r.reasons || []).find(x => x.suggestion);
+    if (sug) card.appendChild(el('div', { class: 'fm-suggest' }, [el('strong', { text: 'Suggested: ' }), document.createTextNode(sug.suggestion)]));
+    card.appendChild(buildFeasEditor(q, card));
+    card.querySelector('.fm-changed-tag').hidden = true;
+    body.appendChild(card);
+  });
+
+  // Serious flaws that no single answer explains: shown read-only so this list is never mistaken for the whole picture.
+  const unlinked = f.unlinked || [];
+  if (unlinked.length) {
+    const box = el('div', { class: 'fm-unlinked' }, [el('div', { class: 'fm-unlinked-title', text: 'Also flagged — not tied to a single answer' })]);
+    const ul = el('ul', { class: 'fm-why' });
+    unlinked.forEach(u => {
+      const li = el('li', { text: u.flaw });
+      if (u.suggestion) li.appendChild(el('div', { class: 'fm-suggest', text: 'Suggested: ' + u.suggestion }));
+      ul.appendChild(li);
+    });
+    box.appendChild(ul);
+    body.appendChild(box);
+  }
+
+  $('#feas-modal-continue').hidden = mode === 'review';
+  $('#feas-modal-save').hidden = !items.length;
+  $('#feas-modal-save').disabled = true;
+  $('#feas-modal-review-all').hidden = false;
+
+  feasModalReturnFocus = document.activeElement;
+  $('#feas-modal').hidden = false;
+  document.body.classList.add('modal-open');
+  body.scrollTop = 0;
+  setTimeout(() => { const first = body.querySelector('button, input, textarea') || $('#feas-modal-close'); first.focus(); }, 30);
+  return new Promise(resolve => { feasModalResolve = resolve; });
+}
+
+function closeFeasModal(result) {
+  $('#feas-modal').hidden = true;
+  document.body.classList.remove('modal-open');
+  const resolve = feasModalResolve; feasModalResolve = null;
+  if (feasModalReturnFocus && feasModalReturnFocus.focus) feasModalReturnFocus.focus();
+  if (resolve) resolve(result);
+}
+
+$('#feas-modal-close').addEventListener('click', () => closeFeasModal('pause'));
+$('#feas-modal-continue').addEventListener('click', () => closeFeasModal('continue'));
+$('#feas-modal-review-all').addEventListener('click', () => {
+  closeFeasModal('pause');
+  const review = $('#discovery-review');
+  if (review) review.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+$('#feas-modal-save').addEventListener('click', async () => {
+  const btn = $('#feas-modal-save');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    for (const [qid, text] of Object.entries(feasModalDraft)) await saveAnswer(qid, text);   // same path as the questionnaire
+    closeFeasModal('rerun');
+  } catch (e) {
+    alert('Could not save: ' + e.message);
+    btn.disabled = false;
+  }
+  btn.textContent = 'Save changes & re-run check →';
+});
+$('#feas-modal').addEventListener('mousedown', e => { if (e.target.id === 'feas-modal') closeFeasModal('pause'); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#feas-modal').hidden) closeFeasModal('pause'); });
 
 function showQaVerdict(data) {
   const status = (data.output && data.output.final_handoff_status) || 'unknown';

@@ -89,7 +89,13 @@ change), assumptions to validate, and a verdict: **GO**, **GO WITH CHANGES** or 
 
 - The verdict is **computed in code** from flaw severity and ratings. An optimistic model reply cannot
   turn a critical flaw into a GO; the model can only make the verdict *more* cautious.
-- On **RETHINK** the UI stops and asks before continuing ("Continue anyway" resumes).
+- On **RETHINK** the UI stops and opens a popup that lists **only the discovery questions behind the critical/major
+  flaws** (not the whole questionnaire), each with the reason it was flagged, the suggested change, and the answer
+  choices ready to edit in place. The person can **Save changes & re-run the check**, **Continue anyway**, or close
+  the popup to decide later (the red box keeps a "Review the N answers" button; Esc also closes it). Serious flaws that
+  no single answer explains are listed separately so the popup never looks like the complete set of problems.
+  The same list appears in the exported assessment under "Discovery answers worth revisiting". In live mode the model
+  names the related question IDs; any ID it invents is discarded.
 - Critical/major flaws flow into the BRD risk register; the positioning summary appears in the BRD and
   PRD; the validation report shows the verdict; and later agents are given the findings in their prompts.
 - **Evidence honesty:** in live mode competitors come from the AI model's training knowledge and the

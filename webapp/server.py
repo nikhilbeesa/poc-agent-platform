@@ -76,7 +76,11 @@ def _feasibility_summary(ctx):
     o = c.output
     return {"verdict": o.get("verdict"), "rationale": o.get("verdict_rationale"), "confidence": o.get("confidence"),
             "counts": o.get("counts"), "headline_flaws": o.get("headline_flaws") or [],
-            "recommended_changes": (o.get("recommended_changes") or [])[:3]}
+            "recommended_changes": (o.get("recommended_changes") or [])[:3],
+            # only the answers behind the critical/major flaws — the UI shows just these for editing
+            "revisit": [{"question_id": r["question_id"], "severity": r["severity"], "reasons": r["reasons"][:2]}
+                        for r in (o.get("questions_to_revisit") or [])],
+            "unlinked": (o.get("unlinked_flaws") or [])[:4]}
 
 
 def _record_from_ctx(ctx) -> dict:

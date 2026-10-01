@@ -52,6 +52,10 @@
 ## 10. Recommended Changes Before Building
 {{recommended_changes}}
 
+**Discovery answers worth revisiting**
+
+{{answers_to_revisit}}
+
 ## 11. Must Be Confirmed Before Build
 {{must_confirm_before_build}}
 

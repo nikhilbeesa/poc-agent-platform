@@ -194,8 +194,13 @@ ASSESS = {
     "feasibility": {"desirability": {"rating": "High", "assessment": "Clear need."}, "technical": {"rating": "High", "assessment": "Standard."},
                     "operational": {"rating": "Medium", "assessment": "Needs vetting ops."}, "financial": {"rating": "Medium", "assessment": "Margins thin."},
                     "legal": {"rating": "nonsense", "assessment": "Labour rules."}},
-    "flaws": [{"severity": "minor", "area": "Ops", "flaw": "Vetting is manual", "why_it_matters": "w", "recommended_change": "c"},
-              {"severity": "Critical", "area": "Economics", "flaw": "Take rate cannot cover support cost", "why_it_matters": "Loses money", "recommended_change": "Raise take rate or cut support"}],
+    "flaws": [{"severity": "minor", "area": "Ops", "flaw": "Vetting is manual", "why_it_matters": "w", "recommended_change": "c",
+               "related_question_ids": ["bp_providers"]},
+              {"severity": "Critical", "area": "Economics", "flaw": "Take rate cannot cover support cost", "why_it_matters": "Loses money",
+               "recommended_change": "Raise take rate or cut support",
+               "related_question_ids": ["nfr_users_12m", "made_up_id", "nfr_users_12m", "additional_information"]},
+              {"severity": "Major", "area": "Trust", "flaw": "No vetting of providers", "why_it_matters": "Safety", "recommended_change": "Vet them",
+               "related_question_ids": "not-a-list"}],
     "assumptions_to_validate": [{"assumption": "a", "how_to_validate": "h", "risk_if_wrong": "r"}],
     "recommended_changes": ["Fix unit economics first"], "must_confirm_before_build": ["Labour law per country"],
     "verdict": "GO", "verdict_rationale": "Looks fine overall.", "confidence": "high",
@@ -220,6 +225,53 @@ def test_live_mode_parses_normalises_and_cannot_be_talked_into_go():
     profile_prompts = [p for p in client.prompts if "TASK:profile." in p]
     assert profile_prompts and all("10,000" in p or "5,000" in p for p in profile_prompts)
     assert any("Urban Company" in p for p in client.prompts if "TASK:feasibility.assess" in p)
+
+
+def test_questions_to_revisit_only_real_ids_only_critical_major():
+    ctx = answered_context()
+    out = feas._live(ctx, FakeClient())
+    rev = out["questions_to_revisit"]
+    ids = [r["question_id"] for r in rev]
+    assert ids == ["nfr_users_12m"], ids                      # invented id, duplicate, free-text id and non-list all dropped
+    assert "bp_providers" not in ids, "Minor flaws must not pull questions into the popup"
+    assert rev[0]["severity"] == "Critical" and rev[0]["current_answer"] == ANSWERS["nfr_users_12m"]
+    assert rev[0]["reasons"][0]["flaw"].startswith("Take rate")
+    # every flaw carries a validated list
+    assert all(isinstance(f["related_question_ids"], list) for f in out["flaws"])
+
+
+def test_mock_flaws_point_at_the_answers_behind_them():
+    ctx = answered_context(fill=None)       # answer with real options (not "Not sure yet"), so we test the mapping not the undecided-flaw
+    out = feas._mock(ctx)
+    by_area = {f["area"]: f for f in out["flaws"]}
+    assert "nfr_data_sensitivity" in by_area["Regulatory"]["related_question_ids"]
+    assert "nfr_geography" in by_area["Regulatory"]["related_question_ids"]
+    cold = by_area["Cold start"]["related_question_ids"]
+    assert cold and all("onboard" in next(q.text for q in ctx.discovery_questions if q.id == i).lower() for i in cold), \
+        "cold-start must point only at the provider-onboarding question, not every question that mentions providers"
+    rev_ids = {r["question_id"] for r in out["questions_to_revisit"]}
+    valid = {q.id for q in ctx.discovery_questions}
+    assert rev_ids and rev_ids <= valid and "additional_information" not in rev_ids
+    # far fewer than the whole questionnaire — that is the point of the popup
+    assert len(rev_ids) < len(ctx.discovery_questions) / 2
+    # a major flaw with no matching question is reported separately instead of silently disappearing
+    unlinked = {u["flaw"] for u in out["unlinked_flaws"]}
+    assert by_area["Differentiation"]["flaw"] in unlinked and by_area["Differentiation"]["related_question_ids"] == []
+
+
+def test_revisit_reaches_the_ui_summary_and_the_document():
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "webapp"))
+    import server
+    ctx = answered_context()
+    run_full_pipeline(ctx)
+    summary = server._feasibility_summary(ctx)
+    assert summary["revisit"] and set(summary["revisit"][0]) == {"question_id", "severity", "reasons"}
+    assert all(r["question_id"] in {q.id for q in ctx.discovery_questions} for r in summary["revisit"])
+    ctx = export_all_artefacts(ctx)
+    doc = next(a for a in ctx.artefacts if a.type == "feasibility_assessment").content_markdown
+    assert "**Discovery answers worth revisiting**" in doc
+    first_q = next(q.text for q in ctx.discovery_questions if q.id == summary["revisit"][0]["question_id"])
+    assert first_q in doc
 
 
 def test_live_profile_keeps_baseline_topics_the_model_omitted():

@@ -209,6 +209,16 @@ def export_feasibility_assessment(context: ProjectContext) -> Artefact:
     assumptions = _table(["Assumption", "How to validate it", "Risk if wrong"],
                          [[a.get("assumption", ""), a.get("how_to_validate", ""), a.get("risk_if_wrong", "")] for a in o.get("assumptions_to_validate", [])])
     top_changes = (o.get("recommended_changes") or [])[:5]
+    revisit = o.get("questions_to_revisit") or []
+    answers_to_revisit = (_table(["Question", "Current answer", "Why it needs a look", "Suggested change"],
+                                 [[r.get("question", ""), (r.get("current_answer") or "").replace(" | ", ", ") or "(skipped)",
+                                   " / ".join(x.get("flaw", "") for x in r.get("reasons", [])[:2]),
+                                   r["reasons"][0].get("suggestion", "") if r.get("reasons") else ""] for r in revisit])
+                          if revisit else "*No specific discovery answer was identified as the cause of a critical or major flaw.*")
+    unlinked = o.get("unlinked_flaws") or []
+    if unlinked:
+        answers_to_revisit += "\n\n**Also flagged, but not tied to a single answer:**\n" + _bullets(
+            f"{u['flaw']} — {u['suggestion']}" if u.get("suggestion") else u["flaw"] for u in unlinked)
 
     prof = sp.profile_or_baseline(context)
     scale_outlook = (f"{prof['summary']}\n\n*The full system, security, performance and scalability requirements are in the Business "
@@ -224,7 +234,8 @@ def export_feasibility_assessment(context: ProjectContext) -> Artefact:
         "competitors": competitors, "competitive_gaps": o.get("competitive_gaps", []),
         "positioning_statement": o.get("positioning_statement", "Not specified"), "differentiators": differentiators,
         "feasibility": feasibility, "flaws": flaws, "assumptions_to_validate": assumptions,
-        "recommended_changes": o.get("recommended_changes", []), "must_confirm_before_build": o.get("must_confirm_before_build") or ["All scale, availability and data-sensitivity planning inputs were provided in the discovery answers."],
+        "recommended_changes": o.get("recommended_changes", []), "answers_to_revisit": answers_to_revisit,
+        "must_confirm_before_build": o.get("must_confirm_before_build") or ["All scale, availability and data-sensitivity planning inputs were provided in the discovery answers."],
         "scale_outlook": scale_outlook,
     }
     content = _fill_template(template, values)

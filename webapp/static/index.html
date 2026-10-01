@@ -223,6 +223,28 @@ window.addEventListener('load', function () {
 
 </div>
 
+
+<!-- Feasibility popup: shows ONLY the discovery questions behind the critical/major flaws, editable in place -->
+<div class="modal-backdrop" id="feas-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="feas-modal-title">
+    <div class="modal-head">
+      <div>
+        <div class="modal-kicker" id="feas-modal-kicker"></div>
+        <h3 class="modal-title" id="feas-modal-title">Answers that need a second look</h3>
+      </div>
+      <button type="button" class="modal-close" id="feas-modal-close" aria-label="Close">✕</button>
+    </div>
+    <p class="modal-lead" id="feas-modal-lead"></p>
+    <div class="modal-body" id="feas-modal-body"></div>
+    <div class="modal-foot">
+      <button type="button" class="btn btn-ghost" id="feas-modal-review-all">Review all answers</button>
+      <span class="modal-spacer"></span>
+      <button type="button" class="btn btn-ghost" id="feas-modal-continue">Continue anyway</button>
+      <button type="button" class="btn btn-primary" id="feas-modal-save" disabled>Save changes &amp; re-run check →</button>
+    </div>
+  </div>
+</div>
+
 <script src="/static/export.js"></script>
 <script src="/static/app.js"></script>
 </body>
