@@ -141,6 +141,7 @@ async function refreshDomainCount() {
   try {
     const data = await api('/api/knowledge/domains');
     $('#tb-domains').textContent = `${data.domains.length} domains`;
+    $('#dash-kb').textContent = `${data.domains.length} domains in knowledge base`;
   } catch (e) { /* non-critical */ }
 }
 
@@ -148,9 +149,13 @@ async function checkMode() {
   const elm = $('#tb-mode');
   try {
     const data = await api('/api/mode');
-    elm.textContent = data.mode === 'live' ? `LIVE · ${data.provider.toUpperCase()}` : 'MOCK · offline';
+    const label = data.mode === 'live' ? `LIVE · ${data.provider.toUpperCase()}` : 'MOCK · offline';
+    elm.textContent = label;
+    $('#dash-mode-text').textContent = label;
+    $('#dash-mode').classList.toggle('is-live', data.mode === 'live');
   } catch (e) {
     elm.textContent = 'unknown';
+    $('#dash-mode-text').textContent = 'unknown';
   }
 }
 checkMode();
@@ -160,11 +165,13 @@ checkMode();
 // ============================================================
 $('#btn-go-dashboard').addEventListener('click', goToDashboard);
 $('#btn-pipeline-back').addEventListener('click', goToDashboard);
-$('#btn-open-new-project').addEventListener('click', () => {
+function startNewProject() {
   sessionStorage.setItem('poc_view', 'pipeline');
   history.replaceState(null, '', location.pathname);
   location.reload();
-});
+}
+$('#btn-open-new-project').addEventListener('click', startNewProject);
+$('#btn-empty-new').addEventListener('click', startNewProject);
 
 function goToDashboard() {
   if (runState === 'running' &&
@@ -184,10 +191,12 @@ window.addEventListener('beforeunload', (e) => {
 function showPipelineView() {
   $('#dashboard-view').hidden = true;
   $('#pipeline-view').hidden = false;
+  $('#title-block').hidden = false;      // project context header only makes sense inside a project
 }
 
 function showDashboardList() {
   $('#pipeline-view').hidden = true;
+  $('#title-block').hidden = true;
   $('#dashboard-view').hidden = false;
   loadDashboard();
 }
@@ -198,43 +207,260 @@ function openProject(id) {
 }
 
 // ============================================================
-// Dashboard: project list (table) — drafts can be resumed, finished projects reopened
+// Dashboard — summary cards, insights, and a filterable project list
 // ============================================================
+const DASH_TOTAL_DOCS = 6;   // the full handoff package is 6 documents
+const DASH_CATS = {
+  ready:    { label: 'Design-ready',        short: 'READY',     cls: 'c-ready' },
+  warn:     { label: 'Ready with warnings', short: 'WARNINGS',  cls: 'c-warn' },
+  notready: { label: 'Not ready',           short: 'NOT READY', cls: 'c-notready' },
+  draft:    { label: 'In progress',         short: 'DRAFT',     cls: 'c-draft' },
+  unknown:  { label: 'Unknown',             short: 'UNKNOWN',   cls: 'c-unknown' },
+};
+let dashProjects = [];
+const dashFilter = { status: 'all', domain: 'all', q: '', sort: 'updated' };
+
+function dashCat(p) {
+  if (p.status === 'draft') return 'draft';
+  const s = statusSlug(p.handoff_status);
+  if (s === 'status-ready') return 'ready';
+  if (s === 'status-warnings') return 'warn';
+  if (s === 'status-not-ready') return 'notready';
+  return 'unknown';
+}
+function dashDomainLabel(d) { return d ? d.replace(/^e_commerce/, 'e-commerce').replace(/_/g, ' ') : 'unclassified'; }
+function dashStamp(p) { const t = Date.parse(p.updated_at || p.created_at || ''); return isNaN(t) ? 0 : t; }
+function relTime(ts) {
+  if (!ts) return 'unknown';
+  const diff = Math.max(0, Date.now() - ts), m = Math.round(diff / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} hr ago`;
+  const d = Math.round(h / 24);
+  if (d < 30) return `${d} day${d === 1 ? '' : 's'} ago`;
+  return new Date(ts).toLocaleDateString();
+}
+
 async function loadDashboard() {
   $('#dash-loading-msg').hidden = false;
+  $('#dash-loading-msg').textContent = 'Loading projects…';
   $('#dash-empty-msg').hidden = true;
-  $('#dash-table').hidden = true;
+  $('#dash-content').hidden = true;
+  refreshDomainCount();
   try {
     const data = await api('/api/history');
-    renderDashboardTable(data.projects);
+    dashProjects = data.projects || [];
+    renderDashboard();
   } catch (e) {
     $('#dash-loading-msg').textContent = 'Could not load projects: ' + e.message;
   }
 }
 
-function renderDashboardTable(projects) {
-  const loadingMsg = $('#dash-loading-msg');
-  const emptyMsg = $('#dash-empty-msg');
-  const table = $('#dash-table');
+function renderDashboard() {
+  $('#dash-loading-msg').hidden = true;
+  if (!dashProjects.length) {
+    $('#dash-empty-msg').hidden = false; $('#dash-content').hidden = true; return;
+  }
+  $('#dash-empty-msg').hidden = true; $('#dash-content').hidden = false;
+  renderKpis();
+  renderInsights();
+  renderFilters();
+  renderDashTable();
+}
+
+function dashCounts() {
+  const c = { ready: 0, warn: 0, notready: 0, draft: 0, unknown: 0 };
+  dashProjects.forEach(p => { c[dashCat(p)]++; });
+  return c;
+}
+
+function setDashStatus(status) {
+  dashFilter.status = (dashFilter.status === status) ? 'all' : status;
+  renderFilters(); renderDashTable(); renderKpis();
+  $('#dash-list-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderKpis() {
+  const c = dashCounts(), total = dashProjects.length, done = total - c.draft;
+  const pct = n => (total ? Math.round(n / total * 100) : 0) + '% of all';
+  const cards = [
+    { key: 'all',      n: total,      label: 'Total projects',      sub: `${done} complete · ${c.draft} in progress`, cls: 'c-all' },
+    { key: 'ready',    n: c.ready,    label: 'Design-ready',        sub: pct(c.ready) },
+    { key: 'warn',     n: c.warn,     label: 'Ready with warnings', sub: pct(c.warn) },
+    { key: 'notready', n: c.notready, label: 'Not ready',           sub: pct(c.notready) },
+    { key: 'draft',    n: c.draft,    label: 'In progress',         sub: c.draft ? 'resume where you left off' : 'no unfinished drafts' },
+  ];
+  const row = $('#kpi-row');
+  row.innerHTML = '';
+  cards.forEach(k => {
+    const cls = k.key === 'all' ? 'c-all' : DASH_CATS[k.key].cls;
+    const active = (dashFilter.status === k.key) || (k.key === 'all' && dashFilter.status === 'all');
+    const card = el('button', { type: 'button', class: `kpi ${cls}${active && k.key !== 'all' ? ' is-active' : ''}`, 'aria-pressed': String(active && k.key !== 'all') }, [
+      el('span', { class: 'kpi-num', text: String(k.n) }),
+      el('span', { class: 'kpi-label', text: k.label }),
+      el('span', { class: 'kpi-sub', text: k.sub }),
+    ]);
+    card.addEventListener('click', () => {
+      if (k.key === 'all') { dashFilter.status = 'all'; renderFilters(); renderDashTable(); renderKpis(); }
+      else setDashStatus(k.key);
+    });
+    row.appendChild(card);
+  });
+}
+
+function renderInsights() {
+  const c = dashCounts(), total = dashProjects.length, done = total - c.draft;
+
+  // --- Handoff readiness: stacked bar over completed projects + legend ---
+  const rb = $('#ins-readiness-body'); rb.innerHTML = '';
+  const readyPct = done ? Math.round(c.ready / done * 100) : 0;
+  const okPct = done ? Math.round((c.ready + c.warn) / done * 100) : 0;
+  $('#ins-readiness-meta').textContent = `${done} completed`;
+  if (!done) {
+    rb.appendChild(el('div', { class: 'ins-empty', text: 'No completed projects yet.' }));
+  } else {
+    rb.appendChild(el('div', { class: 'ready-big' }, [
+      el('span', { class: 'ready-big-num', text: okPct + '%' }),
+      el('span', { class: 'ready-big-label', text: `can go to design now (${readyPct}% clean, ${okPct - readyPct}% with warnings)` }),
+    ]));
+    const bar = el('div', { class: 'stack-bar', role: 'img', 'aria-label': 'Handoff readiness breakdown' });
+    ['ready', 'warn', 'notready', 'unknown'].forEach(k => {
+      if (!c[k]) return;
+      const seg = el('span', { class: `stack-seg ${DASH_CATS[k].cls}`, title: `${DASH_CATS[k].label}: ${c[k]}` });
+      seg.style.flexGrow = String(c[k]);
+      bar.appendChild(seg);
+    });
+    rb.appendChild(bar);
+    const legend = el('div', { class: 'legend' });
+    ['ready', 'warn', 'notready'].forEach(k => {
+      const item = el('button', { type: 'button', class: 'legend-item' }, [
+        el('span', { class: `legend-dot ${DASH_CATS[k].cls}` }),
+        el('span', { class: 'legend-label', text: DASH_CATS[k].label }),
+        el('span', { class: 'legend-n', text: String(c[k]) }),
+      ]);
+      item.addEventListener('click', () => setDashStatus(k));
+      legend.appendChild(item);
+    });
+    rb.appendChild(legend);
+  }
+
+  // --- Domains: horizontal bars ---
+  const db = $('#ins-domains-body'); db.innerHTML = '';
+  const byDomain = {};
+  dashProjects.forEach(p => { const d = p.domain || 'unclassified'; byDomain[d] = (byDomain[d] || 0) + 1; });
+  const doms = Object.entries(byDomain).sort((a, b) => b[1] - a[1]);
+  $('#ins-domains-meta').textContent = `${doms.length} domain${doms.length === 1 ? '' : 's'}`;
+  const max = doms.length ? doms[0][1] : 1, topN = 6;
+  doms.slice(0, topN).forEach(([d, n]) => {
+    const row = el('button', { type: 'button', class: `bar-row${dashFilter.domain === d ? ' is-active' : ''}` }, [
+      el('span', { class: 'bar-label', text: dashDomainLabel(d), title: dashDomainLabel(d) }),
+      el('span', { class: 'bar-track' }, [el('span', { class: 'bar-fill', style: `width:${Math.max(6, n / max * 100)}%` })]),
+      el('span', { class: 'bar-n', text: String(n) }),
+    ]);
+    row.addEventListener('click', () => {
+      dashFilter.domain = (dashFilter.domain === d) ? 'all' : d;
+      renderFilters(); renderDashTable(); renderInsights();
+      $('#dash-list-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    db.appendChild(row);
+  });
+  if (doms.length > topN) db.appendChild(el('div', { class: 'ins-more', text: `+ ${doms.length - topN} more — use the domain filter below` }));
+
+  // --- Needs attention: not-ready first, then drafts, newest first ---
+  const ab = $('#ins-attention-body'); ab.innerHTML = '';
+  const attn = dashProjects
+    .filter(p => ['notready', 'draft'].includes(dashCat(p)))
+    .sort((a, b) => (dashCat(a) === dashCat(b) ? dashStamp(b) - dashStamp(a) : (dashCat(a) === 'notready' ? -1 : 1)));
+  $('#ins-attention-meta').textContent = attn.length ? `${attn.length} item${attn.length === 1 ? '' : 's'}` : '';
+  if (!attn.length) {
+    ab.appendChild(el('div', { class: 'ins-empty ok', text: '✓ Nothing blocking — every project is ready or has only warnings.' }));
+  } else {
+    attn.slice(0, 4).forEach(p => {
+      const cat = dashCat(p);
+      const item = el('button', { type: 'button', class: 'attn-item' }, [
+        el('span', { class: `attn-tag ${DASH_CATS[cat].cls}`, text: DASH_CATS[cat].short }),
+        el('span', { class: 'attn-idea', text: p.business_idea, title: p.business_idea }),
+        el('span', { class: 'attn-go', text: cat === 'draft' ? 'Resume →' : 'Review →' }),
+      ]);
+      item.addEventListener('click', () => openProject(p.id));
+      ab.appendChild(item);
+    });
+    if (attn.length > 4) {
+      const more = el('button', { type: 'button', class: 'ins-more link-btn', text: `View all ${attn.length} →` });
+      more.addEventListener('click', () => setDashStatus(attn.some(p => dashCat(p) === 'notready') ? 'notready' : 'draft'));
+      ab.appendChild(more);
+    }
+  }
+}
+
+function renderFilters() {
+  const c = dashCounts(), total = dashProjects.length;
+  const seg = $('#dash-status-filter'); seg.innerHTML = '';
+  [['all', 'All', total], ['ready', 'Ready', c.ready], ['warn', 'Warnings', c.warn], ['notready', 'Not ready', c.notready], ['draft', 'Drafts', c.draft]]
+    .forEach(([key, label, n]) => {
+      const b = el('button', { type: 'button', class: `seg-btn${dashFilter.status === key ? ' is-active' : ''}`, 'aria-pressed': String(dashFilter.status === key) }, [
+        el('span', { text: label }), el('span', { class: 'seg-n', text: String(n) }),
+      ]);
+      b.addEventListener('click', () => { dashFilter.status = key; renderFilters(); renderDashTable(); renderKpis(); });
+      seg.appendChild(b);
+    });
+
+  const sel = $('#dash-domain-filter');
+  const domains = [...new Set(dashProjects.map(p => p.domain || 'unclassified'))].sort();
+  if (dashFilter.domain !== 'all' && !domains.includes(dashFilter.domain)) dashFilter.domain = 'all';
+  sel.innerHTML = '';
+  sel.appendChild(el('option', { value: 'all', text: 'All domains' }));
+  domains.forEach(d => sel.appendChild(el('option', { value: d, text: dashDomainLabel(d) })));
+  sel.value = dashFilter.domain;
+}
+
+function filteredDashProjects() {
+  const q = dashFilter.q.trim().toLowerCase();
+  const rank = { notready: 0, draft: 1, warn: 2, unknown: 3, ready: 4 };
+  const list = dashProjects.filter(p => {
+    if (dashFilter.status !== 'all' && dashCat(p) !== dashFilter.status) return false;
+    if (dashFilter.domain !== 'all' && (p.domain || 'unclassified') !== dashFilter.domain) return false;
+    if (q && !(`${p.business_idea} ${dashDomainLabel(p.domain)}`.toLowerCase().includes(q))) return false;
+    return true;
+  });
+  const by = {
+    updated: (a, b) => dashStamp(b) - dashStamp(a),
+    oldest:  (a, b) => dashStamp(a) - dashStamp(b),
+    risk:    (a, b) => rank[dashCat(a)] - rank[dashCat(b)] || dashStamp(b) - dashStamp(a),
+    ready:   (a, b) => rank[dashCat(b)] - rank[dashCat(a)] || dashStamp(b) - dashStamp(a),
+    name:    (a, b) => (a.business_idea || '').localeCompare(b.business_idea || ''),
+  }[dashFilter.sort];
+  return list.sort(by);
+}
+
+function renderDashTable() {
   const body = $('#dash-table-body');
   body.innerHTML = '';
-  loadingMsg.hidden = true;
+  const rows = filteredDashProjects();
+  $('#dash-count').textContent = rows.length === dashProjects.length
+    ? `${rows.length} project${rows.length === 1 ? '' : 's'}`
+    : `showing ${rows.length} of ${dashProjects.length}`;
+  $('#dash-table').hidden = !rows.length;
+  $('#dash-nomatch').hidden = !!rows.length;
 
-  if (!projects.length) {
-    emptyMsg.hidden = false; table.hidden = true; return;
-  }
-  emptyMsg.hidden = true; table.hidden = false;
-
-  projects.forEach(p => {
+  rows.forEach(p => {
     const isDraft = p.status === 'draft';
-    const stamp = p.updated_at || p.created_at;
-    const date = stamp ? new Date(stamp).toLocaleString() : 'unknown';
+    const cat = dashCat(p);
+    const ts = dashStamp(p);
+
     const statusBadge = isDraft
-      ? el('span', { class: 'history-badge status-draft', text: p.question_count ? `DRAFT · ${p.answered_count}/${p.question_count} answered` : 'DRAFT' })
+      ? el('span', { class: 'history-badge status-draft', text: p.question_count ? `DRAFT · ${p.answered_count}/${p.question_count}` : 'DRAFT' })
       : el('span', { class: 'history-badge status-ready', text: 'COMPLETE' });
     const handoff = isDraft
       ? el('span', { class: 'dash-muted', text: '—' })
       : el('span', { class: `history-badge ${statusSlug(p.handoff_status)}`, text: p.handoff_status || 'unknown' });
+
+    // documents meter: one segment per document in the full package
+    const docs = Math.min(p.artefact_count || 0, DASH_TOTAL_DOCS);
+    const meter = el('span', { class: 'doc-meter', title: `${p.artefact_count || 0} of ${DASH_TOTAL_DOCS} documents generated` });
+    for (let i = 0; i < DASH_TOTAL_DOCS; i++) meter.appendChild(el('i', { class: i < docs ? 'on' : '' }));
+    const docCell = el('td', {}, [el('div', { class: 'doc-cell' }, [meter, el('span', { class: 'doc-n', text: `${p.artefact_count || 0}/${DASH_TOTAL_DOCS}` })])]);
 
     const actions = el('td', { class: 'dash-actions-cell' });
     const openBtn = el('button', { type: 'button', class: 'btn btn-small', text: isDraft ? 'Resume →' : 'Open →' });
@@ -253,19 +479,30 @@ function renderDashboardTable(projects) {
       actions.appendChild(delBtn);
     }
 
-    const row = el('tr', {}, [
-      el('td', { class: 'dash-idea-cell', text: p.business_idea }),
-      el('td', { class: 'dash-domain-cell', text: p.domain || 'unclassified' }),
+    const row = el('tr', { class: `row-${cat}` }, [
+      el('td', { class: 'dash-idea-cell', title: p.business_idea }, [el('span', { class: 'idea-text', text: p.business_idea })]),
+      el('td', {}, [el('span', { class: 'domain-pill', text: dashDomainLabel(p.domain), title: dashDomainLabel(p.domain) })]),
       el('td', {}, [statusBadge]),
-      el('td', { text: String(p.artefact_count) }),
+      docCell,
       el('td', {}, [handoff]),
-      el('td', { class: 'dash-date-cell', text: date }),
+      el('td', { class: 'dash-date-cell', title: ts ? new Date(ts).toLocaleString() : '' }, [document.createTextNode(relTime(ts))]),
       actions,
     ]);
     row.addEventListener('click', () => openProject(p.id));
     body.appendChild(row);
   });
 }
+
+(function wireDashboardControls() {
+  $('#dash-search').addEventListener('input', (e) => { dashFilter.q = e.target.value; renderDashTable(); });
+  $('#dash-domain-filter').addEventListener('change', (e) => { dashFilter.domain = e.target.value; renderDashTable(); renderInsights(); });
+  $('#dash-sort').addEventListener('change', (e) => { dashFilter.sort = e.target.value; renderDashTable(); });
+  $('#dash-clear').addEventListener('click', () => {
+    dashFilter.status = 'all'; dashFilter.domain = 'all'; dashFilter.q = '';
+    $('#dash-search').value = '';
+    renderFilters(); renderDashTable(); renderKpis(); renderInsights();
+  });
+})();
 
 // Turns ```mermaid code blocks into rendered diagrams, each on its own light "canvas" card with a
 // small notation legend so separate diagrams are easy to tell apart. Purely progressive: if the

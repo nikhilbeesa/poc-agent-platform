@@ -30,8 +30,8 @@ window.addEventListener('load', function () {
 
 <div class="sheet-stack">
 
-  <!-- TITLE BLOCK -->
-  <header class="title-block">
+  <!-- TITLE BLOCK (project context — shown only inside a project, never on the dashboard) -->
+  <header class="title-block" id="title-block" hidden>
     <div class="tb-main">
       <div class="tb-eyebrow">AI PRODUCT SPECIFICATION PACKAGE</div>
       <h1 class="tb-title">Idea → Discovery → Feasibility → Specification Agents → Handoff Package</h1>
@@ -48,36 +48,107 @@ window.addEventListener('load', function () {
     </div>
   </header>
 
-  <!-- ==================== DASHBOARD: PROJECT LIST ==================== -->
-  <section class="panel" id="dashboard-view">
-    <span class="tick tick-tl"></span><span class="tick tick-tr"></span><span class="tick tick-bl"></span><span class="tick tick-br"></span>
-    <div class="panel-head">
-      <span class="panel-num">HOME</span>
-      <span class="panel-title">Projects Dashboard</span>
-    </div>
-    <div class="panel-body">
-      <button class="btn btn-primary" id="btn-open-new-project">+ New project</button>
+  <!-- ==================== DASHBOARD ==================== -->
+  <main class="dash" id="dashboard-view">
 
-      <div class="dash-table-wrap">
-        <div class="lock-msg" id="dash-empty-msg" hidden>No projects yet — click "+ New project" to run your first one.</div>
-        <div class="lock-msg" id="dash-loading-msg">Loading projects…</div>
-        <table class="dash-table" id="dash-table" hidden>
-          <thead>
-            <tr>
-              <th>Business idea</th>
-              <th>Domain</th>
-              <th>Status</th>
-              <th>Docs</th>
-              <th>Handoff status</th>
-              <th>Last updated</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="dash-table-body"></tbody>
-        </table>
+    <header class="dash-hero">
+      <div class="dash-hero-text">
+        <div class="dash-eyebrow">WORKSPACE</div>
+        <h1 class="dash-title">Projects</h1>
+        <p class="dash-sub">Turn raw business ideas into design-ready specifications. See what is ready to hand off, what needs fixing, and what is still in progress.</p>
       </div>
+      <div class="dash-hero-side">
+        <div class="dash-sys">
+          <span class="sys-pill" id="dash-mode" title="AI engine"><span class="sys-dot"></span><span id="dash-mode-text">checking…</span></span>
+          <span class="sys-pill" id="dash-kb" title="Domains in the knowledge base">— domains</span>
+        </div>
+        <button class="btn btn-primary" id="btn-open-new-project">+ New project</button>
+      </div>
+    </header>
+
+    <div class="lock-msg dash-state" id="dash-loading-msg">Loading projects…</div>
+
+    <!-- Empty state -->
+    <section class="panel dash-empty" id="dash-empty-msg" hidden>
+      <span class="tick tick-tl"></span><span class="tick tick-tr"></span><span class="tick tick-bl"></span><span class="tick tick-br"></span>
+      <div class="panel-body">
+        <h2 class="dash-empty-title">No projects yet</h2>
+        <p class="dash-empty-sub">Describe a business idea and the agent team will take it from discovery to a design-ready handoff package.</p>
+        <ol class="dash-steps">
+          <li><b>Idea</b><span>Describe it in a sentence</span></li>
+          <li><b>Discovery</b><span>Answer a few guided questions</span></li>
+          <li><b>Feasibility</b><span>Competitors, flaws, differentiators</span></li>
+          <li><b>Specification</b><span>Agents write the documents</span></li>
+          <li><b>Handoff</b><span>Export for the design agent</span></li>
+        </ol>
+        <button class="btn btn-primary" id="btn-empty-new">+ Start your first project</button>
+      </div>
+    </section>
+
+    <div id="dash-content" hidden>
+
+      <!-- KPI cards (click to filter the list) -->
+      <section class="kpi-row" id="kpi-row" aria-label="Project summary"></section>
+
+      <!-- Insights -->
+      <section class="insight-grid">
+        <div class="panel insight" id="ins-readiness">
+          <span class="tick tick-tl"></span><span class="tick tick-br"></span>
+          <div class="insight-head"><span class="insight-title">Handoff readiness</span><span class="insight-meta" id="ins-readiness-meta"></span></div>
+          <div class="insight-body" id="ins-readiness-body"></div>
+        </div>
+        <div class="panel insight" id="ins-domains">
+          <span class="tick tick-tl"></span><span class="tick tick-br"></span>
+          <div class="insight-head"><span class="insight-title">Projects by domain</span><span class="insight-meta" id="ins-domains-meta"></span></div>
+          <div class="insight-body" id="ins-domains-body"></div>
+        </div>
+        <div class="panel insight" id="ins-attention">
+          <span class="tick tick-tl"></span><span class="tick tick-br"></span>
+          <div class="insight-head"><span class="insight-title">Needs attention</span><span class="insight-meta" id="ins-attention-meta"></span></div>
+          <div class="insight-body" id="ins-attention-body"></div>
+        </div>
+      </section>
+
+      <!-- Project list -->
+      <section class="panel" id="dash-list-panel">
+        <span class="tick tick-tl"></span><span class="tick tick-tr"></span><span class="tick tick-bl"></span><span class="tick tick-br"></span>
+        <div class="panel-head">
+          <span class="panel-num">ALL</span>
+          <span class="panel-title">All projects</span>
+          <span class="panel-status" id="dash-count"></span>
+        </div>
+        <div class="dash-toolbar">
+          <input type="text" id="dash-search" class="dash-search" placeholder="Search ideas or domains…" aria-label="Search projects" autocomplete="off">
+          <div class="seg" id="dash-status-filter" role="group" aria-label="Filter by status"></div>
+          <select id="dash-domain-filter" class="dash-select" aria-label="Filter by domain"></select>
+          <select id="dash-sort" class="dash-select" aria-label="Sort projects">
+            <option value="updated">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="risk">Needs attention first</option>
+            <option value="ready">Most ready first</option>
+            <option value="name">Idea A–Z</option>
+          </select>
+        </div>
+        <div class="dash-table-wrap">
+          <table class="dash-table" id="dash-table">
+            <thead>
+              <tr>
+                <th>Business idea</th>
+                <th>Domain</th>
+                <th>Status</th>
+                <th>Documents</th>
+                <th>Handoff</th>
+                <th>Updated</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="dash-table-body"></tbody>
+          </table>
+          <div class="dash-nomatch" id="dash-nomatch" hidden>No projects match these filters. <button type="button" class="link-btn" id="dash-clear">Clear filters</button></div>
+        </div>
+      </section>
     </div>
-  </section>
+  </main>
 
   <!-- ==================== PIPELINE FLOW (new project) ==================== -->
   <div id="pipeline-view" hidden>
