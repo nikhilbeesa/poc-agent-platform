@@ -654,7 +654,7 @@ body.modal-open { overflow: hidden; }
 .tab-btn.active { position: relative; z-index: 1; margin-bottom: -1px; padding-bottom: 10px; }
 .doc-frame { border: 1px solid var(--line); background: #0c1c2e; }
 .doc-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px 10px 20px; border-bottom: 1px solid var(--line); background: var(--bg-panel); }
-.doc-head-title { font-family: var(--mono); font-size: 12px; letter-spacing: .04em; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.doc-head-title { font-family: var(--mono); font-size: 12px; line-height: 1.5; letter-spacing: .04em; color: var(--text-dim); min-width: 0; overflow-wrap: anywhere; }
 .doc-frame .doc-viewer { border: none; }
 
 .dl-menu { position: relative; display: inline-block; }

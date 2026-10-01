@@ -41,7 +41,9 @@ def _fill_template(template_text: str, values: dict) -> str:
 
 
 def _project_name(context: ProjectContext) -> str:
-    return context.business_idea_raw[:60] or "Untitled Project"
+    """The full business idea (never truncated), with line breaks/extra spaces collapsed so it
+    stays on one line in headings and document titles."""
+    return " ".join((context.business_idea_raw or "").split()) or "Untitled Project"
 
 
 def _date() -> str:
