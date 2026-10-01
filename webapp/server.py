@@ -434,20 +434,18 @@ def project_session(project_id):
 
 
 @app.route("/api/project/<project_id>", methods=["DELETE"])
-def discard_draft(project_id):
-    """Discards an UNFINISHED draft. Projects that already have generated artefacts
-    are never deleted through this endpoint."""
+def delete_project(project_id):
+    """Deletes a project (unfinished draft OR completed package). Refused while the AI agents
+    are still running for it, so a background job can never re-save a deleted project."""
     rec = get_project_store().get(project_id)
     if not rec:
         return jsonify({"error": "project not found"}), 404
-    if rec.get("artefacts"):
-        return jsonify({"error": "Only unfinished drafts can be discarded."}), 400
     if jobs.is_running(project_id):
-        return jsonify({"error": "The AI agents are still running for this project."}), 409
+        return jsonify({"error": "The AI agents are still running for this project. Try again once they finish."}), 409
     get_project_store().delete(project_id)
     PROJECTS.pop(project_id, None)
     META.pop(project_id, None)
-    return jsonify({"discarded": project_id})
+    return jsonify({"deleted": project_id})
 
 
 @app.route("/api/job/<job_id>", methods=["GET"])

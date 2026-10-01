@@ -122,7 +122,6 @@ window.addEventListener('load', function () {
       <section class="panel" id="dash-list-panel">
         <span class="tick tick-tl"></span><span class="tick tick-tr"></span><span class="tick tick-bl"></span><span class="tick tick-br"></span>
         <div class="panel-head">
-          <span class="panel-num">ALL</span>
           <span class="panel-title">All projects</span>
           <span class="panel-status" id="dash-count"></span>
         </div>
@@ -310,14 +309,29 @@ window.addEventListener('load', function () {
       </div>
       <div class="panel-body">
         <div class="lock-msg">Run the agent team to generate the handoff package.</div>
-        <div class="artefact-controls" id="artefact-controls" hidden>
-          <button class="btn" id="btn-download-current">⬇ Download this document (Word .docx)</button>
-          <button class="btn btn-primary" id="btn-download-all">⬇ Download all documents (Word .docx, zipped)</button>
-          <button class="btn btn-ghost" id="btn-download-current-md">⬇ .md</button>
-          <button class="btn btn-ghost" id="btn-download-all-md">⬇ All .md (.zip)</button>
+        <div class="artefact-bar" id="artefact-controls" hidden>
+          <div class="tabs" id="artefact-tabs" role="tablist"></div>
+          <div class="dl-menu" id="menu-all">
+            <button type="button" class="btn btn-primary btn-small dl-trigger" id="btn-download-all-menu" aria-haspopup="menu" aria-expanded="false">⬇ Download all <span class="dl-caret">▾</span></button>
+            <div class="dl-pop" role="menu" hidden>
+              <button type="button" role="menuitem" class="dl-item" id="btn-download-all"><b>Word (.docx)</b><span>All documents, zipped</span></button>
+              <button type="button" role="menuitem" class="dl-item" id="btn-download-all-md"><b>Markdown (.md)</b><span>All documents, zipped</span></button>
+            </div>
+          </div>
         </div>
-        <div class="tabs" id="artefact-tabs" hidden></div>
-        <div class="doc-viewer" id="doc-viewer"></div>
+        <div class="doc-frame" id="doc-frame" hidden>
+          <div class="doc-head">
+            <span class="doc-head-title" id="doc-head-title"></span>
+            <div class="dl-menu" id="menu-current">
+              <button type="button" class="btn btn-small dl-trigger" id="btn-download-current-menu" aria-haspopup="menu" aria-expanded="false">⬇ Download <span class="dl-caret">▾</span></button>
+              <div class="dl-pop" role="menu" hidden>
+                <button type="button" role="menuitem" class="dl-item" id="btn-download-current"><b>Word (.docx)</b><span>This document</span></button>
+                <button type="button" role="menuitem" class="dl-item" id="btn-download-current-md"><b>Markdown (.md)</b><span>This document</span></button>
+              </div>
+            </div>
+          </div>
+          <div class="doc-viewer" id="doc-viewer"></div>
+        </div>
       </div>
     </section>
 
@@ -343,6 +357,25 @@ window.addEventListener('load', function () {
       <span class="modal-spacer"></span>
       <button type="button" class="btn btn-ghost" id="feas-modal-continue">Continue anyway</button>
       <button type="button" class="btn btn-primary" id="feas-modal-save" disabled>Save changes &amp; re-run check →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete-project confirmation -->
+<div class="modal-backdrop" id="del-modal" hidden>
+  <div class="modal modal-sm" role="alertdialog" aria-modal="true" aria-labelledby="del-modal-title" aria-describedby="del-modal-lead">
+    <div class="modal-head">
+      <div>
+        <div class="modal-kicker rethink">Delete project</div>
+        <h3 class="modal-title" id="del-modal-title">Delete this project?</h3>
+      </div>
+      <button type="button" class="modal-close" id="del-modal-close" aria-label="Close">✕</button>
+    </div>
+    <p class="modal-lead" id="del-modal-lead"></p>
+    <div class="modal-foot">
+      <span class="modal-spacer"></span>
+      <button type="button" class="btn btn-ghost" id="del-modal-cancel">Cancel</button>
+      <button type="button" class="btn btn-danger" id="del-modal-confirm">Delete permanently</button>
     </div>
   </div>
 </div>

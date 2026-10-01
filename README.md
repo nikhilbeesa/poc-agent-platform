@@ -281,7 +281,7 @@ Cost note: live runs make roughly 4 extra requests (smaller story batches plus o
 - **Drafts:** the project is saved on creation and after every answer/skip. Closing the tab loses nothing — the URL carries `#project=<id>`, and the dashboard shows *DRAFT · n/m answered* with **Resume** and **Discard**. The idea text is also kept locally until discovery starts.
 - **Reopening a finished project** shows the whole process — idea, every question with its answer (editable), the agent run and the documents. Edit answers and use **Re-run AI Agents**; the previous package stays in storage until the new one replaces it.
 
-**API additions:** `GET /api/project/<id>/session` (reopen/resume), `DELETE /api/project/<id>` (discard unfinished drafts only).
+**API additions:** `GET /api/project/<id>/session` (reopen/resume), `DELETE /api/project/<id>` (delete a draft or a completed project; refused with 409 while agents are running).
 
 **Database:** re-run `deploy/supabase_schema.sql` (idempotent) to add `status`, `questions`, `agent_log` and `updated_at` to `projects`. Local-file storage needs no migration. Projects saved before this version still open (documents only — their questions were never recorded).
 

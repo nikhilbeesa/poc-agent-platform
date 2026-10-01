@@ -465,22 +465,14 @@ function renderDashTable() {
     for (let i = 0; i < DASH_TOTAL_DOCS; i++) meter.appendChild(el('i', { class: i < docs ? 'on' : '' }));
     const docCell = el('td', {}, [el('div', { class: 'doc-cell' }, [meter, el('span', { class: 'doc-n', text: `${p.artefact_count || 0}/${DASH_TOTAL_DOCS}` })])]);
 
-    const actions = el('td', { class: 'dash-actions-cell' });
+    const actionsBox = el('div', { class: 'dash-actions' });
+    const actions = el('td', { class: 'dash-actions-cell' }, [actionsBox]);
     const openBtn = el('button', { type: 'button', class: 'btn btn-small', text: isDraft ? 'Resume →' : 'Open →' });
     openBtn.addEventListener('click', (ev) => { ev.stopPropagation(); openProject(p.id); });
-    actions.appendChild(openBtn);
-    if (isDraft) {
-      const delBtn = el('button', { type: 'button', class: 'btn btn-small btn-ghost', text: 'Discard' });
-      delBtn.addEventListener('click', async (ev) => {
-        ev.stopPropagation();
-        if (!confirm('Discard this unfinished draft? Its answers will be deleted.')) return;
-        try {
-          await api(`/api/project/${p.id}`, { method: 'DELETE' });
-          loadDashboard();
-        } catch (e) { alert('Could not discard: ' + e.message); }
-      });
-      actions.appendChild(delBtn);
-    }
+    const delBtn = el('button', { type: 'button', class: 'btn btn-small btn-icon btn-icon-danger', title: 'Delete project', 'aria-label': 'Delete project: ' + clip(p.business_idea || 'untitled', 60) });
+    delBtn.innerHTML = '<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.2c0 .5.4.8.8.8h4.2c.4 0 .8-.3.8-.8l.6-8.2M6.7 7v4M9.3 7v4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    delBtn.addEventListener('click', (ev) => { ev.stopPropagation(); confirmDeleteProject(p, delBtn); });
+    actionsBox.append(openBtn, delBtn);
 
     const row = el('tr', { class: `row-${cat}` }, [
       el('td', { class: 'dash-idea-cell', title: p.business_idea }, [el('span', { class: 'idea-text', text: p.business_idea })]),
@@ -495,6 +487,50 @@ function renderDashTable() {
     body.appendChild(row);
   });
 }
+
+// ---- Delete a project (draft or completed) with an in-app confirmation ----
+let delPending = null, delReturnFocus = null;
+function confirmDeleteProject(p, returnFocusEl) {
+  delPending = p; delReturnFocus = returnFocusEl || null;
+  const isDraft = p.status === 'draft';
+  $('#del-modal-title').textContent = isDraft ? 'Delete this draft?' : 'Delete this project?';
+  const lead = $('#del-modal-lead'); lead.innerHTML = '';
+  lead.append(el('b', { text: clip(p.business_idea || 'Untitled project', 140) }),
+    document.createElement('br'),
+    document.createTextNode(isDraft
+      ? 'Your answers will be removed. This cannot be undone.'
+      : `The feasibility assessment, all ${p.artefact_count || DASH_TOTAL_DOCS} generated documents and your discovery answers will be removed. This cannot be undone.`));
+  const err = $('#del-modal-error'); if (err) err.remove();
+  $('#del-modal-confirm').disabled = false; $('#del-modal-confirm').textContent = 'Delete permanently';
+  $('#del-modal').hidden = false;
+  $('#del-modal-cancel').focus();
+}
+function closeDeleteModal() {
+  $('#del-modal').hidden = true; delPending = null;
+  if (delReturnFocus && document.contains(delReturnFocus)) delReturnFocus.focus();
+  delReturnFocus = null;
+}
+(function wireDeleteModal() {
+  $('#del-modal-cancel').addEventListener('click', closeDeleteModal);
+  $('#del-modal-close').addEventListener('click', closeDeleteModal);
+  $('#del-modal').addEventListener('click', (e) => { if (e.target.id === 'del-modal') closeDeleteModal(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#del-modal').hidden) closeDeleteModal(); });
+  $('#del-modal-confirm').addEventListener('click', async () => {
+    if (!delPending) return;
+    const btn = $('#del-modal-confirm'), id = delPending.id;
+    btn.disabled = true; btn.textContent = 'Deleting…';
+    try {
+      await api(`/api/project/${id}`, { method: 'DELETE' });
+      dashProjects = dashProjects.filter(x => x.id !== id);
+      delReturnFocus = null; closeDeleteModal();
+      renderDashboard();
+    } catch (e) {
+      btn.disabled = false; btn.textContent = 'Delete permanently';
+      const old = $('#del-modal-error'); if (old) old.remove();
+      $('#del-modal-lead').after(el('p', { id: 'del-modal-error', class: 'modal-error', text: 'Could not delete: ' + e.message }));
+    }
+  });
+})();
 
 (function wireDashboardControls() {
   $('#dash-search').addEventListener('input', (e) => { dashFilter.q = e.target.value; renderDashTable(); });
@@ -1694,19 +1730,22 @@ function renderArtefacts(artefacts) {
   tabs.innerHTML = '';
   tabs.hidden = false;
   $('#artefact-controls').hidden = false;
+  $('#doc-frame').hidden = false;
 
   artefacts.forEach((a, i) => {
-    const tab = el('button', { class: 'tab-btn' + (i === 0 ? ' active' : ''), text: a.title.split('—')[0].trim() || a.type });
+    const tab = el('button', { type: 'button', role: 'tab', 'aria-selected': String(i === 0), class: 'tab-btn' + (i === 0 ? ' active' : ''), text: a.title.split('—')[0].trim() || a.type });
     tab.addEventListener('click', () => {
       activeArtefactIndex = i;
-      document.querySelectorAll('#artefact-tabs .tab-btn').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
+      document.querySelectorAll('#artefact-tabs .tab-btn').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
+      tab.classList.add('active'); tab.setAttribute('aria-selected', 'true');
+      $('#doc-head-title').textContent = a.title || a.type;
+      closeDlMenus();
       renderDoc(a.content_markdown);
     });
     tabs.appendChild(tab);
   });
 
-  if (artefacts.length) renderDoc(artefacts[0].content_markdown);
+  if (artefacts.length) { $('#doc-head-title').textContent = artefacts[0].title || artefacts[0].type; renderDoc(artefacts[0].content_markdown); }
   updateStepper(); updateSummary();
 }
 
@@ -1726,22 +1765,48 @@ function renderDoc(markdown) {
 // ---- Downloads: Word (.docx) is the primary format; Markdown stays available -------------
 // Runs an async export while showing progress on the button, and reports failures.
 async function withBusyButton(btn, busyText, task) {
-  const original = btn.textContent;
+  const original = btn.innerHTML;
   btn.disabled = true; btn.textContent = busyText;
   try { await task((msg) => { btn.textContent = msg; }); }
   catch (e) { console.error(e); alert('Download failed: ' + (e && e.message ? e.message : e)); }
-  finally { btn.disabled = false; btn.textContent = original; }
+  finally { btn.disabled = false; btn.innerHTML = original; }
 }
+
+// ---- Download dropdown menus (per-document in the document header, "all" beside the tabs) ----
+function closeDlMenus(except) {
+  document.querySelectorAll('.dl-menu').forEach(m => {
+    if (m === except) return;
+    m.classList.remove('open');
+    m.querySelector('.dl-pop').hidden = true;
+    m.querySelector('.dl-trigger').setAttribute('aria-expanded', 'false');
+  });
+}
+document.querySelectorAll('.dl-menu').forEach(menu => {
+  const trigger = menu.querySelector('.dl-trigger'), pop = menu.querySelector('.dl-pop');
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const open = pop.hidden;
+    closeDlMenus(menu);
+    pop.hidden = !open; menu.classList.toggle('open', open);
+    trigger.setAttribute('aria-expanded', String(open));
+    if (open) { const first = pop.querySelector('.dl-item'); if (first && e.detail === 0) first.focus(); }
+  });
+  pop.addEventListener('click', (e) => e.stopPropagation());
+});
+document.addEventListener('click', () => closeDlMenus());
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDlMenus(); });
 
 $('#btn-download-current').addEventListener('click', () => {
   const a = currentArtefacts[activeArtefactIndex];
   if (!a) return;
-  withBusyButton($('#btn-download-current'), 'Preparing Word file…', (progress) =>
+  closeDlMenus();
+  withBusyButton($('#btn-download-current-menu'), 'Preparing Word file…', (progress) =>
     downloadDocx(`${a.type}.docx`, a.content_markdown, { title: a.title || a.type, onProgress: progress }));
 });
 
 $('#btn-download-current-md').addEventListener('click', () => {
   const a = currentArtefacts[activeArtefactIndex];
+  closeDlMenus();
   if (a) downloadMarkdown(`${a.type}.md`, a.content_markdown);
 });
 
@@ -1750,13 +1815,15 @@ function packageStamp() { return projectId ? projectId.slice(0, 8) : 'package'; 
 
 $('#btn-download-all').addEventListener('click', () => {
   if (!currentArtefacts.length) return;
-  withBusyButton($('#btn-download-all'), 'Preparing Word files…', (progress) =>
+  closeDlMenus();
+  withBusyButton($('#btn-download-all-menu'), 'Preparing Word files…', (progress) =>
     downloadAllDocxZip(currentArtefacts, `specification-package-${packageStamp()}-word.zip`, progress));
 });
 
 $('#btn-download-all-md').addEventListener('click', () => {
   if (!currentArtefacts.length) return;
-  withBusyButton($('#btn-download-all-md'), 'Zipping…', () =>
+  closeDlMenus();
+  withBusyButton($('#btn-download-all-menu'), 'Zipping…', () =>
     downloadAllMarkdownZip(currentArtefacts, `specification-package-${packageStamp()}-markdown.zip`));
 });
 
