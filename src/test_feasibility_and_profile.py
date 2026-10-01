@@ -329,6 +329,7 @@ def test_flaw_linked_to_two_answers_is_not_repeated_word_for_word():
     assert a["flaw"] != b["flaw"] and a["suggestion"] != b["suggestion"] and a["specific"] and b["specific"]
     assert "price" in b["flaw"].lower() and b["shared_with"] == ["nfr_users_12m"]
     # legacy shape (ids only) -> only the FIRST answer carries the suggestion; the other is marked as sharing the problem
+    ctx.feasibility_history = []          # an independent first round, not a re-run of the one above
     out = feas._live(ctx, FakeClient(assess_reply=_contradiction_assess(notes=False)))
     rev = {r["question_id"]: r for r in out["questions_to_revisit"]}
     first, second = rev["nfr_users_12m"]["reasons"][0], rev["nfr_geography"]["reasons"][0]
@@ -353,6 +354,66 @@ def test_export_points_a_shared_answer_at_the_one_with_the_fix():
     from export import _revisit_suggestion
     assert _revisit_suggestion(first, rev).startswith("Require cleaners")
     assert _revisit_suggestion(second, rev) == "Resolve together with: " + first["question"]
+
+
+def test_rerun_never_re_asks_an_answer_already_reviewed():
+    """Round 2 must not put the same answers in front of the founder again (changed OR kept), and must not loop."""
+    ctx = answered_context(answers={"nfr_users_12m": "50,000–500,000"}, fill=None)
+    first = feas._mock(ctx)
+    asked = {r["question_id"] for r in first["questions_to_revisit"]}
+    assert asked and first["review_round"] == 1 and len(ctx.feasibility_history) == 1
+    by_id = {q.id: q for q in ctx.discovery_questions}
+    changed = next(iter(asked))
+    ctx.add_answer(changed, next(o for o in by_id[changed].options if o != by_id[changed].answer))
+    ctx.system_profile = None                     # a fresh run rebuilds it, as the server does
+    second = feas._mock(ctx)
+    assert second["review_round"] == 2
+    assert not asked & {r["question_id"] for r in second["questions_to_revisit"]}, "already-reviewed answers were asked again"
+    mem = {r["question_id"]: r for r in second["already_reviewed"]}
+    assert set(mem) == asked and mem[changed]["changed"] is True
+    assert all(set(f["question_ids"]) <= asked for f in second["reviewed_flaws"])
+    # a third run with nothing new to review converges: still nothing to ask
+    third = feas._mock(ctx)
+    assert not asked & {r["question_id"] for r in third["questions_to_revisit"]}
+
+
+def test_following_the_mock_suggestion_actually_removes_the_flaw():
+    ctx = answered_context(fill=None)
+    sev = {f["area"]: f["severity"] for f in feas._mock(ctx)["flaws"]}
+    assert sev["Cold start"] == "Major"
+    ctx.add_answer("bp_providers", "Fully vetted/curated by us")
+    ctx.system_profile = None
+    sev = {f["area"]: f["severity"] for f in feas._mock(ctx)["flaws"]}
+    assert sev["Cold start"] == "Minor", "taking the suggested change must reduce the flaw, not repeat it"
+
+
+def test_live_prompt_remembers_changes_and_removed_options():
+    ctx = answered_context()
+    feas._live(ctx, FakeClient())                                  # round 1 flags nfr_users_12m
+    ctx.add_answer("nfr_users_12m", "5,000–50,000")
+    client = FakeClient()
+    out = feas._live(ctx, client)                                  # the fake model links nfr_users_12m AGAIN
+    prompt = next(p for p in client.prompts if "TASK:feasibility.assess" in p)
+    assert "EARLIER ROUNDS OF THIS CHECK" in prompt and "CHANGED by the founder" in prompt
+    assert "Options the founder REMOVED: '50,000–500,000'" in prompt
+    assert "do NOT suggest going back" in prompt
+    assert "nfr_users_12m" not in {r["question_id"] for r in out["questions_to_revisit"]}, "the code must hold even if the model does not"
+    assert out["reviewed_flaws"] and out["reviewed_flaws"][0]["question_ids"] == ["nfr_users_12m"]
+
+
+def test_review_history_survives_save_and_reopen():
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "webapp"))
+    import server
+    from agents.base import BaseAgent  # noqa: F401
+    ctx = answered_context(answers={"nfr_users_12m": "50,000–500,000"}, fill=None)
+    out = feas._mock(ctx)
+    from context import AgentContribution
+    ctx.add_contribution(AgentContribution(agent=AgentRole.FEASIBILITY_ASSESSMENT, summary="s", output=out))
+    rec = server._record_from_ctx(ctx)
+    assert rec["feasibility"]["history"] == ctx.feasibility_history and rec["feasibility"]["round"] == 1
+    again = server._ctx_from_record(rec)
+    assert again.feasibility_history == ctx.feasibility_history
+    assert set(feas.review_memory(again)) == {r["question_id"] for r in out["questions_to_revisit"]}
 
 
 if __name__ == "__main__":

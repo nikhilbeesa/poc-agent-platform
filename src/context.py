@@ -111,6 +111,13 @@ class ProjectContext(BaseModel):
     # documents can never quote different numbers. None until the first agent run builds it.
     system_profile: Optional[dict] = None
 
+    # Earlier feasibility-check rounds on this project (newest last, capped). Each round records the answers that
+    # were flagged, what was suggested, and the answer at that moment. The next check reads it so it does not ask
+    # about the same answers again, never suggests going back to an answer the founder moved away from, and does
+    # not flip-flop to yet another option for an answer the founder already changed on its advice.
+    # Deliberately NOT cleared by a fresh agent run (that is exactly when it is needed).
+    feasibility_history: list[dict] = Field(default_factory=list)
+
     def add_answer(self, question_id: str, answer: str) -> None:
         for q in self.discovery_questions:
             if q.id == question_id:

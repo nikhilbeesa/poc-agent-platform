@@ -244,6 +244,10 @@ textarea:focus, input[type="text"]:focus, .btn:focus-visible, .chip:focus-visibl
 .qa-verdict.status-ready { border-color: var(--green); color: var(--green); }
 .qa-verdict.status-warnings { border-color: var(--amber); color: var(--amber); }
 .qa-verdict.status-not-ready { border-color: var(--red); color: var(--red); }
+.qa-verdict.status-pending { border-color: var(--line-bright); color: var(--text-dim); }
+.qa-verdict.status-pending::before { content: ""; display: inline-block; width: 8px; height: 8px; margin-right: 8px; border-radius: 50%; background: var(--cyan); vertical-align: middle; animation: qa-pulse 1.2s ease-in-out infinite; }
+.qa-pending-note { margin-top: 6px; color: var(--text-faint); font-size: 12px; }
+@keyframes qa-pulse { 0%, 100% { opacity: .25; } 50% { opacity: 1; } }
 .qa-verdict ul { margin: 8px 0 0; padding-left: 18px; color: var(--text-dim); }
 
 /* Feasibility check result — shown right after the first agent, before the specification agents run */
@@ -563,10 +567,14 @@ body.modal-open { overflow: hidden; }
 .panel-head.is-collapsible { cursor: pointer; user-select: none; }
 .panel-head.is-collapsible:hover { background: rgba(111,199,255,0.04); }
 .panel-head:focus-visible { outline: 2px solid var(--cyan); outline-offset: -2px; }
-.panel-summary { display: none; flex: 1 1 auto; min-width: 0; font-size: 13px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.panel.is-collapsed .panel-summary { display: block; }
-.panel-caret { margin-left: auto; color: var(--text-faint); font-size: 14px; transition: transform .2s ease; }
-.panel-status + .panel-caret, .panel-summary + .panel-status + .panel-caret { margin-left: 4px; }
+/* The summary always occupies the free space in the header (it is only made VISIBLE when collapsed). If it were
+   display:none while open, nothing would push the status and the caret to the right and they would jump left next
+   to the title as soon as a section is opened. */
+.panel-summary { display: block; visibility: hidden; flex: 1 1 auto; min-width: 0; font-size: 13px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panel.is-collapsed .panel-summary { visibility: visible; }
+.panel-caret { flex: 0 0 auto; margin-left: auto; color: var(--text-faint); font-size: 14px; transition: transform .2s ease; }
+.panel-status + .panel-caret, .panel-summary + .panel-caret, .panel-summary + .panel-status + .panel-caret { margin-left: 4px; }
+.panel-head .panel-status { flex: 0 0 auto; }
 .panel.is-collapsed .panel-caret { transform: rotate(-90deg); }
 .panel.is-collapsed .panel-body { display: none; }
 .panel.is-collapsed .panel-head { border-bottom: none; }

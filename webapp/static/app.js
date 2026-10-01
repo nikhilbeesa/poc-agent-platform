@@ -1373,12 +1373,26 @@ async function runAgentPipeline(startIndex = 0) {
       const data = await api(`/api/project/${projectId}/agent/${i}`, { method: 'POST' });
       setNodeState(i, 'done');
       logLine(`✓ ${agentMeta[i].label} — ${data.summary}`, true);
-      if (agentMeta[i].role === 'ai_handoff_validation') showQaVerdict(data);
+      // The validator's first verdict is NOT final: the automatic gap-correction rounds below usually change it.
+      // Showing "NOT READY" now would announce a status the run is still working on — show a pending state instead
+      // and the real status once validation has completely finished.
+      if (agentMeta[i].role === 'ai_handoff_validation') { pendingQa = data; showQaPending(); }
       if (agentMeta[i].role === 'feasibility_assessment' && data.feasibility) {
         showFeasibility(data.feasibility);
         // An early check is only useful if it can stop wasted work: on a RETHINK verdict, stop and let the
         // person fix just the answers behind the problems (or continue anyway).
-        if (data.feasibility.verdict === 'RETHINK' && startIndex === 0) {
+        const fz = data.feasibility;
+        const newItems = (fz.revisit || []).length;
+        const round = fz.round || 1;
+        // After the founder has already been through a round, only stop again if there is something NEW to look at.
+        // Re-asking about answers they already changed (or kept) on the check's advice is what made this loop.
+        const gateUseful = round === 1 || (newItems > 0 && round <= MAX_FEAS_GATE_ROUNDS);
+        if (fz.verdict === 'RETHINK' && startIndex === 0 && !gateUseful) {
+          logLine(round > MAX_FEAS_GATE_ROUNDS && newItems
+            ? `ℹ Feasibility is still RETHINK after ${round - 1} review round(s). Continuing with the specification — the remaining flaws are carried into the documents; you can still open the review from the red box.`
+            : 'ℹ Feasibility is still RETHINK, but the answers behind the remaining flaws were already reviewed by you. They are kept as residual risks in the assessment — continuing with the specification.');
+        }
+        if (fz.verdict === 'RETHINK' && startIndex === 0 && gateUseful) {
           const choice = await openFeasibilityModal(data.feasibility, 'gate');
           if (choice === 'rerun') {
             logLine('↻ Answers updated — re-running the feasibility check…');
@@ -1408,7 +1422,9 @@ async function runAgentPipeline(startIndex = 0) {
   // run a short chain of "resolve" passes (each its own quick request, so no single call
   // risks a host/proxy timeout) until validation comes back clean or a small round cap is
   // hit. This never requires the person to notice a gap and click anything.
-  await autoResolveGaps();
+  const finalQa = await autoResolveGaps(pendingQa);
+  pendingQa = null;
+  if (finalQa) showQaVerdict(finalQa);
 
   $('#agents-status').textContent = `complete — ${agentMeta.length}/${agentMeta.length}`;
   $('#btn-export').hidden = false;
@@ -1419,21 +1435,24 @@ async function runAgentPipeline(startIndex = 0) {
 
 const MAX_AUTO_RESOLVE_ROUNDS = 4;
 
-async function autoResolveGaps() {
+// Returns the LATEST validation result ({output, consistency_notes}) once the rounds are over, so the caller can
+// show the handoff status a single time, when it is final — not after every intermediate round.
+async function autoResolveGaps(initial) {
+  let latest = initial || null;
   for (let round = 1; round <= MAX_AUTO_RESOLVE_ROUNDS; round++) {
     let data;
     try {
       data = await api(`/api/project/${projectId}/resolve`, { method: 'POST' });
     } catch (e) {
       logLine(`⚠ Auto-resolve round ${round} failed: ${e.message} — you can retry with "Resolve issues" below.`);
-      return;
+      return latest;
     }
     if (!data.resolved) {
       // Nothing left to fix (or nothing was flagged in the first place).
-      return;
+      return latest;
     }
     logLine(`↻ Auto-resolve round ${round}: fixed ${data.issues_addressed} issue(s) — re-ran: ${data.agents_rerun.join(', ')}`, true);
-    showQaVerdict({ output: data.validation_output, consistency_notes: data.consistency_notes });
+    latest = { output: data.validation_output, consistency_notes: data.consistency_notes };
     if (data.artefacts && data.artefacts.length) {
       unlock('#panel-artefacts');
       renderArtefacts(data.artefacts);
@@ -1442,12 +1461,14 @@ async function autoResolveGaps() {
     const clean = status === 'READY FOR DESIGN AGENT'
       && !(data.validation_output.conflicts_found || []).length
       && !(data.validation_output.missing_information || []).length;
-    if (clean) return;
+    if (clean) return latest;
   }
   logLine(`⚠ Reached the auto-resolve round limit (${MAX_AUTO_RESOLVE_ROUNDS}) with some items still flagged — review below, or click "Resolve issues" to try another round.`);
+  return latest;
 }
 
 let lastFeasibility = null;
+const MAX_FEAS_GATE_ROUNDS = 3;   // after this many review rounds the RETHINK gate stops pausing the run
 
 function showFeasibility(f) {
   lastFeasibility = f;
@@ -1573,9 +1594,12 @@ function openFeasibilityModal(f, mode) {
   kicker.textContent = `Feasibility check · ${f.verdict || ''}`;
   $('#feas-modal-title').textContent = items.length
     ? `${items.length} answer${items.length === 1 ? '' : 's'} behind the problems found` : 'No specific answer to change';
-  $('#feas-modal-lead').textContent = items.length
+  const round = f.round || 1;
+  const reviewedNote = round > 1 ? ' Answers you already reviewed in an earlier round are not asked about again.' : '';
+  $('#feas-modal-lead').textContent = (items.length
     ? 'Change anything that no longer reflects your plan, then re-run the check — or continue with your current answers.'
-    : 'The problems found are not tied to a single question (see below). You can review all your answers, or continue anyway.';
+    : (round > 1 ? 'No new answers to change.' : 'The problems found are not tied to a single question (see below). You can review all your answers, or continue anyway.'))
+    + reviewedNote;
 
   const body = $('#feas-modal-body');
   body.innerHTML = '';
@@ -1640,6 +1664,16 @@ function openFeasibilityModal(f, mode) {
     body.appendChild(box);
   }
 
+  // Flaws on answers the founder already reviewed: read-only, so it is clear they were heard and will not be re-asked.
+  const reviewed = f.reviewed || [];
+  if (reviewed.length) {
+    const box = el('div', { class: 'fm-unlinked fm-reviewed' }, [el('div', { class: 'fm-unlinked-title', text: 'Already reviewed by you — kept as residual risks, not asked again' })]);
+    const ul = el('ul', { class: 'fm-why' });
+    reviewed.forEach(u => ul.appendChild(el('li', { text: u.flaw })));
+    box.appendChild(ul);
+    body.appendChild(box);
+  }
+
   $('#feas-modal-continue').hidden = mode === 'review';
   $('#feas-modal-save').hidden = !items.length;
   $('#feas-modal-save').disabled = true;
@@ -1682,6 +1716,19 @@ $('#feas-modal-save').addEventListener('click', async () => {
 });
 $('#feas-modal').addEventListener('mousedown', e => { if (e.target.id === 'feas-modal') closeFeasModal('pause'); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#feas-modal').hidden) closeFeasModal('pause'); });
+
+let pendingQa = null;   // the validator's first result, held back until the auto-resolve rounds have finished
+
+// Neutral placeholder while the handoff validation (and its automatic gap fixing) is still running.
+function showQaPending() {
+  lastHandoffStatus = null;
+  const box = $('#qa-verdict');
+  box.hidden = false;
+  box.className = 'qa-verdict status-pending';
+  box.innerHTML = 'HANDOFF STATUS: VALIDATING…' +
+    '<div class="qa-pending-note">Checking the package and fixing any gaps automatically. The final status appears here when validation is complete.</div>';
+  updateResolveButton();
+}
 
 function showQaVerdict(data) {
   const status = (data.output && data.output.final_handoff_status) || 'unknown';

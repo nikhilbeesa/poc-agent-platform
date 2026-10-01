@@ -69,7 +69,9 @@ def _question_dicts(ctx):
 
 
 def _feasibility_summary(ctx):
-    """The small slice of the feasibility assessment the UI shows right after it runs (and on reopen)."""
+    """The small slice of the feasibility assessment the UI shows right after it runs (and on reopen).
+    It also carries the review history (earlier rounds of the check), so it survives a server restart and a
+    reopen without a database schema change — it lives in the same `feasibility` JSON column."""
     c = ctx.get_contribution(AgentRole.FEASIBILITY_ASSESSMENT)
     if not c:
         return None
@@ -80,7 +82,13 @@ def _feasibility_summary(ctx):
             # only the answers behind the critical/major flaws — the UI shows just these for editing
             "revisit": [{"question_id": r["question_id"], "severity": r["severity"], "reasons": r["reasons"][:3]}
                         for r in (o.get("questions_to_revisit") or [])],
-            "unlinked": (o.get("unlinked_flaws") or [])[:4]}
+            "unlinked": (o.get("unlinked_flaws") or [])[:4],
+            # answers already reviewed in an earlier round (not offered for editing again) and the flaws that remain on them
+            "reviewed": (o.get("reviewed_flaws") or [])[:6],
+            "already_reviewed": [{"question_id": r["question_id"], "changed": r.get("changed", False)}
+                                 for r in (o.get("already_reviewed") or [])],
+            "round": o.get("review_round", 1),
+            "history": ctx.feasibility_history}
 
 
 def _record_from_ctx(ctx) -> dict:
@@ -105,7 +113,9 @@ def _record_from_ctx(ctx) -> dict:
         "handoff_status": handoff_status,
         "consistency_notes": ctx.consistency_notes,
         "system_profile": ctx.system_profile,
-        "feasibility": _feasibility_summary(ctx) or meta.get("feasibility"),
+        # while a fresh run is between "cleared" and "feasibility done", keep the old summary but the CURRENT history
+        "feasibility": _feasibility_summary(ctx) or ({**meta["feasibility"], "history": ctx.feasibility_history}
+                                                     if meta.get("feasibility") else None),
         "created_at": ctx.created_at.isoformat(),
         "questions": _question_dicts(ctx),
         "agent_log": agent_log,
@@ -152,6 +162,7 @@ def _ctx_from_record(rec: dict) -> ProjectContext:
                  generated_by=_ROLE_BY_ARTEFACT_TYPE.get(a.get("type"), AgentRole.AI_HANDOFF_VALIDATION))
         for a in (rec.get("artefacts") or [])
     ]
+    ctx.feasibility_history = list(((rec.get("feasibility") or {}).get("history")) or [])
     META[rec["id"]] = {"agent_log": rec.get("agent_log") or [], "handoff_status": rec.get("handoff_status"),
                        "feasibility": rec.get("feasibility")}
     return ctx

@@ -232,6 +232,11 @@ def export_feasibility_assessment(context: ProjectContext) -> Artefact:
                                    " / ".join(x.get("flaw", "") for x in r.get("reasons", [])[:2]),
                                    _revisit_suggestion(r, revisit)] for r in revisit])
                           if revisit else "*No specific discovery answer was identified as the cause of a critical or major flaw.*")
+    reviewed = o.get("reviewed_flaws") or []
+    if reviewed:
+        answers_to_revisit += ("\n\n**Already reviewed by you in an earlier round (answers changed or deliberately kept) — "
+                               "treat these as residual risks to plan for, not answers to change again:**\n") + _bullets(
+            f"{u['flaw']} — {u['suggestion']}" if u.get("suggestion") else u["flaw"] for u in reviewed)
     unlinked = o.get("unlinked_flaws") or []
     if unlinked:
         answers_to_revisit += "\n\n**Also flagged, but not tied to a single answer:**\n" + _bullets(

@@ -63,9 +63,17 @@ def _norm_choice(value, allowed, default):
     return default
 
 
-def finalize(out: dict, llm_verdict: str | None = None, questions: list | None = None) -> dict:
+def finalize(out: dict, llm_verdict: str | None = None, questions: list | None = None,
+             memory: dict | None = None) -> dict:
     """`questions` = the project's discovery questions. They let each flaw point at the answers behind it, so the UI
-    can show ONLY those questions for editing instead of making the person search the whole questionnaire."""
+    can show ONLY those questions for editing instead of making the person search the whole questionnaire.
+
+    `memory` = review_memory(context): answers the founder ALREADY reviewed in an earlier round of this check (changed
+    on its advice, or deliberately kept). Those are never put in front of the founder again — that is what made the
+    popup loop ("change A" -> re-run -> "change A back" / "now try B" -> re-run ...). The flaw itself stays in the
+    assessment and the verdict; it is only no longer presented as an answer to edit."""
+    memory = memory or {}
+    reviewed = set(memory)
     flaws = out.get("flaws") or []
     valid = {q.id: q for q in (questions or []) if q.id != "additional_information"}
     for i, f in enumerate(flaws, start=1):
@@ -84,9 +92,10 @@ def finalize(out: dict, llm_verdict: str | None = None, questions: list | None =
     # Answers worth revisiting: only Critical/Major flaws, worst first, one entry per question.
     revisit: dict[str, dict] = {}
     for f in flaws:
+        f["reviewed_question_ids"] = [q for q in f["related_question_ids"] if q in reviewed]
         if f["severity"] not in ("Critical", "Major"):
             continue
-        linked = f["related_question_ids"]
+        linked = [q for q in f["related_question_ids"] if q not in reviewed]
         for pos, qid in enumerate(linked):
             item = revisit.setdefault(qid, {"question_id": qid, "question": valid[qid].text, "current_answer": valid[qid].answer or "",
                                             "severity": f["severity"], "reasons": []})
@@ -105,6 +114,17 @@ def finalize(out: dict, llm_verdict: str | None = None, questions: list | None =
     # The UI lists them too, so the popup never looks like the complete set of problems when it is not.
     out["unlinked_flaws"] = [{"id": f["id"], "severity": f["severity"], "flaw": f["flaw"], "suggestion": f.get("recommended_change", "")}
                              for f in flaws if f["severity"] in ("Critical", "Major") and not f["related_question_ids"]]
+    # Critical/major flaws whose answers were ALL already reviewed: kept in the assessment as residual risks to plan for,
+    # but not offered for editing again.
+    out["reviewed_flaws"] = [{"id": f["id"], "severity": f["severity"], "flaw": f["flaw"], "suggestion": f.get("recommended_change", ""),
+                              "question_ids": f["reviewed_question_ids"]}
+                             for f in flaws if f["severity"] in ("Critical", "Major") and f["related_question_ids"]
+                             and set(f["related_question_ids"]) <= reviewed]
+    out["already_reviewed"] = [{"question_id": qid, "question": valid[qid].text if qid in valid else m.get("question", ""),
+                                "current_answer": m.get("current") or "", "changed": m.get("changed", False),
+                                "previous_answers": m.get("previous_answers", [])}
+                               for qid, m in memory.items()]
+    out["review_round"] = 1 + max([m.get("rounds", 0) for m in memory.values()] or [0])
 
     dims = out.get("feasibility") or {}
     for key, _label in DIMENSIONS:
@@ -136,6 +156,95 @@ def finalize(out: dict, llm_verdict: str | None = None, questions: list | None =
                       f"{len(out.get('competitors') or [])} competitor(s)/categories and {len(out.get('differentiators') or [])} differentiator(s) assessed.")
     out.setdefault("confidence", "Medium")
     return out
+
+
+# --------------------------------------------------------------------------------------------
+# Review memory: earlier rounds of this check, so a re-run converges instead of looping
+# --------------------------------------------------------------------------------------------
+MAX_HISTORY_ROUNDS = 6
+
+
+def _parts(answer) -> list[str]:
+    """A stored answer split into its selected options (multi-select answers are joined with ' | ')."""
+    return [p.strip() for p in str(answer or "").split(" | ") if p.strip()]
+
+
+def remember_round(context: ProjectContext, out: dict) -> None:
+    """Append THIS check's result to context.feasibility_history, right after it is produced. Only the answers put in
+    front of the founder are recorded, with the answer they had at that moment (the founder may change it before the
+    next run — that change is exactly what the next round needs to know). A round with nothing to review is not kept."""
+    items = []
+    for r in out.get("questions_to_revisit") or []:
+        reasons = r.get("reasons") or []
+        primary = next((x for x in reasons if x.get("suggestion")), reasons[0] if reasons else {})
+        items.append({"question_id": r.get("question_id"), "question": r.get("question", ""),
+                      "answer": r.get("current_answer", ""), "severity": r.get("severity", ""),
+                      "flaw": str(primary.get("flaw", ""))[:300], "suggestion": str(primary.get("suggestion", ""))[:300]})
+    if not items:
+        return
+    context.feasibility_history.append({"round": out.get("review_round", 1), "verdict": out.get("verdict"), "items": items})
+    context.feasibility_history[:] = context.feasibility_history[-MAX_HISTORY_ROUNDS:]
+
+
+def review_memory(context: ProjectContext) -> dict:
+    """qid -> what happened to that answer across earlier rounds:
+         previous_answers  the answers it had when it was flagged (oldest first)
+         current           the answer now
+         changed           the founder changed it after it was flagged
+         removed_options   options the founder had and removed — never to be suggested again
+         flaws/suggestions what earlier rounds said about it
+    """
+    current = {q.id: (q.answer or "") for q in context.discovery_questions}
+    mem: dict[str, dict] = {}
+    for rnd in context.feasibility_history:
+        for it in rnd.get("items") or []:
+            qid = it.get("question_id")
+            if not qid or qid not in current:
+                continue
+            m = mem.setdefault(qid, {"question": it.get("question", ""), "previous_answers": [], "flaws": [], "suggestions": [], "rounds": 0})
+            m["rounds"] += 1
+            if it.get("answer") not in m["previous_answers"]:
+                m["previous_answers"].append(it.get("answer") or "")
+            if it.get("flaw") and it["flaw"] not in m["flaws"]:
+                m["flaws"].append(it["flaw"])
+            if it.get("suggestion") and it["suggestion"] not in m["suggestions"]:
+                m["suggestions"].append(it["suggestion"])
+    for qid, m in mem.items():
+        cur = current.get(qid, "")
+        m["current"] = cur
+        m["changed"] = any(a != cur for a in m["previous_answers"])
+        now = {p.lower() for p in _parts(cur)}
+        removed = []
+        for a in m["previous_answers"]:
+            for p in _parts(a):
+                if p.lower() not in now and p not in removed:
+                    removed.append(p)
+        m["removed_options"] = removed
+    return mem
+
+
+def _memory_prompt_block(memory: dict) -> str:
+    if not memory:
+        return ""
+    lines = ["EARLIER ROUNDS OF THIS CHECK — the founder has already seen earlier findings and acted on them:"]
+    for qid, m in memory.items():
+        prev = " -> ".join(f"'{a or '(skipped)'}'" for a in m["previous_answers"])
+        if m["changed"]:
+            line = f"- [{qid}] {m['question']}: CHANGED by the founder from {prev} to '{m['current'] or '(skipped)'}'"
+        else:
+            line = f"- [{qid}] {m['question']}: reviewed and deliberately KEPT as '{m['current'] or '(skipped)'}'"
+        if m["flaws"]:
+            line += f" (earlier finding: {m['flaws'][-1]})"
+        if m["removed_options"]:
+            line += f". Options the founder REMOVED: {', '.join(repr(x) for x in m['removed_options'])}"
+        lines.append(line)
+    lines.append(
+        "Rules for these answers: they are the founder's deliberate decisions. Do NOT put their ids in related_questions "
+        "again, do NOT raise the same flaw again in different words, do NOT suggest going back to an answer or option the "
+        "founder removed, and do NOT swing to yet another option for them. Judge the idea WITH the new answers: if a change "
+        "fixed or reduced a flaw, drop it or lower its severity. If a real risk still remains, report it once as a residual "
+        "risk with a plan-level mitigation (not another answer change) and grade it honestly.")
+    return "\n".join(lines) + "\n\n"
 
 
 # --------------------------------------------------------------------------------------------
@@ -241,13 +350,17 @@ def _mock(context: ProjectContext) -> dict:
              "Either demand is unproven, or users are solving the problem another way (a substitute) that has not been recognised.",
              "List what users do today instead — including manual methods — and confirm they would switch and pay.",
              qids("compet", "alternative"))
+    onboarding = _by_category(context, "onboard", "vetted", "self-signup").lower()
+    curated_supply = any(k in onboarding for k in ("vetted", "curated", "review step", "with review"))
+    rev_model = monetisation.lower()
+    non_commission = any(k in rev_model for k in ("subscription", "listing", "lead")) and "commission" not in rev_model
     if two_sided:
-        flaw("Major", "Cold start", f"The product needs {vocab['buyer'].lower()}s and {vocab['seller'].lower()}s at the same time; each side only joins if the other is already there.",
+        flaw("Minor" if curated_supply else "Major", "Cold start", f"The product needs {vocab['buyer'].lower()}s and {vocab['seller'].lower()}s at the same time; each side only joins if the other is already there.",
              "Two-sided products often fail before reaching the density that makes them useful.",
              f"Launch in one narrow area or niche, secure the {vocab['seller'].lower()} side first (manually if needed), and set a target for supply density before opening to {vocab['buyer'].lower()}s.",
              qids("onboard", "vetted", "self-signup", "recruit", "supply side"))
         if has_payments:
-            flaw("Major", "Business model", "Users may complete repeat transactions off the platform to avoid fees (disintermediation).",
+            flaw("Minor" if non_commission else "Major", "Business model", "Users may complete repeat transactions off the platform to avoid fees (disintermediation).",
                  "If the revenue depends on a commission or fee per transaction, leakage directly cuts revenue.",
                  "Give both sides ongoing reasons to stay (payment protection, guarantees, scheduling, reviews, insurance) and consider subscription or lead-fee models.",
                  qids("monetiz", "revenue", "business_model", "pricing", "commission", "payment"))
@@ -345,8 +458,9 @@ def _mock(context: ProjectContext) -> dict:
         "recommended_changes": changes,
         "must_confirm_before_build": profile["open_questions"][:6],
     }
-    out = finalize(out, questions=context.discovery_questions)
+    out = finalize(out, questions=context.discovery_questions, memory=review_memory(context))
     out["verdict_rationale"] = _rationale(out)
+    remember_round(context, out)
     return out
 
 
@@ -391,7 +505,7 @@ def _live_market_prompt(context: ProjectContext) -> str:
     )
 
 
-def _live_feasibility_prompt(context: ProjectContext, market: dict, profile: dict) -> str:
+def _live_feasibility_prompt(context: ProjectContext, market: dict, profile: dict, memory: dict | None = None) -> str:
     comp = "; ".join(f"{c.get('name')} ({c.get('type')}, threat {c.get('threat_level')})" for c in market.get("competitors", []))
     diffs = "; ".join(f"{d.get('differentiator')} [{d.get('defensibility')}]" for d in market.get("differentiators", []))
     scale = "\n".join(f"- {r['parameter']}: {r['value']} [{r['basis']}]" for r in profile["scale"]["rows"])
@@ -416,7 +530,7 @@ def _live_feasibility_prompt(context: ProjectContext, market: dict, profile: dic
         "linked answer give 'why' (one sentence on what is wrong with THIS answer specifically — do not just repeat the flaw) and "
         "'change' (the concrete change to THIS answer). If the flaw is a contradiction between two answers, link both and write why/change "
         "separately for each so each can be fixed on its own. Use an empty list if the flaw is not tied to any question asked. "
-        "Never invent ids.\nDISCOVERY QUESTIONS (id, question -> answer):\n" + qlist + "\n\n"
+        "Never invent ids.\nDISCOVERY QUESTIONS (id, question -> answer):\n" + qlist + "\n\n" + _memory_prompt_block(memory or {}) +
         "Then list the key assumptions that must be validated with real users/data (with how), the recommended changes to the idea "
         "(concrete, ordered by importance), and what must be confirmed before building. Give an overall verdict: GO, GO WITH CHANGES or RETHINK, "
         "with a 2-3 sentence rationale, and your confidence (High, Medium, Low).\n\n"
@@ -446,7 +560,8 @@ def _list_of_dicts(raw, fields):
 def _live(context: ProjectContext, client) -> dict:
     profile = sp.ensure_profile(context, client)
     market = ch.call_json(client, _live_market_prompt(context), max_tokens=7000)
-    assess = ch.call_json(client, _live_feasibility_prompt(context, market, profile), max_tokens=7000)
+    memory = review_memory(context)
+    assess = ch.call_json(client, _live_feasibility_prompt(context, market, profile, memory), max_tokens=7000)
 
     competitors = _list_of_dicts(market.get("competitors"), ("name", "type", "what_they_do", "strengths", "weaknesses", "pricing_model", "threat_level"))
     for c in competitors:
@@ -500,9 +615,10 @@ def _live(context: ProjectContext, client) -> dict:
         "recommended_changes": strs(assess.get("recommended_changes")),
         "must_confirm_before_build": strs(assess.get("must_confirm_before_build")) or profile["open_questions"][:6],
     }
-    out = finalize(out, llm_verdict=assess.get("verdict"), questions=context.discovery_questions)
+    out = finalize(out, llm_verdict=assess.get("verdict"), questions=context.discovery_questions, memory=memory)
     if not out["verdict_rationale"]:
         out["verdict_rationale"] = _rationale(out)
+    remember_round(context, out)
     return out
 
 
