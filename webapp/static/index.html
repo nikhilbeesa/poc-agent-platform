@@ -30,22 +30,31 @@ window.addEventListener('load', function () {
 
 <div class="sheet-stack">
 
-  <!-- TITLE BLOCK (project context — shown only inside a project, never on the dashboard) -->
-  <header class="title-block" id="title-block" hidden>
-    <div class="tb-main">
-      <div class="tb-eyebrow">AI PRODUCT SPECIFICATION PACKAGE</div>
-      <h1 class="tb-title">Idea → Discovery → Feasibility → Specification Agents → Handoff Package</h1>
+  <!-- PROJECT HEADER (shown only inside a project, never on the dashboard) -->
+  <header class="proj-head" id="title-block" hidden>
+    <div class="ph-top">
+      <button class="btn btn-ghost btn-small" id="btn-go-dashboard">← Projects</button>
+      <span class="ph-crumb"><span class="ph-sep">/</span> <span id="tb-crumb">New project</span></span>
+      <div class="ph-sys">
+        <span class="sys-pill" title="AI engine"><span class="sys-dot"></span><span id="tb-mode">checking…</span></span>
+        <span class="sys-pill" id="tb-domains" title="Domains in the knowledge base">— domains</span>
+      </div>
     </div>
-    <div class="tb-fields">
-      <div class="tb-field"><span class="tb-label">PROJECT</span><span class="tb-value" id="tb-project">—</span></div>
-      <div class="tb-field"><span class="tb-label">DOMAIN</span><span class="tb-value" id="tb-domain">—</span></div>
-      <div class="tb-field"><span class="tb-label">DATE</span><span class="tb-value" id="tb-date">—</span></div>
-      <div class="tb-field"><span class="tb-label">MODE</span><span class="tb-value accent" id="tb-mode">checking…</span></div>
-      <div class="tb-field"><span class="tb-label">KNOWLEDGE BASE</span><span class="tb-value" id="tb-domains">— domains</span></div>
+    <div class="ph-main">
+      <div class="ph-eyebrow" id="tb-eyebrow">NEW PROJECT</div>
+      <h1 class="ph-title" id="tb-title">What do you want to build?</h1>
+      <div class="ph-meta" id="ph-meta" hidden>
+        <span class="domain-pill" id="ph-domain-chip" hidden>Domain · <b id="tb-domain">—</b></span>
+        <span class="ph-id">ID <span id="tb-project">—</span></span>
+        <span class="ph-id">Created <span id="tb-date">—</span></span>
+      </div>
     </div>
-    <div class="tb-actions">
-      <button class="btn btn-ghost" id="btn-go-dashboard">🏠 Dashboard</button>
-    </div>
+    <nav class="stepper" id="stepper" aria-label="Project progress">
+      <button type="button" class="step" data-target="#panel-intake"><span class="step-dot">1</span><span class="step-txt"><b>Idea</b><i>Describe it</i></span></button>
+      <button type="button" class="step" data-target="#panel-discovery"><span class="step-dot">2</span><span class="step-txt"><b>Discovery</b><i>Guided questions</i></span></button>
+      <button type="button" class="step" data-target="#panel-agents"><span class="step-dot">3</span><span class="step-txt"><b>Agent team</b><i>Feasibility &amp; specs</i></span></button>
+      <button type="button" class="step" data-target="#panel-artefacts"><span class="step-dot">4</span><span class="step-txt"><b>Handoff package</b><i>Documents to export</i></span></button>
+    </nav>
   </header>
 
   <!-- ==================== DASHBOARD ==================== -->
@@ -62,7 +71,7 @@ window.addEventListener('load', function () {
           <span class="sys-pill" id="dash-mode" title="AI engine"><span class="sys-dot"></span><span id="dash-mode-text">checking…</span></span>
           <span class="sys-pill" id="dash-kb" title="Domains in the knowledge base">— domains</span>
         </div>
-        <button class="btn btn-primary" id="btn-open-new-project">+ New project</button>
+        <button class="btn btn-primary btn-cta" id="btn-open-new-project">+ New project</button>
       </div>
     </header>
 
@@ -153,31 +162,52 @@ window.addEventListener('load', function () {
   <!-- ==================== PIPELINE FLOW (new project) ==================== -->
   <div id="pipeline-view" hidden>
 
-    <div class="pipeline-back-row">
+    <div class="pipeline-back-row" hidden>
       <button class="btn btn-ghost" id="btn-pipeline-back">← Back to dashboard</button>
     </div>
+
+    <!-- RESULT SUMMARY (appears once a package exists) -->
+    <section class="summary-strip" id="proj-summary" hidden aria-label="Project summary"></section>
 
     <!-- SHEET 01 — INTAKE -->
     <section class="panel" id="panel-intake">
       <span class="tick tick-tl"></span><span class="tick tick-tr"></span><span class="tick tick-bl"></span><span class="tick tick-br"></span>
       <div class="panel-head">
-        <span class="panel-num">SHEET 01</span>
-        <span class="panel-title">Intake</span>
+        <span class="panel-num">STEP 1</span>
+        <span class="panel-title">Your idea</span>
       </div>
       <div class="panel-body">
-        <label class="field-label" for="idea-input">Business idea</label>
-        <textarea id="idea-input" rows="2" placeholder="e.g. An app where people can book home cleaners for one-off or recurring visits"></textarea>
-        <div class="idea-examples">
-          <span class="field-label">Try:</span>
-          <button class="chip" data-idea="An app where people can book home cleaners for one-off or recurring visits">booking app</button>
-          <button class="chip" data-idea="An online store selling handmade candles and shipping them nationwide">e-commerce</button>
-          <button class="chip" data-idea="A platform connecting freelance photographers with couples planning weddings">marketplace</button>
-          <button class="chip" data-idea="A tool that helps small farms track crop yields and equipment maintenance">unseen domain ⚡</button>
-        </div>
-        <button class="btn btn-primary" id="btn-submit-idea">Run discovery →</button>
-        <div class="draft-note" id="draft-note" hidden>💾 Your progress is saved automatically. If you close this tab you can pick up exactly where you left off from the dashboard.</div>
-        <div class="hint" id="learned-banner" hidden>
-          <span class="hint-icon">⚡</span> No existing domain matched this idea — the knowledge engine is learning and persisting a new one now.
+        <div class="intake-grid">
+          <div class="intake-main">
+            <label class="field-label" for="idea-input">Describe your business idea</label>
+            <textarea id="idea-input" rows="4" placeholder="e.g. An app where people can book home cleaners for one-off or recurring visits"></textarea>
+            <div class="intake-tip">Tip: say <b>who it is for</b> and <b>what they can do</b> — one or two sentences is plenty. You can refine everything in the next step.</div>
+            <div class="intake-actions">
+              <button class="btn btn-primary btn-cta" id="btn-submit-idea" disabled>Run discovery →</button>
+            </div>
+            <div class="idea-examples">
+              <span class="field-label">Or start from an example</span>
+              <div class="example-grid">
+                <button class="chip" data-idea="An app where people can book home cleaners for one-off or recurring visits"><span class="chip-k">Booking app</span><span class="chip-d">Book home cleaners for one-off or recurring visits</span></button>
+                <button class="chip" data-idea="An online store selling handmade candles and shipping them nationwide"><span class="chip-k">E-commerce</span><span class="chip-d">Handmade candles shipped nationwide</span></button>
+                <button class="chip" data-idea="A platform connecting freelance photographers with couples planning weddings"><span class="chip-k">Marketplace</span><span class="chip-d">Freelance photographers meet couples planning weddings</span></button>
+                <button class="chip" data-idea="A tool that helps small farms track crop yields and equipment maintenance"><span class="chip-k">Unseen domain ⚡</span><span class="chip-d">Small-farm yields &amp; equipment — the engine learns a new domain</span></button>
+              </div>
+            </div>
+            <div class="draft-note" id="draft-note" hidden>💾 Your progress is saved automatically. If you close this tab you can pick up exactly where you left off from the dashboard.</div>
+            <div class="hint" id="learned-banner" hidden>
+              <span class="hint-icon">⚡</span> No existing domain matched this idea — the knowledge engine is learning and persisting a new one now.
+            </div>
+          </div>
+          <aside class="intake-aside" aria-label="What happens next">
+            <div class="aside-title">What happens next</div>
+            <ol class="aside-steps">
+              <li><b>Discovery</b><span>Answer guided questions, one at a time. Skip anything you are unsure about.</span></li>
+              <li><b>Feasibility check</b><span>Competitors, differentiators and flaws — before any effort is spent.</span></li>
+              <li><b>Agent team</b><span>Business analyst, product manager, requirements, UX flow and validation agents.</span></li>
+              <li><b>Handoff package</b><span>A 6-document package, exportable as Word or Markdown for the design agent.</span></li>
+            </ol>
+          </aside>
         </div>
       </div>
     </section>
@@ -186,12 +216,12 @@ window.addEventListener('load', function () {
     <section class="panel is-locked" id="panel-discovery">
       <span class="tick tick-tl"></span><span class="tick tick-tr"></span><span class="tick tick-bl"></span><span class="tick tick-br"></span>
       <div class="panel-head">
-        <span class="panel-num">SHEET 02</span>
+        <span class="panel-num">STEP 2</span>
         <span class="panel-title">Discovery Questionnaire</span>
         <span class="panel-status" id="discovery-status"></span>
       </div>
       <div class="panel-body">
-        <div class="lock-msg">Run discovery on Sheet 01 first.</div>
+        <div class="lock-msg">Describe your idea in step 1 first.</div>
 
         <!-- Conversational, one-question-at-a-time flow -->
         <div id="discovery-flow" hidden>
@@ -237,6 +267,7 @@ window.addEventListener('load', function () {
           <h3 class="df-review-title">Review your product idea</h3>
           <p class="df-review-sub">These answers will be used by the AI agents to generate your product requirements, user stories, architecture recommendations, and other project documentation.</p>
           <div class="reopen-note" id="reopen-note" hidden>This project already has generated documents. Change any answer below with <strong>Edit</strong>, then click <strong>Re-run AI Agents</strong> to regenerate the package.</div>
+          <div class="review-stats" id="review-stats"></div>
           <div id="df-review-groups"></div>
           <div class="df-review-ready">
             <div class="df-review-ready-title">Ready to generate?</div>
@@ -254,7 +285,7 @@ window.addEventListener('load', function () {
     <section class="panel is-locked" id="panel-agents">
       <span class="tick tick-tl"></span><span class="tick tick-tr"></span><span class="tick tick-bl"></span><span class="tick tick-br"></span>
       <div class="panel-head">
-        <span class="panel-num">SHEET 03</span>
+        <span class="panel-num">STEP 3</span>
         <span class="panel-title">Agent Assembly Line</span>
         <span class="panel-status" id="agents-status"></span>
       </div>
@@ -274,14 +305,14 @@ window.addEventListener('load', function () {
     <section class="panel is-locked" id="panel-artefacts">
       <span class="tick tick-tl"></span><span class="tick tick-tr"></span><span class="tick tick-bl"></span><span class="tick tick-br"></span>
       <div class="panel-head">
-        <span class="panel-num">SHEET 04</span>
+        <span class="panel-num">STEP 4</span>
         <span class="panel-title">Documents (Feasibility Assessment + Handoff Package)</span>
       </div>
       <div class="panel-body">
         <div class="lock-msg">Run the agent team to generate the handoff package.</div>
         <div class="artefact-controls" id="artefact-controls" hidden>
           <button class="btn" id="btn-download-current">⬇ Download this document (Word .docx)</button>
-          <button class="btn" id="btn-download-all">⬇ Download all documents (Word .docx, zipped)</button>
+          <button class="btn btn-primary" id="btn-download-all">⬇ Download all documents (Word .docx, zipped)</button>
           <button class="btn btn-ghost" id="btn-download-current-md">⬇ .md</button>
           <button class="btn btn-ghost" id="btn-download-all-md">⬇ All .md (.zip)</button>
         </div>

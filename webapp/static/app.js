@@ -20,6 +20,7 @@ let runState = 'idle';          // 'idle' | 'running' | 'done' | 'error' | 'paus
 let nextAgentIndex = 0;         // where a retry after an error resumes
 let hasGeneratedBefore = false; // this project already has a generated package (reopened / re-run)
 let lastHandoffStatus = null;
+let lastNotesCount = 0;
 
 const NODE_X_START = 70;
 const NODE_X_GAP = 150;
@@ -135,6 +136,7 @@ function setTitleBlock({ projectId, domain }) {
   $('#tb-project').textContent = projectId ? projectId.slice(0, 8) : '—';
   $('#tb-domain').textContent = domain || '—';
   $('#tb-date').textContent = new Date().toISOString().slice(0, 10);
+  updateProjectHeader();
 }
 
 async function refreshDomainCount() {
@@ -153,6 +155,7 @@ async function checkMode() {
     elm.textContent = label;
     $('#dash-mode-text').textContent = label;
     $('#dash-mode').classList.toggle('is-live', data.mode === 'live');
+    $('#tb-mode').closest('.sys-pill').classList.toggle('is-live', data.mode === 'live');
   } catch (e) {
     elm.textContent = 'unknown';
     $('#dash-mode-text').textContent = 'unknown';
@@ -711,15 +714,23 @@ function restoreIdeaDraft() {
     const saved = localStorage.getItem(IDEA_DRAFT_KEY);
     if (saved && !$('#idea-input').value) $('#idea-input').value = saved;
   } catch (e) { /* storage unavailable */ }
+  syncIdeaButton();
 }
 $('#idea-input').addEventListener('input', () => {
   try { localStorage.setItem(IDEA_DRAFT_KEY, $('#idea-input').value); } catch (e) { /* ignore */ }
+  syncIdeaButton();
 });
+function syncIdeaButton() {
+  const b = $('#btn-submit-idea');
+  if (b.textContent.trim() === 'Run discovery →') b.disabled = !$('#idea-input').value.trim();
+}
 
 document.querySelectorAll('.chip').forEach(chip => {
   chip.addEventListener('click', () => {
     $('#idea-input').value = chip.dataset.idea;
     try { localStorage.setItem(IDEA_DRAFT_KEY, chip.dataset.idea); } catch (e) { /* ignore */ }
+    syncIdeaButton();
+    $('#idea-input').focus();
   });
 });
 
@@ -758,6 +769,11 @@ function lockIntake() {
   $('#idea-input').readOnly = true;
   document.querySelector('.idea-examples').hidden = true;
   $('#btn-submit-idea').hidden = true;
+  document.querySelector('.intake-actions').hidden = true;
+  document.querySelector('.intake-tip').hidden = true;
+  document.querySelector('.intake-aside').hidden = true;
+  document.querySelector('.intake-grid').classList.add('is-single');
+  $('#idea-input').setAttribute('rows', '2');
   $('#draft-note').hidden = false;
 }
 
@@ -798,6 +814,7 @@ function updateDiscoveryStatus() {
 }
 
 function showDiscoveryQuestion(index) {
+  setCollapsed('#panel-discovery', false);
   dfIndex = Math.max(0, Math.min(index, questions.length - 1));
   dfShowingReview = false;
   $('#discovery-review').hidden = true;
@@ -1078,6 +1095,7 @@ $('#df-btn-skip').addEventListener('click', skipCurrentQuestion);
 
 // ---- Review / confirmation screen ----
 function showDiscoveryReview() {
+  setCollapsed('#panel-discovery', false);
   dfShowingReview = true;
   dfReturnToReview = false;
   $('#discovery-flow').hidden = true;
@@ -1120,6 +1138,16 @@ function renderReview() {
     });
     container.appendChild(section);
   });
+
+  const total = questions.length;
+  const skipped = questions.filter(q => dfSkipped[q.id]).length;
+  const answered = questions.filter(q => dfAnswers[q.id]).length;
+  const open = total - answered - skipped;
+  const stats = $('#review-stats');
+  stats.innerHTML = '';
+  [[`${total}`, 'questions', ''], [`${answered}`, 'answered', 'ok'], [`${skipped}`, 'skipped', skipped ? 'warn' : ''], [`${open}`, 'unanswered', open ? 'bad' : '']]
+    .forEach(([n, l, c]) => stats.appendChild(el('span', { class: `rs-pill ${c}` }, [el('b', { text: n }), document.createTextNode(' ' + l)])));
+  updateSummary(); updateStepper(); updatePanelSummaries();
 }
 
 $('#df-btn-review-back').addEventListener('click', () => showDiscoveryQuestion(questions.length - 1));
@@ -1387,6 +1415,7 @@ let lastFeasibility = null;
 
 function showFeasibility(f) {
   lastFeasibility = f;
+  setTimeout(() => { updateProjectHeader(); updateSummary(); }, 0);
   const box = $('#feasibility-verdict');
   const slug = f.verdict === 'GO' ? 'go' : f.verdict === 'RETHINK' ? 'rethink' : 'changes';
   box.hidden = false;
@@ -1592,6 +1621,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#feas-
 function showQaVerdict(data) {
   const status = (data.output && data.output.final_handoff_status) || 'unknown';
   lastHandoffStatus = status;
+  lastNotesCount = (data.consistency_notes || []).length;
   const box = $('#qa-verdict');
   box.hidden = false;
   box.className = `qa-verdict ${statusSlug(status)}`;
@@ -1600,6 +1630,7 @@ function showQaVerdict(data) {
   const notesHtml = notes.length ? '<ul>' + notes.map(n => `<li>${escapeHtml(n)}</li>`).join('') + '</ul>' : '';
   box.innerHTML = `HANDOFF STATUS: ${escapeHtml(status)}` + notesHtml;
   // NOTE: deliberately does not touch the Resolve button — see updateResolveButton().
+  updateProjectHeader(); updateStepper(); updateSummary();
 }
 
 // "Resolve issues" is a manual fallback, offered ONLY once the automatic resolution has finished
@@ -1676,6 +1707,7 @@ function renderArtefacts(artefacts) {
   });
 
   if (artefacts.length) renderDoc(artefacts[0].content_markdown);
+  updateStepper(); updateSummary();
 }
 
 function renderDoc(markdown) {
@@ -1751,6 +1783,7 @@ async function resumeProject(id) {
   });
   const conf = data.confidence != null ? ` (${Math.round(data.confidence * 100)}%)` : '';
   setTitleBlock({ projectId, domain: data.domain ? data.domain + conf : null });
+  if (data.created_at && !isNaN(Date.parse(data.created_at))) $('#tb-date').textContent = new Date(data.created_at).toISOString().slice(0, 10);
   refreshDomainCount();
   $('#idea-input').value = data.business_idea || '';
   lockIntake();
@@ -1798,11 +1831,132 @@ async function restoreGeneratedView(data, artefacts) {
 }
 
 // ============================================================
+// Project screen: header, stepper, collapsible steps, result summary
+// ============================================================
+const STEP_PANELS = ['#panel-intake', '#panel-discovery', '#panel-agents', '#panel-artefacts'];
+const isUnlocked = (sel) => !$(sel).classList.contains('is-locked');
+const clip = (s, n) => (s.length > n ? s.slice(0, n - 1).trimEnd() + '…' : s);
+
+function verdictClass(v) { return v === 'GO' ? 'status-ready' : v === 'RETHINK' ? 'status-not-ready' : 'status-warnings'; }
+
+function updateProjectHeader() {
+  const idea = ($('#idea-input').value || '').trim();
+  const has = !!projectId;
+  $('#tb-eyebrow').textContent = has ? 'PROJECT' : 'NEW PROJECT';
+  $('#tb-title').textContent = has && idea ? idea : 'What do you want to build?';
+  $('#tb-crumb').textContent = has && idea ? clip(idea, 60) : 'New project';
+  $('#ph-meta').hidden = !has;
+  const dom = $('#tb-domain').textContent;
+  $('#ph-domain-chip').hidden = !has || !dom || dom === '—';
+  if (dom && dom !== '—') $('#tb-domain').textContent = dom.replace(/_/g, ' ');
+}
+
+function updateStepper() {
+  const steps = document.querySelectorAll('#stepper .step');
+  steps.forEach((btn, i) => {
+    const unlocked = i === 0 || isUnlocked(STEP_PANELS[i]);
+    const nextUnlocked = i < 3 && isUnlocked(STEP_PANELS[i + 1]);
+    let state = 'todo';
+    if (unlocked) state = (i < 3 ? nextUnlocked : !!lastHandoffStatus) ? 'done' : 'active';
+    btn.dataset.state = state;
+    btn.disabled = !unlocked;
+    btn.querySelector('.step-dot').textContent = state === 'done' ? '✓' : String(i + 1);
+    btn.setAttribute('aria-current', state === 'active' ? 'step' : 'false');
+  });
+}
+
+function updatePanelSummaries() {
+  const idea = ($('#idea-input').value || '').trim();
+  setPanelSummary('#panel-intake', idea ? clip(idea, 90) : '');
+  if (questions.length) {
+    const done = questions.filter(q => dfAnswers[q.id] || dfSkipped[q.id]).length;
+    setPanelSummary('#panel-discovery', `${done} of ${questions.length} answered`);
+  }
+}
+function setPanelSummary(sel, text) {
+  const s = $(sel).querySelector('.panel-summary');
+  if (s) s.textContent = text;
+}
+
+function setCollapsed(sel, collapsed) {
+  const p = $(sel);
+  p.classList.toggle('is-collapsed', collapsed);
+  const head = p.querySelector('.panel-head');
+  if (head) head.setAttribute('aria-expanded', String(!collapsed));
+}
+
+function updateSummary() {
+  const box = $('#proj-summary');
+  const docs = (typeof currentArtefacts !== 'undefined' ? currentArtefacts.length : 0);
+  if (!docs) { box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = '';
+  const f = lastFeasibility, c = (f && f.counts) || {};
+  const answered = questions.filter(q => dfAnswers[q.id]).length, skipped = questions.filter(q => dfSkipped[q.id]).length;
+  const tile = (cls, label, value, sub, target) => {
+    const t = el('button', { type: 'button', class: `sum-tile ${cls}` }, [
+      el('span', { class: 'sum-label', text: label }),
+      el('span', { class: 'sum-value', text: value }),
+      el('span', { class: 'sum-sub', text: sub }),
+    ]);
+    t.addEventListener('click', () => goToStep(target));
+    box.appendChild(t);
+  };
+  if (f) tile(verdictClass(f.verdict), 'Feasibility', f.verdict || 'n/a',
+    `${c.critical || 0} critical · ${c.major || 0} major · ${c.minor || 0} minor`, '#panel-agents');
+  tile(lastHandoffStatus ? statusSlug(lastHandoffStatus) : 'status-unknown', 'Handoff status',
+    lastHandoffStatus ? lastHandoffStatus.replace(/ FOR DESIGN AGENT/i, '') : '—',
+    lastHandoffStatus ? (lastNotesCount ? `${lastNotesCount} consistency note${lastNotesCount === 1 ? '' : 's'}` : 'for the design agent') : 'not validated yet', '#panel-agents');
+  tile('status-info', 'Documents', `${docs} / ${DASH_TOTAL_DOCS}`, 'Word · Markdown export', '#panel-artefacts');
+  if (questions.length) tile('status-info', 'Discovery', `${answered} / ${questions.length}`, skipped ? `${skipped} skipped` : 'all answered', '#panel-discovery');
+}
+
+function goToStep(sel) {
+  if (!isUnlocked(sel)) return;
+  setCollapsed(sel, false);
+  $(sel).scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+(function wireProjectScreen() {
+  // collapsible panels
+  STEP_PANELS.forEach(sel => {
+    const panel = $(sel), head = panel.querySelector('.panel-head');
+    head.classList.add('is-collapsible');
+    head.setAttribute('role', 'button'); head.setAttribute('tabindex', '0'); head.setAttribute('aria-expanded', 'true');
+    head.querySelector('.panel-title').after(el('span', { class: 'panel-summary' }));
+    head.appendChild(el('span', { class: 'panel-caret', 'aria-hidden': 'true', text: '▾' }));
+    const toggle = () => { if (!head.classList.contains('is-collapsible')) return; setCollapsed(sel, !panel.classList.contains('is-collapsed')); };
+    head.addEventListener('click', toggle);
+    head.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+  });
+
+  // stepper navigation
+  document.querySelectorAll('#stepper .step').forEach(btn => btn.addEventListener('click', () => goToStep(btn.dataset.target)));
+
+  // when a step unlocks, fold the finished earlier steps away (they stay one click from reopening)
+  const seen = new Set();
+  const onPanelChange = () => {
+    STEP_PANELS.forEach((sel, i) => {
+      if (i > 0 && isUnlocked(sel) && !seen.has(sel)) {
+        seen.add(sel);
+        if (i - 1 <= 1) setCollapsed(STEP_PANELS[i - 1], true);   // fold Idea / Discovery, keep results open
+      }
+    });
+    $('#panel-intake .panel-head').classList.toggle('is-collapsible', isUnlocked('#panel-discovery'));
+    updatePanelSummaries(); updateStepper(); updateProjectHeader();
+  };
+  const obs = new MutationObserver(onPanelChange);
+  STEP_PANELS.forEach(sel => obs.observe($(sel), { attributes: true, attributeFilter: ['class'] }));
+  onPanelChange();
+})();
+
+// ============================================================
 // Startup — runs last, once every function and constant above exists.
 // The URL carries the open project (#project=<id>), so a refresh, a browser "reopen closed tab"
 // or a bookmarked link lands back on the same project instead of an empty form.
 // ============================================================
 (function bootstrapView() {
+  refreshDomainCount();
   const hashProjectId = (location.hash.match(/project=([\w-]+)/) || [])[1];
   if (hashProjectId) {
     showPipelineView();
