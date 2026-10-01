@@ -71,3 +71,10 @@ alter table projects add column if not exists questions jsonb not null default '
 alter table projects add column if not exists agent_log jsonb not null default '[]'::jsonb;
 alter table projects add column if not exists updated_at timestamptz not null default now();
 create index if not exists projects_updated_at_idx on projects (updated_at desc);
+
+-- Feasibility check + shared system profile (added with the Feasibility & Competitive Assessment; idempotent).
+-- `feasibility`     the verdict summary shown in the UI when a project is reopened.
+-- `system_profile`  the expected-scale / system / security / performance profile, so a reopened project
+--                   keeps exactly the numbers its documents were written against.
+alter table projects add column if not exists feasibility jsonb;
+alter table projects add column if not exists system_profile jsonb;

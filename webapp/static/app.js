@@ -16,7 +16,7 @@ const ADDITIONAL_INFO_ID = 'additional_information';
 
 // Agent-run state. runState drives the "Run AI Agents" button so it can never be
 // double-clicked: idle -> running -> done, or running -> error (re-enabled to retry).
-let runState = 'idle';          // 'idle' | 'running' | 'done' | 'error'
+let runState = 'idle';          // 'idle' | 'running' | 'done' | 'error' | 'paused' (waiting after a RETHINK feasibility verdict)
 let nextAgentIndex = 0;         // where a retry after an error resumes
 let hasGeneratedBefore = false; // this project already has a generated package (reopened / re-run)
 let lastHandoffStatus = null;
@@ -896,6 +896,7 @@ const RUN_LABELS = {
   running: () => 'Running AI Agents…',
   done: () => 'AI Agents completed ✓',
   error: () => 'Retry AI Agents →',
+  paused: () => 'Continue anyway →',
   external: () => 'AI Agents running on the server…',
 };
 let pipelineRanThisSession = false;   // agent outputs exist in server memory -> resolve/export are possible
@@ -912,13 +913,14 @@ function updateRunButton() {
 // Any change to an answer means the last package no longer matches -> allow a fresh run.
 function onAnswersChanged() {
   nextAgentIndex = 0;
-  if (runState === 'done' || runState === 'error') runState = 'idle';
+  if (runState === 'done' || runState === 'error' || runState === 'paused') runState = 'idle';
   updateRunButton();
 }
 
 function resetAgentPanel() {
   $('#agent-log').innerHTML = '';
   $('#qa-verdict').hidden = true;
+  $('#feasibility-verdict').hidden = true;
   $('#agent-note').hidden = true;
   $('#btn-export').hidden = true;
   lastHandoffStatus = null;
@@ -930,6 +932,7 @@ $('#btn-run-agents').addEventListener('click', async () => {
   const allHandled = questions.every(q => dfAnswers[q.id] || dfSkipped[q.id]);
   if (!allHandled) { alert('A few questions still need an answer or a skip.'); return; }
 
+  const wasPaused = runState === 'paused';   // captured before the state changes below
   runState = 'running';
   updateRunButton();                 // disabled synchronously, before any await
   try {
@@ -938,12 +941,14 @@ $('#btn-run-agents').addEventListener('click', async () => {
     if (nextAgentIndex === 0) {
       resetAgentPanel();
       drawSchematic();
+    } else if (wasPaused) {
+      logLine(`▶ Continuing with ${agentMeta[nextAgentIndex].label} despite the feasibility verdict…`);
     } else {
       logLine(`↻ Retrying from ${agentMeta[nextAgentIndex].label}…`);
     }
-    const ok = await runAgentPipeline(nextAgentIndex);
-    if (ok) hasGeneratedBefore = true;
-    runState = ok ? 'done' : 'error';
+    const result = await runAgentPipeline(nextAgentIndex);
+    if (result === true) hasGeneratedBefore = true;
+    runState = result === true ? 'done' : result === 'paused' ? 'paused' : 'error';
   } catch (e) {
     logLine(`✗ Agent run failed: ${e.message}`);
     $('#agents-status').textContent = 'error';
@@ -1064,6 +1069,20 @@ async function runAgentPipeline(startIndex = 0) {
       setNodeState(i, 'done');
       logLine(`✓ ${agentMeta[i].label} — ${data.summary}`, true);
       if (agentMeta[i].role === 'ai_handoff_validation') showQaVerdict(data);
+      if (agentMeta[i].role === 'feasibility_assessment' && data.feasibility) {
+        showFeasibility(data.feasibility);
+        // An early check is only useful if it can stop wasted work: on a RETHINK verdict, ask first.
+        if (data.feasibility.verdict === 'RETHINK' && startIndex === 0) {
+          const go = confirm('The feasibility check recommends RETHINKING this idea (see the red box for why).\n\n' +
+            'OK = continue and generate the full specification anyway.\nCancel = stop here, so you can revise your answers first.');
+          if (!go) {
+            logLine('⏸ Paused after the feasibility check. Edit your answers, or click "Continue anyway" to generate the specification.');
+            $('#agents-status').textContent = 'paused';
+            nextAgentIndex = i + 1;
+            return 'paused';
+          }
+        }
+      }
     } catch (e) {
       setNodeState(i, 'error');
       logLine(`✗ ${agentMeta[i].label} failed: ${e.message}`);
@@ -1075,7 +1094,7 @@ async function runAgentPipeline(startIndex = 0) {
   nextAgentIndex = 0;
   pipelineRanThisSession = true;
 
-  // The 5 documents existing isn't the same as the package being complete — automatically
+  // The documents existing isn't the same as the package being complete — automatically
   // run a short chain of "resolve" passes (each its own quick request, so no single call
   // risks a host/proxy timeout) until validation comes back clean or a small round cap is
   // hit. This never requires the person to notice a gap and click anything.
@@ -1118,6 +1137,20 @@ async function autoResolveGaps() {
   logLine(`⚠ Reached the auto-resolve round limit (${MAX_AUTO_RESOLVE_ROUNDS}) with some items still flagged — review below, or click "Resolve issues" to try another round.`);
 }
 
+function showFeasibility(f) {
+  const box = $('#feasibility-verdict');
+  const slug = f.verdict === 'GO' ? 'go' : f.verdict === 'RETHINK' ? 'rethink' : 'changes';
+  box.hidden = false;
+  box.className = `feas-verdict ${slug}`;
+  const c = f.counts || {};
+  const flaws = (f.headline_flaws || []).length
+    ? '<ul>' + f.headline_flaws.map(x => `<li>${escapeHtml(x)}</li>`).join('') + '</ul>' : '';
+  box.innerHTML = `<strong>FEASIBILITY: ${escapeHtml(f.verdict || 'n/a')}</strong>` +
+    `<span class="feas-counts"> — ${c.critical || 0} critical · ${c.major || 0} major · ${c.minor || 0} minor flaw(s)</span>` +
+    `<div class="feas-why">${escapeHtml(f.rationale || '')}</div>${flaws}` +
+    `<div class="feas-foot">Full analysis (competitors, differentiators, flaws, recommended changes) is in the first document below once exported.</div>`;
+}
+
 function showQaVerdict(data) {
   const status = (data.output && data.output.final_handoff_status) || 'unknown';
   lastHandoffStatus = status;
@@ -1139,7 +1172,7 @@ function updateResolveButton() {
 }
 
 // ============================================================
-// SHEET 04 — Artefacts (5-document package)
+// SHEET 04 — Artefacts (6-document package)
 // ============================================================
 let currentArtefacts = [];
 let activeArtefactIndex = 0;
@@ -1154,7 +1187,7 @@ $('#btn-export').addEventListener('click', async () => {
   } catch (e) {
     alert('Export failed: ' + e.message);
   } finally {
-    btn.disabled = false; btn.textContent = 'Export 5-document package →';
+    btn.disabled = false; btn.textContent = 'Export 6-document package →';
   }
 });
 
@@ -1317,7 +1350,8 @@ async function restoreGeneratedView(data, artefacts) {
   agentMeta.forEach((m, i) => { if (finished.has(m.role) || !log.length) setNodeState(i, 'done'); });
   log.forEach(a => logLine(`✓ ${a.label || a.agent} — ${a.summary}`, true));
   if (!log.length) logLine('✓ Package generated in an earlier session.', true);
-  $('#agents-status').textContent = `complete — ${agentMeta.length}/${agentMeta.length}`;
+  $('#agents-status').textContent = `complete — ${log.length || agentMeta.length}/${agentMeta.length}`;
+  if (data.feasibility) showFeasibility(data.feasibility);
   if (data.handoff_status) {
     showQaVerdict({ output: { final_handoff_status: data.handoff_status }, consistency_notes: data.consistency_notes || [] });
   }

@@ -34,7 +34,7 @@ window.addEventListener('load', function () {
   <header class="title-block">
     <div class="tb-main">
       <div class="tb-eyebrow">AI PRODUCT SPECIFICATION PACKAGE</div>
-      <h1 class="tb-title">Idea → Discovery → 5 Agents → 5-Document Handoff Package</h1>
+      <h1 class="tb-title">Idea → Discovery → Feasibility → Specification Agents → Handoff Package</h1>
     </div>
     <div class="tb-fields">
       <div class="tb-field"><span class="tb-label">PROJECT</span><span class="tb-value" id="tb-project">—</span></div>
@@ -169,7 +169,7 @@ window.addEventListener('load', function () {
           <div id="df-review-groups"></div>
           <div class="df-review-ready">
             <div class="df-review-ready-title">Ready to generate?</div>
-            <div class="df-review-ready-body">Multiple AI agents will analyze these answers to produce your 5-document handoff package.</div>
+            <div class="df-review-ready-body">Multiple AI agents will analyze these answers to first check whether your idea will work (competitors, differentiators, flaws), then produce your 6-document package.</div>
           </div>
           <div class="df-review-actions">
             <button class="btn btn-ghost" id="df-btn-review-back">← Back</button>
@@ -192,9 +192,10 @@ window.addEventListener('load', function () {
         <div class="agent-note" id="agent-note" hidden></div>
         <svg class="schematic" id="schematic" viewBox="0 0 900 160" preserveAspectRatio="xMidYMid meet"></svg>
         <div class="agent-log" id="agent-log"></div>
+        <div class="feas-verdict" id="feasibility-verdict" hidden></div>
         <div class="qa-verdict" id="qa-verdict" hidden></div>
         <button class="btn btn-ghost" id="btn-resolve-issues" hidden>⚙ Resolve issues →</button>
-        <button class="btn btn-primary" id="btn-export" hidden>Export 5-document package →</button>
+        <button class="btn btn-primary" id="btn-export" hidden>Export 6-document package →</button>
       </div>
     </section>
 
@@ -203,15 +204,15 @@ window.addEventListener('load', function () {
       <span class="tick tick-tl"></span><span class="tick tick-tr"></span><span class="tick tick-bl"></span><span class="tick tick-br"></span>
       <div class="panel-head">
         <span class="panel-num">SHEET 04</span>
-        <span class="panel-title">Handoff Package (5 Documents)</span>
+        <span class="panel-title">Documents (Feasibility Assessment + Handoff Package)</span>
       </div>
       <div class="panel-body">
         <div class="lock-msg">Run the agent team to generate the handoff package.</div>
         <div class="artefact-controls" id="artefact-controls" hidden>
           <button class="btn" id="btn-download-current">⬇ Download this document (Word .docx)</button>
-          <button class="btn" id="btn-download-all">⬇ Download all 5 (Word .docx, zipped)</button>
+          <button class="btn" id="btn-download-all">⬇ Download all documents (Word .docx, zipped)</button>
           <button class="btn btn-ghost" id="btn-download-current-md">⬇ .md</button>
-          <button class="btn btn-ghost" id="btn-download-all-md">⬇ All 5 .md (.zip)</button>
+          <button class="btn btn-ghost" id="btn-download-all-md">⬇ All .md (.zip)</button>
         </div>
         <div class="tabs" id="artefact-tabs" hidden></div>
         <div class="doc-viewer" id="doc-viewer"></div>

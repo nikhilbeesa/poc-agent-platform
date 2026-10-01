@@ -1,6 +1,6 @@
 """
 Live Demo Script — narrated, presentation-friendly walkthrough of the
-full 5-agent / 5-document pipeline.
+full 6-agent / 6-document pipeline (feasibility check first).
 """
 
 import argparse
@@ -84,8 +84,8 @@ def main() -> None:
     assert is_discovery_complete(ctx)
     print("\n  Discovery complete.")
 
-    _header("THE 5-AGENT PIPELINE")
-    print("  Running 5 specialist agents in sequence.\n")
+    _header("THE 6-AGENT PIPELINE")
+    print("  Running 6 specialist agents in sequence (feasibility check first).\n")
 
     ctx.stage = ProjectStage.AGENT_PROCESSING
     for agent in AGENT_PIPELINE:

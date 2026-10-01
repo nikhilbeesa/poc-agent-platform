@@ -1,7 +1,10 @@
 """
-Orchestrator — sequences the 5 agents. Deterministic, no AI reasoning here.
+Orchestrator — sequences the 6 agents. Deterministic, no AI reasoning here.
 
-  Business Analyst        -> no dependency, runs first
+  Feasibility Assessment   -> runs FIRST, right after discovery: "will this idea work?", competitors,
+                              differentiators, flaws. Advisory and independent — it is never re-run by
+                              the gap-correction loop, and the specification agents read its findings.
+  Business Analyst        -> reads the feasibility findings + shared system profile
   Product Manager           -> reads Business Analyst
   Product Requirements       -> reads Business Analyst + Product Manager
   UX / Product Flow            -> reads Product Manager + Product Requirements
@@ -21,6 +24,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from agents.feasibility import FeasibilityAssessmentAgent  # noqa: E402
 from agents.business_analyst import BusinessAnalystAgent  # noqa: E402
 from agents.product_manager import ProductManagerAgent  # noqa: E402
 from agents.product_requirements import ProductRequirementsAgent  # noqa: E402
@@ -34,6 +38,7 @@ from logging_config import get_logger, log_agent_call  # noqa: E402
 logger = get_logger()
 
 AGENT_PIPELINE = [
+    FeasibilityAssessmentAgent(),
     BusinessAnalystAgent(),
     ProductManagerAgent(),
     ProductRequirementsAgent(),
@@ -41,7 +46,8 @@ AGENT_PIPELINE = [
     AIHandoffValidationAgent(),
 ]
 
-# Pipeline order for the 4 content-generating agents (excludes validation,
+# Pipeline order for the 4 content-generating agents (excludes the feasibility
+# assessment, which runs before them and is never a re-run target, and validation,
 # which always runs last and isn't itself a re-run target). Used both to
 # decide which agents to re-run during conflict resolution and to cascade
 # forward to anything downstream of a fixed document.
@@ -52,12 +58,9 @@ CONTENT_PIPELINE_ORDER = [
     AgentRole.UX_PRODUCT_FLOW,
 ]
 
-_AGENT_BY_ROLE = {
-    AgentRole.BUSINESS_ANALYST: AGENT_PIPELINE[0],
-    AgentRole.PRODUCT_MANAGER: AGENT_PIPELINE[1],
-    AgentRole.PRODUCT_REQUIREMENTS: AGENT_PIPELINE[2],
-    AgentRole.UX_PRODUCT_FLOW: AGENT_PIPELINE[3],
-}
+# Looked up by ROLE (not by position) so adding an agent to the pipeline can never silently
+# re-map a role to the wrong agent.
+_AGENT_BY_ROLE = {agent.role: agent for agent in AGENT_PIPELINE}
 
 # Capability names (as used in coverage.py's matrix rows) are matched back
 # to the agent role(s) that own the columns where a gap was found, so a
@@ -111,6 +114,7 @@ def run_agent_pipeline(context: ProjectContext, require_discovery_complete: bool
         raise ValueError("Discovery is not complete — all discovery questions must be answered before running the agent pipeline.")
 
     context.stage = ProjectStage.AGENT_PROCESSING
+    context.system_profile = None   # a fresh run rebuilds the shared profile from the current answers
     log_agent_call(logger, context.project_id, "orchestrator", "started", {"pipeline": [a.role.value for a in AGENT_PIPELINE]})
 
     for agent in AGENT_PIPELINE:
@@ -230,7 +234,7 @@ def run_gap_correction_loop(context: ProjectContext, max_rounds: int = MAX_GAP_C
     actually clean (final_handoff_status == "READY FOR DESIGN AGENT" and
     no coverage-matrix gaps). Otherwise stage stays at REVIEW and the
     returned summary says exactly what's still outstanding — the package
-    is never silently marked complete just because 5 documents exist.
+    is never silently marked complete just because the documents exist.
     """
     rounds_used = 0
     validation = AIHandoffValidationAgent().run(context)
@@ -314,6 +318,7 @@ def run_full_pipeline(context: ProjectContext, require_discovery_complete: bool 
         raise ValueError("Discovery is not complete — all discovery questions must be answered before running the agent pipeline.")
 
     context.stage = ProjectStage.AGENT_PROCESSING
+    context.system_profile = None
     for agent in AGENT_PIPELINE[:-1]:  # everything except AI Handoff Validation
         agent.run(context)
     context.stage = ProjectStage.REVIEW

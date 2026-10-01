@@ -84,6 +84,87 @@ def _mock_classify(idea_text: str, known_names: list[str]) -> tuple[str, float]:
     return _guess_domain_slug(idea_text), 0.3
 
 
+# ---------------------------------------------------------------------------------------------
+# Required "scale, availability & data sensitivity" questions.
+#
+# Expected user volume, peak load, uptime needs and data sensitivity cannot be derived from the
+# business idea — if they are not asked, the specification agents would simply invent numbers.
+# So these are ALWAYS part of the questionnaire (in mock and live mode alike), unless the model
+# already asked an equivalent question. They feed system_profile.py, which turns the answers
+# into the system / security / scalability / performance requirements in the BRD and PRD.
+# Each option list is fixed so the answers can be read back deterministically.
+# ---------------------------------------------------------------------------------------------
+NFR_USERS_ID = "nfr_users_12m"
+NFR_PEAK_ID = "nfr_peak_concurrent"
+NFR_AVAILABILITY_ID = "nfr_availability"
+NFR_SENSITIVITY_ID = "nfr_data_sensitivity"
+NFR_GEOGRAPHY_ID = "nfr_geography"
+
+USERS_OPTIONS = ["Under 500", "500–5,000", "5,000–50,000", "50,000–500,000", "500,000+"]
+PEAK_OPTIONS = ["Under 50", "50–500", "500–5,000", "5,000+", "Not sure yet"]
+AVAILABILITY_OPTIONS = [
+    "Business hours only is fine",
+    "99% (a few hours of downtime a month is OK)",
+    "99.9% (only minutes of downtime a month)",
+    "99.95%+ (near-zero downtime, mission-critical)",
+    "Not sure yet",
+]
+SENSITIVITY_OPTIONS = [
+    "Personal details (names, emails, phone numbers)",
+    "Payment / card data",
+    "Health or medical data",
+    "Children's data",
+    "Government IDs / identity documents",
+    "Precise location data",
+    "Nothing sensitive",
+    "Not sure yet",
+]
+GEOGRAPHY_OPTIONS = ["One city or region", "One country", "Several countries", "Global", "Not sure yet"]
+
+_NFR_QUESTIONS = [
+    # (id, text, category, options, multi_select, phrases that mean "this was already asked")
+    (NFR_USERS_ID,
+     "How many registered users do you expect in the first 12 months after launch?",
+     "scale_performance", USERS_OPTIONS, False,
+     ("how many users", "expected users", "number of users", "user volume", "how many registered", "users do you expect", "how many people will use")),
+    (NFR_PEAK_ID,
+     "At the busiest times, roughly how many people will be using the product at the same moment?",
+     "scale_performance", PEAK_OPTIONS, False,
+     ("at the same time", "at the same moment", "concurrent", "peak")),
+    (NFR_AVAILABILITY_ID,
+     "How important is it that the product is available around the clock?",
+     "scale_performance", AVAILABILITY_OPTIONS, False,
+     ("uptime", "downtime", "around the clock", "24/7", "always available", "service availability")),
+    (NFR_SENSITIVITY_ID,
+     "What sensitive data will the product handle? (choose all that apply)",
+     "security", SENSITIVITY_OPTIONS, True,
+     ("sensitive data", "sensitive information", "what data will", "personal data will", "data will the product")),
+    (NFR_GEOGRAPHY_ID,
+     "Where will your users be located at launch?",
+     "security", GEOGRAPHY_OPTIONS, False,
+     ("where will your users", "launch geography", "which countries", "which country", "users be located", "target region", "target geograph")),
+]
+
+
+def _ensure_nfr_questions(questions: list[DiscoveryQuestion]) -> list[DiscoveryQuestion]:
+    """Adds any of the required scale/security questions the generated list does not already cover.
+    Placed after the generated questions and before the closing open-ended one."""
+    have_ids = {q.id for q in questions}
+    haystacks = [f"{q.category} {q.text}".lower() for q in questions]
+    added: list[DiscoveryQuestion] = []
+    for qid, text, category, options, multi, phrases in _NFR_QUESTIONS:
+        if qid in have_ids:
+            continue
+        if any(ph in h for h in haystacks for ph in phrases):
+            continue   # an equivalent question already exists
+        added.append(DiscoveryQuestion(id=qid, text=text, category=category, options=list(options), multi_select=multi))
+    if not added:
+        return questions
+    tail = [q for q in questions if q.id == ADDITIONAL_INFO_QUESTION_ID]
+    head = [q for q in questions if q.id != ADDITIONAL_INFO_QUESTION_ID]
+    return head + added + tail
+
+
 def generate_discovery_questions(context: ProjectContext) -> ProjectContext:
     log_agent_call(logger, context.project_id, "discovery_engine", "started", {"step": "generate_questions"})
     store = get_knowledge_store()
@@ -100,6 +181,9 @@ def generate_discovery_questions(context: ProjectContext) -> ProjectContext:
     for q in questions:
         if not q.options:
             q.options, q.multi_select = _infer_options(q.category, q.text)
+    # Scale, availability and data-sensitivity answers are needed for the system / security /
+    # scalability requirements — ask them even when the model did not think of them.
+    questions = _ensure_nfr_questions(questions)
     # Always finish with an open question, so the user can hand over anything the
     # generated questions did not cover (documents, constraints, integrations,
     # references, known requirements...). It is optional and free-text.
@@ -204,8 +288,10 @@ segments, core operations and workflow, monetization/pricing, every
 major functional area implied by the idea (e.g. search/discovery,
 onboarding, scheduling, payments, fulfilment, trust & safety, reviews,
 notifications, admin/operations — only the ones actually relevant to
-THIS idea), technical/platform requirements, competition, legal/
-compliance, growth plans, risks, and anything unique to THIS idea that
+THIS idea), technical/platform requirements (devices, integrations,
+expected number of users, peak usage, uptime expectations), competition
+(who the alternatives are and what would make this better), legal/
+compliance, data sensitivity, growth plans, risks, and anything unique to THIS idea that
 a generic checklist wouldn't surface.
 
 For each question, also propose 3-6 short tappable answer options (a few
@@ -255,10 +341,6 @@ Respond ONLY with JSON, no other text:
 
 def _mock_followups(context: ProjectContext) -> list[DiscoveryQuestion]:
     return [
-        DiscoveryQuestion(
-            id="mock_scale", text="Roughly how many users do you expect in the first 6 months?", category="scale",
-            options=["Under 100", "100–1,000", "1,000–10,000", "10,000+"],
-        ),
         DiscoveryQuestion(
             id="mock_platform", text="Web, mobile app, or both?", category="platform",
             options=["Web app", "Mobile app", "Both web & mobile", "Not sure yet"],

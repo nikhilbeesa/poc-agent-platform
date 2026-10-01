@@ -1,10 +1,15 @@
 """
-Artefact Export — fills the 5 Markdown templates with agent outputs.
+Artefact Export — fills the 6 Markdown templates with agent outputs.
 Deterministic — pure string substitution/formatting, no AI involved here.
 
-Produces exactly 5 documents:
+Produces exactly 6 documents:
+  feasibility_assessment.md  (advisory, independent — NOT part of the Design AI handoff),
   business_requirements.md, user_stories.md, prd.md,
   ux_product_flow_specification.md, ai_handoff_validation.md
+
+The BRD and PRD both render the shared system profile (expected scale, system, security,
+performance and scalability requirements) from system_profile.py, so the two documents always
+quote the same IDs and numbers.
 """
 
 import re
@@ -17,6 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import chunked as ch  # noqa: E402
 from context import AgentRole, Artefact, ProjectContext, ProjectStage  # noqa: E402
+import system_profile as sp  # noqa: E402
+from agents.feasibility import DIMENSIONS  # noqa: E402
 from logging_config import get_logger, log_agent_call  # noqa: E402
 
 TEMPLATE_DIR = Path(__file__).resolve().parent.parent / "artefact_templates"
@@ -73,6 +80,159 @@ def _table(headers: list, rows: list) -> str:
     return f"{header_row}\n{sep_row}\n{body}"
 
 
+
+# ---------------------------------------------------------------------------
+# Shared: system / security / scalability / performance profile + feasibility findings
+# Rendered into BOTH the BRD and the PRD from the same profile (same IDs, same numbers).
+# ---------------------------------------------------------------------------
+
+def _profile_tables(context: ProjectContext) -> dict:
+    prof = sp.profile_or_baseline(context)
+    av = prof["availability"]
+    scale = _table(["Parameter", "Value", "Basis"], [[r["parameter"], r["value"], r["basis"]] for r in prof["scale"]["rows"]])
+    scale_notes = ""
+    if prof["scale"]["assumptions"]:
+        scale_notes = "\n\n**Assumptions used for planning**\n" + _bullets(prof["scale"]["assumptions"])
+    return {
+        "summary": prof["summary"],
+        "scale": scale + scale_notes,
+        "availability": (f"- **Availability target:** {av['uptime_target']} (allowed downtime: {av['allowed_downtime']})\n"
+                         f"- **Recovery time objective (RTO):** {av['rto']}\n- **Recovery point objective (RPO):** {av['rpo']}\n"
+                         f"- **Basis:** {av['basis']}"),
+        "system": _table(["ID", "Category", "Requirement", "Priority", "Status"],
+                         [[r["id"], r["category"], r["requirement"], r["priority"], r["status"]] for r in prof["system_requirements"]]),
+        "security": _table(["ID", "Category", "Requirement", "How it is verified", "Priority", "Status"],
+                           [[r["id"], r["category"], r["requirement"], r.get("verification", ""), r["priority"], r["status"]] for r in prof["security_requirements"]]),
+        "performance": _table(["ID", "Metric", "Target", "Condition", "How it is measured", "Priority", "Status"],
+                              [[r["id"], r["metric"], r["target"], r.get("condition", ""), r.get("measurement", ""), r["priority"], r["status"]] for r in prof["performance_requirements"]]),
+        "scalability": _table(["ID", "Requirement", "Target", "Approach", "How it is verified", "Priority", "Status"],
+                              [[r["id"], r["requirement"], r["target"], r.get("approach", ""), r.get("verification", ""), r["priority"], r["status"]] for r in prof["scalability_requirements"]]),
+        "open_questions": prof["open_questions"],
+    }
+
+
+_STATUS_LEGEND = ("*Status: **Stated** = taken from your discovery answers; **Assumed — confirm** = a planning default because the question "
+                  "was not answered; **Derived** = calculated from those volumes; **Proposed — confirm** = good-practice requirement that "
+                  "needs your confirmation. Nothing marked Assumed or Proposed is a confirmed fact.*")
+
+
+def _system_profile_markdown(context: ProjectContext, include_security: bool) -> str:
+    t = _profile_tables(context)
+    out = (f"### Expected scale and usage\n\n{t['summary']}\n\n{t['scale']}\n\n{_STATUS_LEGEND}\n\n"
+           f"### Availability and recovery\n\n{t['availability']}\n\n"
+           f"### System requirements\n\n{t['system']}\n\n"
+           f"### Performance requirements\n\n{t['performance']}\n\n"
+           f"### Scalability requirements\n\n{t['scalability']}")
+    if include_security:
+        out += f"\n\n### Security requirements\n\n{t['security']}"
+    return out
+
+
+def _feasibility_output(context: ProjectContext) -> dict:
+    c = context.get_contribution(AgentRole.FEASIBILITY_ASSESSMENT)
+    return c.output if c else {}
+
+
+def _competitive_positioning_markdown(context: ProjectContext) -> str:
+    """Short summary for the BRD/PRD; the full analysis lives in the Feasibility & Competitive Assessment."""
+    o = _feasibility_output(context)
+    if not o:
+        return ""
+    lines = []
+    if o.get("positioning_statement"):
+        lines.append(f"**Competitive positioning:** {o['positioning_statement']}")
+    diffs = o.get("differentiators") or []
+    if diffs:
+        lines.append("**Key differentiators:**\n" + _bullets(
+            f"{d.get('differentiator', '')} — {d.get('defensibility', '')} defensibility" for d in diffs[:5]))
+    comps = o.get("competitors") or []
+    if comps:
+        lines.append("**Main alternatives:** " + "; ".join(f"{c.get('name', '')} ({c.get('type', '')})" for c in comps[:6]))
+    lines.append(f"*Feasibility verdict: **{o.get('verdict', 'n/a')}**. See the Feasibility & Competitive Assessment document for the full analysis.*")
+    return "\n\n".join(lines)
+
+
+def _feasibility_risk_rows(context: ProjectContext) -> list[dict]:
+    """Critical/major flaws from the feasibility assessment, shaped as BRD risk-register entries."""
+    o = _feasibility_output(context)
+    rows = []
+    for f in o.get("flaws") or []:
+        if f.get("severity") not in ("Critical", "Major"):
+            continue
+        critical = f["severity"] == "Critical"
+        rows.append({
+            "risk": f"{f.get('flaw', '')} (feasibility {f.get('id', '')})", "category": f"Feasibility — {f.get('area', '')}",
+            "likelihood": "Medium", "severity": "High" if critical else "Medium",
+            "rating": "High" if critical else "Medium", "score": 6 if critical else 4,
+            "owner": "Product owner", "trigger": "Raised by the feasibility assessment",
+            "consequence": f.get("why_it_matters", ""), "mitigation": f.get("recommended_change", ""),
+        })
+    return rows
+
+
+
+# ---------------------------------------------------------------------------
+# 0. Feasibility & Competitive Assessment (runs first; advisory)
+# ---------------------------------------------------------------------------
+
+def export_feasibility_assessment(context: ProjectContext) -> Artefact:
+    c = context.get_contribution(AgentRole.FEASIBILITY_ASSESSMENT)
+    o = c.output if c else {}
+    template = (TEMPLATE_DIR / "feasibility_assessment.md").read_text()
+    counts = o.get("counts", {})
+
+    verdict_meaning = {
+        "GO": "No blocking issues were found. Proceed, and validate the assumptions with real users.",
+        "GO WITH CHANGES": "The idea is workable, but the flaws below should be addressed first.",
+        "RETHINK": "The idea has serious problems as described and should be reworked before more effort is spent.",
+    }
+    verdict = o.get("verdict", "NOT ASSESSED")
+    verdict_block = (
+        f"**Verdict: {verdict}**  \n*{verdict_meaning.get(verdict, '')}*\n\n{o.get('verdict_rationale', '')}\n\n"
+        f"- **Critical flaws:** {counts.get('critical', 0)}\n- **Major flaws:** {counts.get('major', 0)}\n"
+        f"- **Minor flaws:** {counts.get('minor', 0)}\n- **Assessor confidence:** {o.get('confidence', 'n/a')}\n\n"
+        "*The verdict is calculated from the severity of the flaws and the feasibility ratings; it cannot be more optimistic than they are.*"
+    )
+
+    competitors = _table(["Competitor / alternative", "Type", "What they do", "Strengths", "Weaknesses", "Pricing", "Threat"],
+                         [[c_.get("name", ""), c_.get("type", ""), c_.get("what_they_do", ""), c_.get("strengths", ""),
+                           c_.get("weaknesses", ""), c_.get("pricing_model", ""), c_.get("threat_level", "")] for c_ in o.get("competitors", [])])
+    differentiators = _table(["Differentiator", "Description", "Competitors lacking it", "Defensibility", "Risk if copied"],
+                             [[d.get("differentiator", ""), d.get("description", ""), d.get("competitors_lacking", ""),
+                               d.get("defensibility", ""), d.get("risk_if_copied", "")] for d in o.get("differentiators", [])])
+    labels = dict(DIMENSIONS)
+    feasibility = _table(["Dimension", "Rating", "Assessment"],
+                         [[labels.get(k, k), v.get("rating", ""), v.get("assessment", "")] for k, v in (o.get("feasibility") or {}).items()])
+    flaws = _table(["ID", "Severity", "Area", "Flaw", "Why it matters", "Recommended change"],
+                   [[f.get("id", ""), f.get("severity", ""), f.get("area", ""), f.get("flaw", ""), f.get("why_it_matters", ""),
+                     f.get("recommended_change", "")] for f in o.get("flaws", [])])
+    assumptions = _table(["Assumption", "How to validate it", "Risk if wrong"],
+                         [[a.get("assumption", ""), a.get("how_to_validate", ""), a.get("risk_if_wrong", "")] for a in o.get("assumptions_to_validate", [])])
+    top_changes = (o.get("recommended_changes") or [])[:5]
+
+    prof = sp.profile_or_baseline(context)
+    scale_outlook = (f"{prof['summary']}\n\n*The full system, security, performance and scalability requirements are in the Business "
+                     "Requirements Document (Non-Functional Requirements) and the PRD (sections 14-16).*")
+
+    values = {
+        "project_name": _project_name(context), "generated_date": _date(),
+        "verdict_block": verdict_block, "evidence_note": o.get("evidence_note", "Not specified"),
+        "headline_flaws": o.get("headline_flaws") or ["No critical or major flaws identified."],
+        "top_changes": top_changes or ["None."],
+        "idea_summary": o.get("idea_summary", context.business_idea_raw), "target_market": o.get("target_market", "Not specified"),
+        "demand_signals": o.get("demand_signals", []), "market_risks": o.get("market_risks", []),
+        "competitors": competitors, "competitive_gaps": o.get("competitive_gaps", []),
+        "positioning_statement": o.get("positioning_statement", "Not specified"), "differentiators": differentiators,
+        "feasibility": feasibility, "flaws": flaws, "assumptions_to_validate": assumptions,
+        "recommended_changes": o.get("recommended_changes", []), "must_confirm_before_build": o.get("must_confirm_before_build") or ["All scale, availability and data-sensitivity planning inputs were provided in the discovery answers."],
+        "scale_outlook": scale_outlook,
+    }
+    content = _fill_template(template, values)
+    return Artefact(id=str(uuid.uuid4()), type="feasibility_assessment",
+                    title=f"Feasibility & Competitive Assessment — {values['project_name']}",
+                    content_markdown=content, generated_by=AgentRole.FEASIBILITY_ASSESSMENT)
+
+
 # ---------------------------------------------------------------------------
 # 1. Business Requirements Document
 # ---------------------------------------------------------------------------
@@ -111,6 +271,10 @@ def export_business_requirements(context: ProjectContext) -> Artefact:
         for key, label in [("vision", "Product vision"), ("future_state", "Desired future state"),
                              ("long_term_direction", "Long-term business direction"), ("value_proposition", "Core value proposition")]
     )
+
+    positioning = _competitive_positioning_markdown(context)
+    if positioning:
+        product_vision += "\n\n" + positioning
 
     kpis = _table(["KPI", "Definition", "Target", "Measurement Method"],
                   [[k.get("kpi", ""), k.get("definition", ""), k.get("target", "TBD"), k.get("measurement", "")] for k in o.get("kpis", [])])
@@ -167,6 +331,8 @@ def export_business_requirements(context: ProjectContext) -> Artefact:
         for n in o.get("nfrs", [])
     ) or "*None specified.*"
     nfrs = f"{nfrs}\n\n**NFR detail:**\n\n{nfr_details}"
+    # scale, availability, system, performance and scalability requirements (shared with the PRD)
+    nfrs += "\n\n" + _system_profile_markdown(context, include_security=False)
 
     def _render_entity(e: dict) -> str:
         return f"**{e.get('entity', '?')}:**\n" + _bullets(e.get("fields", []))
@@ -191,6 +357,7 @@ def export_business_requirements(context: ProjectContext) -> Artefact:
     security_requirements = _bullets(o.get("security_requirements", []))
     threats = _table(["Threat", "Example Control"], [[t.get("threat", ""), t.get("control", "")] for t in o.get("threats", [])])
     security_requirements = f"{security_requirements}\n\n**Threats & controls:**\n\n{threats}"
+    security_requirements += f"\n\n### Security requirements (SEC)\n\n{_profile_tables(context)['security']}"
 
     integrations = _table(["Integration", "Purpose", "Key Requirements"],
                            [[i.get("integration", ""), i.get("purpose", ""), i.get("requirements", "")] for i in o.get("integrations", [])])
@@ -234,13 +401,15 @@ def export_business_requirements(context: ProjectContext) -> Artefact:
             + f"\n\n```mermaid\n{d.get('mermaid', '')}\n```" for d in diagrams
         )
 
+    all_risks = list(o.get("risks", [])) + _feasibility_risk_rows(context)
+    all_risks.sort(key=lambda r: -(r.get("score") or 0))          # highest-rated first (stable for unscored)
     risk_rows = [
         [r.get("risk", ""), r.get("category", "") or "-", r.get("likelihood") or "Not assessed",
          r.get("severity") or r.get("impact", "") or "Not assessed",
          f"{r.get('rating', 'Not assessed')} ({r.get('score', 0)})" if r.get("score") else "Not assessed",
          r.get("owner", "") or "Unassigned", r.get("trigger", "") or "-",
          r.get("consequence", "") or r.get("impact", ""), r.get("mitigation", "")]
-        for r in o.get("risks", [])
+        for r in all_risks
     ]
     risks_section = (
         "*Rating = Likelihood x Severity (Low=1, Medium=2, High=3): 6-9 High, 3-4 Medium, 1-2 Low. "
@@ -635,10 +804,19 @@ def export_prd(context: ProjectContext) -> Artefact:
     ai_features_text = "\n".join(_render_ai_feature(f) for f in o.get("ai_feature_specifications", [])) or \
         "*This product has no AI-powered features per the business idea and discovery answers.*"
 
+    t = _profile_tables(context)
+    positioning = _competitive_positioning_markdown(context)
+    nfr_list = o.get("non_functional_requirements", [])
+    nfr_text = (_bullets(nfr_list) if nfr_list else "*None specified.*")
+    nfr_text += (f"\n\n### Expected scale and usage\n\n{t['summary']}\n\n{t['scale']}\n\n{_STATUS_LEGEND}\n\n"
+                 f"### Availability and recovery\n\n{t['availability']}\n\n"
+                 f"### Performance requirements\n\n{t['performance']}\n\n"
+                 f"### Scalability requirements\n\n{t['scalability']}")
+
     values = {
         "project_name": _project_name(context),
         "generated_date": _date(),
-        "product_overview": o.get("product_overview", "Not specified"),
+        "product_overview": o.get("product_overview", "Not specified") + (("\n\n" + positioning) if positioning else ""),
         "product_goals": o.get("product_goals", []),
         "target_users": o.get("target_users", "Not specified"),
         "personas": personas_text,
@@ -653,9 +831,11 @@ def export_prd(context: ProjectContext) -> Artefact:
         "validation_and_error_handling": o.get("validation_and_error_handling", "Not specified"),
         "state_behaviors": _kv_block(o.get("state_behaviors", {})),
         "audit_and_versioning": o.get("audit_and_versioning", "Not specified"),
-        "non_functional_requirements": o.get("non_functional_requirements", []),
-        "technical_integration_constraints": _kv_block_with_notes(o.get("technical_integration_constraints", {}), "capability_technical_notes", "Per-capability technical notes"),
-        "security_privacy_access_constraints": _kv_block_with_notes(o.get("security_privacy_access_constraints", {}), "capability_security_notes", "Per-capability security notes"),
+        "non_functional_requirements": nfr_text,
+        "technical_integration_constraints": _kv_block_with_notes(o.get("technical_integration_constraints", {}), "capability_technical_notes", "Per-capability technical notes")
+            + f"\n\n### System requirements\n\n{t['system']}",
+        "security_privacy_access_constraints": _kv_block_with_notes(o.get("security_privacy_access_constraints", {}), "capability_security_notes", "Per-capability security notes")
+            + f"\n\n### Security requirements\n\n{t['security']}",
         "ai_feature_specifications": ai_features_text,
         "mvp_scope": o.get("mvp_scope", []) or ["Not specified"],
         "phase_2_scope": o.get("phase_2_scope", []) or ["None specified"],
@@ -832,9 +1012,19 @@ def export_ai_handoff_validation(context: ProjectContext) -> Artefact:
     gap_capabilities_text = _bullets(gap_caps) if gap_caps else "- None — every capability is fully covered."
     unmapped_text = _bullets(o.get("unmapped_idea_capabilities", [])) if o.get("unmapped_idea_capabilities") else "- None."
 
+    fo = _feasibility_output(context)
+    if fo:
+        feasibility_check = (f"**Feasibility verdict: {fo.get('verdict', 'n/a')}** — {fo.get('verdict_rationale', '')}\n\n"
+                             + ("**Flaws the specification must account for:**\n" + _bullets(fo.get("headline_flaws") or []) + "\n\n"
+                                if fo.get("headline_flaws") else "")
+                             + "*The verdict is advisory and does not change the handoff status above. See the Feasibility & Competitive Assessment for detail.*")
+    else:
+        feasibility_check = "*No feasibility assessment was run for this project.*"
+
     values = {
         "project_name": _project_name(context),
         "generated_date": _date(),
+        "feasibility_check": feasibility_check,
         "final_handoff_status": o.get("final_handoff_status", "UNKNOWN"),
         "recommendation": o.get("recommendation", "Not specified"),
         "readiness_summary": readiness_summary,
@@ -861,6 +1051,7 @@ def export_all_artefacts(context: ProjectContext) -> ProjectContext:
     log_agent_call(logger, context.project_id, "export", "started")
 
     artefacts = [
+        export_feasibility_assessment(context),
         export_business_requirements(context),
         export_user_stories(context),
         export_prd(context),

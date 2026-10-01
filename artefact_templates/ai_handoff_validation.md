@@ -13,6 +13,10 @@
 
 {{readiness_summary}}
 
+## Feasibility Check
+
+{{feasibility_check}}
+
 ## Capability Coverage Matrix
 
 Every major capability identified in the Business Requirements is checked end-to-end across all four upstream documents. A capability must be ✅ Complete (or N/A with a documented reason) in every column to be considered done — ⚠️ Partial or ❌ Missing means real, unresolved work remains in that document.

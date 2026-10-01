@@ -1,6 +1,6 @@
 """
 End-to-End Test — runs the full pipeline across several sample ideas and
-checks the resulting 5-document package + AI Handoff Validation status.
+checks the resulting 6-document package + AI Handoff Validation status.
 """
 
 import sys
@@ -12,7 +12,7 @@ from discovery import is_discovery_complete, run_discovery  # noqa: E402
 from export import export_all_artefacts, save_artefacts_to_disk  # noqa: E402
 from orchestrator import AGENT_PIPELINE, run_full_pipeline  # noqa: E402
 
-EXPECTED_ARTEFACT_COUNT = 5  # business_requirements, user_stories, prd, ux_product_flow_specification, ai_handoff_validation
+EXPECTED_ARTEFACT_COUNT = 6  # feasibility_assessment, business_requirements, user_stories, prd, ux_product_flow_specification, ai_handoff_validation
 
 SAMPLE_IDEAS = [
     "An app where people can book home cleaners for one-off or recurring visits",
@@ -73,7 +73,7 @@ def main() -> None:
             print(f"  agent contributions: {r['contributions']}/{r['expected_agents']}")
             print(f"  artefacts exported: {r['artefacts']}/{EXPECTED_ARTEFACT_COUNT}")
             print(f"  AI Handoff Validation status: {r['status']}" + (f"  ({len(r['conflicts'])} conflict(s))" if r["conflicts"] else ""))
-            print(f"  capability coverage: {r['coverage_pct']}%  |  genuinely COMPLETE (not just 5 files): {r['genuinely_complete']}  |  gap-correction rounds used: {r['gap_summary']['rounds_used']}")
+            print(f"  capability coverage: {r['coverage_pct']}%  |  genuinely COMPLETE (not just 6 files): {r['genuinely_complete']}  |  gap-correction rounds used: {r['gap_summary']['rounds_used']}")
             print(f"  status: {'PASS' if passed else 'PARTIAL'}")
         except Exception as e:
             r = {"idea": idea, "error": str(e)}
@@ -90,7 +90,7 @@ def main() -> None:
     print(f"\n1. Guided discovery completes: {'PASS' if c1 else 'FAIL'} ({len(successful)}/{len(SAMPLE_IDEAS)})")
 
     c2 = all(r["artefacts"] == EXPECTED_ARTEFACT_COUNT for r in successful) and len(successful) > 0
-    print(f"2. Exactly 5 documents generated every run: {'PASS' if c2 else 'FAIL'}")
+    print(f"2. Exactly 6 documents generated every run: {'PASS' if c2 else 'FAIL'}")
 
     ready_count = sum(1 for r in successful if r["status"] == "READY FOR DESIGN AGENT")
     warn_count = sum(1 for r in successful if r["status"] == "READY WITH WARNINGS")

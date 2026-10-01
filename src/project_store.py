@@ -86,7 +86,20 @@ class SupabaseProjectStore:
         if record.get("created_at"):
             payload["created_at"] = record["created_at"]
         headers = {**self._headers, "Prefer": "resolution=merge-duplicates"}
-        resp = requests.post(self._endpoint(), headers=headers, json=payload, timeout=15)
+        # Feasibility summary + shared system profile live in two newer columns (see deploy/supabase_schema.sql).
+        # If the database has not been migrated yet, Supabase answers 400 for the unknown columns — in that case
+        # save WITHOUT them instead of failing, so an un-migrated deployment keeps working (the profile is
+        # rebuilt deterministically from the stored answers when a project is reopened).
+        extra = {"system_profile": record.get("system_profile"), "feasibility": record.get("feasibility")}
+        if getattr(self, "_warned_missing_columns", False):
+            extra = {}          # already known to be missing — don't waste a round trip each save
+        resp = requests.post(self._endpoint(), headers=headers, json={**payload, **extra}, timeout=15)
+        if extra and resp.status_code == 400 and any(k in resp.text for k in extra):
+            if not getattr(self, "_warned_missing_columns", False):
+                logger.warning("Supabase `projects` table lacks system_profile/feasibility columns — run the latest "
+                               "deploy/supabase_schema.sql. Saving without them.")
+                self._warned_missing_columns = True
+            resp = requests.post(self._endpoint(), headers=headers, json=payload, timeout=15)
         resp.raise_for_status()
 
     def delete(self, project_id: str) -> None:

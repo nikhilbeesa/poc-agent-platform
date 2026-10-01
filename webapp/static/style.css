@@ -246,6 +246,19 @@ textarea:focus, input[type="text"]:focus, .btn:focus-visible, .chip:focus-visibl
 .qa-verdict.status-not-ready { border-color: var(--red); color: var(--red); }
 .qa-verdict ul { margin: 8px 0 0; padding-left: 18px; color: var(--text-dim); }
 
+/* Feasibility check result — shown right after the first agent, before the specification agents run */
+.feas-verdict { margin-top: 16px; padding: 12px 14px; border: 1px solid var(--line-bright); font-family: var(--mono); font-size: 12.5px; }
+.feas-verdict.go { border-color: var(--green); }
+.feas-verdict.go strong { color: var(--green); }
+.feas-verdict.changes { border-color: var(--amber); }
+.feas-verdict.changes strong { color: var(--amber); }
+.feas-verdict.rethink { border-color: var(--red); }
+.feas-verdict.rethink strong { color: var(--red); }
+.feas-verdict .feas-counts { color: var(--text-dim); }
+.feas-verdict .feas-why { margin-top: 8px; color: var(--text); font-family: var(--sans, inherit); }
+.feas-verdict ul { margin: 8px 0 0; padding-left: 18px; color: var(--text-dim); }
+.feas-verdict .feas-foot { margin-top: 8px; color: var(--text-dim); font-size: 11.5px; }
+
 #btn-export { margin-top: 16px; }
 #btn-resolve-issues { margin-top: 16px; border-color: var(--amber); color: var(--amber); }
 #btn-resolve-issues:hover:not(:disabled) { background: var(--amber); color: var(--bg); }

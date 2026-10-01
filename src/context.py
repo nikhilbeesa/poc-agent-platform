@@ -23,11 +23,12 @@ class ProjectStage(str, Enum):
 
 
 class AgentRole(str, Enum):
+    FEASIBILITY_ASSESSMENT = "feasibility_assessment"   # runs FIRST, right after discovery — "will this idea work?" + competitors
     BUSINESS_ANALYST = "business_analyst"
     PRODUCT_MANAGER = "product_manager"
     PRODUCT_REQUIREMENTS = "product_requirements"      # PRD agent — absorbs architecture + security context
     UX_PRODUCT_FLOW = "ux_product_flow"                 # screens, flows, states — primary handoff to Design AI Agent
-    AI_HANDOFF_VALIDATION = "ai_handoff_validation"     # final agent — validates the 5-doc package as one unit
+    AI_HANDOFF_VALIDATION = "ai_handoff_validation"     # final agent — validates the 4-document specification package as one unit
 
 
 class QuestionStatus(str, Enum):
@@ -104,6 +105,11 @@ class ProjectContext(BaseModel):
     locked_decisions: list[str] = Field(default_factory=list)
 
     artefacts: list[Artefact] = Field(default_factory=list)
+
+    # The shared scale / system / security / performance profile (see system_profile.py). Built once,
+    # early, from the discovery answers and then rendered into BOTH the BRD and the PRD, so the two
+    # documents can never quote different numbers. None until the first agent run builds it.
+    system_profile: Optional[dict] = None
 
     def add_answer(self, question_id: str, answer: str) -> None:
         for q in self.discovery_questions:

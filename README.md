@@ -1,8 +1,10 @@
 # AI Product Specification Package — POC
 
 A working proof of concept: capture a business idea, run guided discovery,
-hand it to 5 specialist AI agents, and export a **5-document Product
-Specification Package** — ready to hand off to an independent, external
+first check whether the idea will work (competitors, differentiators, flaws), hand it to
+5 more specialist AI agents, and export a **6-document package**: an independent
+**Feasibility & Competitive Assessment** plus the **5-document Product Specification
+Package** — ready to hand off to an independent, external
 Design AI Agent that generates UI/UX designs from these documents alone.
 
 ## Scope
@@ -22,7 +24,8 @@ poc-agent-platform/
 ├── render.yaml                          # Render deployment blueprint
 ├── deploy/
 │   └── supabase_schema.sql              # DB schema (domains + projects tables)
-├── artefact_templates/                  # Markdown templates for the 5 documents
+├── artefact_templates/                  # Markdown templates for the 6 documents
+│   ├── feasibility_assessment.md
 │   ├── business_requirements.md
 │   ├── user_stories.md
 │   ├── prd.md
@@ -39,15 +42,18 @@ poc-agent-platform/
     ├── context.py                       # Shared "notebook" every agent reads/writes
     ├── logging_config.py                # Structured logging for every agent call
     ├── llm_client.py                    # Provider-agnostic LLM wrapper (Anthropic/Gemini) + retries
+    ├── system_profile.py                # Shared scale / system / security / performance profile (one source of truth)
     ├── discovery.py                     # Idea intake, domain classification, dynamic questions
-    ├── orchestrator.py                  # Sequences the 5 agents
-    ├── export.py                        # Fills agent output into the 5 templates
+    ├── orchestrator.py                  # Sequences the 6 agents (feasibility first)
+    ├── export.py                        # Fills agent output into the 6 templates
     ├── project_store.py                 # Persists completed packages (Dashboard/History)
     ├── demo.py                          # Narrated terminal demo script
     ├── test_discovery_samples.py
     ├── test_end_to_end.py               # Full pipeline test + acceptance criteria check
+    ├── test_feasibility_and_profile.py  # Feasibility verdict rules, system profile, BRD/PRD consistency, live-mode parsing
     ├── agents/
     │   ├── base.py                      # Shared contract every agent follows
+    │   ├── feasibility.py               # -> Feasibility & Competitive Assessment (runs FIRST)
     │   ├── business_analyst.py          # -> Business Requirements Document
     │   ├── product_manager.py           # -> User Stories Document
     │   ├── product_requirements.py      # -> PRD (absorbs architecture + security context)
@@ -59,15 +65,55 @@ poc-agent-platform/
         └── learn.py                     # Learns + persists new domains automatically
 ```
 
-## The 5 agents → 5 documents
+## The 6 agents → 6 documents
 
 | # | Agent | Document | Answers | Depends on |
 |---|---|---|---|---|
-| 1 | Business Analyst | `business_requirements.md` | Why are we building this? | — (runs first) |
+| 0 | **Feasibility Assessment** | `feasibility_assessment.md` | Will this idea work? Who else does it? What is wrong with it? | Discovery answers only — **runs first** |
+| 1 | Business Analyst | `business_requirements.md` | Why are we building this? | Feasibility findings |
 | 2 | Product Manager | `user_stories.md` | Who needs to do what, and why? | Business Analyst |
 | 3 | Product Requirements | `prd.md` | What should the product do? | Business Analyst + Product Manager |
 | 4 | UX / Product Flow | `ux_product_flow_specification.md` | How should users experience it? | Product Manager + PRD |
-| 5 | AI Handoff Validation | `ai_handoff_validation.md` | Is the package ready to hand off? | All 4 — runs last |
+| 5 | AI Handoff Validation | `ai_handoff_validation.md` | Is the specification package ready to hand off? | Documents 1–4 — runs last |
+
+The feasibility document is **advisory and independent**: it is not part of the Design AI handoff
+package, it never reads or edits the BRD/PRD, and the automatic gap-correction loop never re-runs it.
+
+### Feasibility & Competitive Assessment
+
+Runs right after discovery so a weak idea is caught *before* five agents write hundreds of pages.
+It contains the competitor landscape, competitive advantage / differentiators (with defensibility),
+a five-dimension feasibility rating (desirability, technical, operational, financial, legal), a
+numbered list of flaws in the current idea (Critical / Major / Minor, each with a recommended
+change), assumptions to validate, and a verdict: **GO**, **GO WITH CHANGES** or **RETHINK**.
+
+- The verdict is **computed in code** from flaw severity and ratings. An optimistic model reply cannot
+  turn a critical flaw into a GO; the model can only make the verdict *more* cautious.
+- On **RETHINK** the UI stops and asks before continuing ("Continue anyway" resumes).
+- Critical/major flaws flow into the BRD risk register; the positioning summary appears in the BRD and
+  PRD; the validation report shows the verdict; and later agents are given the findings in their prompts.
+- **Evidence honesty:** in live mode competitors come from the AI model's training knowledge and the
+  document says so (verify before relying on it). In demo (mock) mode competitors are listed as
+  categories — never invented by name.
+
+### System, security, scalability & performance requirements
+
+Five required questions are always asked in discovery (expected users in 12 months, peak concurrent
+users, availability, sensitive data, launch geography) because these numbers cannot be derived from the
+idea. `system_profile.py` turns the answers into one profile that both the **BRD** (Non-Functional
+Requirements, Security Requirements) and the **PRD** (sections 14–16) render — same IDs, same numbers:
+
+| IDs | Content |
+|---|---|
+| Expected scale table | Stated users/peak/availability, derived design capacity and request rate |
+| `SYS-###` | Platform, hosting, architecture, storage, environments, backup/DR, monitoring, integrations |
+| `SEC-###` | Authentication, authorization, encryption, audit, privacy/compliance, plus controls triggered by the data you handle (payment, health, children, identity, location) |
+| `PERF-###` | Response-time, throughput and error-rate targets tied to the design capacity |
+| `SCL-###` | Horizontal scaling, headroom, user/data growth, graceful degradation, load testing |
+
+Every row carries a status: **Stated** (from your answers), **Assumed — confirm** (a planning default
+because you did not answer), **Derived**, or **Proposed — confirm**. Nothing assumed is presented as fact,
+and unanswered inputs are listed as open questions.
 
 **No separate Architecture, Security, or QA Test Strategy documents are
 generated.** Architecture and security context that affects product
@@ -239,8 +285,8 @@ Cost note: live runs make roughly 4 extra requests (smaller story batches plus o
 Sheet 04 offers each document as a Word file (`.docx`) or as the original Markdown:
 
 - **Download this document (Word .docx)** — the document shown in the viewer.
-- **Download all 5 (Word .docx, zipped)** — one `.zip` with five `.docx` files.
-- **.md / All 5 .md (.zip)** — the original Markdown, unchanged.
+- **Download all documents (Word .docx, zipped)** — one `.zip` with one `.docx` per document.
+- **.md / All .md (.zip)** — the original Markdown, unchanged.
 
 The conversion runs entirely in the browser (`webapp/static/export.js`) — there is no server
 round-trip and no extra dependency. Headings, lists, bold/italic/code, links and tables are

@@ -253,11 +253,21 @@ def tag(task: str, units: Iterable[str] = ()) -> str:
 
 def idea_block(context) -> str:
     answered = "\n".join(f"- {q.text} -> {q.answer}" for q in context.discovery_questions if q.answer)
-    return (
+    text = (
         f'Business idea: "{context.business_idea_raw}"\n'
         f"Domain: {context.domain_classification}\n"
         f"Answered discovery questions:\n{answered or '- (none)'}\n"
     )
+    # Every live agent builds its prompts from this block, so adding the shared planning targets
+    # (expected users, peak load, availability...) and the feasibility findings here means all
+    # documents are written against the same numbers and take the known risks into account.
+    try:
+        import system_profile as _sp
+        from agents.feasibility import findings_block as _findings
+        extra = _sp.prompt_block(context) + _findings(context)
+    except Exception:  # noqa: BLE001 — never let an optional context block break generation
+        extra = ""
+    return text + ("\n" + extra if extra else "")
 
 
 def locked_block(context) -> str:

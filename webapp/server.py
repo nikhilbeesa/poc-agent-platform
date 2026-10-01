@@ -1,6 +1,7 @@
 """
 Local/Hosted Web Demo Server — thin Flask API over the pipeline
-(discovery, 5 agents, export of the 5-document package).
+(discovery, 6 agents — feasibility check first, then the 4 specification agents and the
+handoff validation — and export of the 6-document package).
 """
 
 import os
@@ -50,6 +51,7 @@ DEMO_DELAY = 0.5
 META: dict = {}
 
 _ROLE_BY_ARTEFACT_TYPE = {
+    "feasibility_assessment": AgentRole.FEASIBILITY_ASSESSMENT,
     "business_requirements": AgentRole.BUSINESS_ANALYST,
     "user_stories": AgentRole.PRODUCT_MANAGER,
     "prd": AgentRole.PRODUCT_REQUIREMENTS,
@@ -64,6 +66,17 @@ def _question_dicts(ctx):
          "multi_select": q.multi_select, "answer": q.answer}
         for q in ctx.discovery_questions
     ]
+
+
+def _feasibility_summary(ctx):
+    """The small slice of the feasibility assessment the UI shows right after it runs (and on reopen)."""
+    c = ctx.get_contribution(AgentRole.FEASIBILITY_ASSESSMENT)
+    if not c:
+        return None
+    o = c.output
+    return {"verdict": o.get("verdict"), "rationale": o.get("verdict_rationale"), "confidence": o.get("confidence"),
+            "counts": o.get("counts"), "headline_flaws": o.get("headline_flaws") or [],
+            "recommended_changes": (o.get("recommended_changes") or [])[:3]}
 
 
 def _record_from_ctx(ctx) -> dict:
@@ -87,6 +100,8 @@ def _record_from_ctx(ctx) -> dict:
         "status": "complete" if ctx.artefacts else "draft",
         "handoff_status": handoff_status,
         "consistency_notes": ctx.consistency_notes,
+        "system_profile": ctx.system_profile,
+        "feasibility": _feasibility_summary(ctx) or meta.get("feasibility"),
         "created_at": ctx.created_at.isoformat(),
         "questions": _question_dicts(ctx),
         "agent_log": agent_log,
@@ -126,13 +141,15 @@ def _ctx_from_record(rec: dict) -> ProjectContext:
     ctx.discovery_questions = [DiscoveryQuestion(**{k: q.get(k) for k in ("id", "text", "category", "status", "answer", "options", "multi_select") if q.get(k) is not None})
                                for q in (rec.get("questions") or [])]
     ctx.consistency_notes = list(rec.get("consistency_notes") or [])
+    ctx.system_profile = rec.get("system_profile") or None
     ctx.artefacts = [
         Artefact(id=f"{rec['id']}-{a.get('type')}", type=a.get("type", ""), title=a.get("title", ""),
                  content_markdown=a.get("content_markdown", ""),
                  generated_by=_ROLE_BY_ARTEFACT_TYPE.get(a.get("type"), AgentRole.AI_HANDOFF_VALIDATION))
         for a in (rec.get("artefacts") or [])
     ]
-    META[rec["id"]] = {"agent_log": rec.get("agent_log") or [], "handoff_status": rec.get("handoff_status")}
+    META[rec["id"]] = {"agent_log": rec.get("agent_log") or [], "handoff_status": rec.get("handoff_status"),
+                       "feasibility": rec.get("feasibility")}
     return ctx
 
 
@@ -162,6 +179,7 @@ def _run_maybe_async(project_id, work):
 
 
 AGENT_META = [
+    {"role": "feasibility_assessment", "label": "Feasibility Check", "note": "will it work? competitors"},
     {"role": "business_analyst", "label": "Business Analyst", "note": "business requirements"},
     {"role": "product_manager", "label": "Product Manager", "note": "user stories"},
     {"role": "product_requirements", "label": "Product Requirements", "note": "PRD"},
@@ -274,6 +292,7 @@ def run_agent(project_id, index):
         ctx.consistency_notes = []
         ctx.resolution_notes = []
         ctx.locked_decisions = []
+        ctx.system_profile = None   # rebuilt from the (possibly edited) answers by the first agent
         ctx.stage = ProjectStage.AGENT_PROCESSING
     if index != len(ctx.agent_contributions):
         return jsonify({"error": f"agents must run in order — expected index {len(ctx.agent_contributions)}"}), 400
@@ -295,6 +314,7 @@ def run_agent(project_id, index):
             # content agents' outputs run to megabytes at full depth
             "output": contribution.output if contribution.agent == AgentRole.AI_HANDOFF_VALIDATION else {},
             "consistency_notes": ctx.consistency_notes if contribution.agent == AgentRole.AI_HANDOFF_VALIDATION else [],
+            "feasibility": _feasibility_summary(ctx) if contribution.agent == AgentRole.FEASIBILITY_ASSESSMENT else None,
         }
 
     return _run_maybe_async(project_id, work)
@@ -322,10 +342,11 @@ def export(project_id):
     # stage is the authoritative completeness gate: COMPLETE only when the
     # AI Handoff Validation agent's deterministic-matrix-backed verdict is
     # genuinely clean (see orchestrator.run_gap_correction_loop / export.py).
-    # 5 documents existing is necessary but never sufficient on its own —
+    # The documents existing is necessary but never sufficient on its own —
     # callers should check "stage", not just that this call returned 200.
     return jsonify({
         "stage": ctx.stage.value,
+        "feasibility": _feasibility_summary(ctx),
         "is_complete": ctx.stage.value == "complete",
         "handoff_status": handoff_status,
         "capability_summary": capability_summary,
@@ -341,7 +362,7 @@ def export(project_id):
 def resolve_issues(project_id):
     """Re-runs exactly the agent(s) implicated by the latest AI Handoff
     Validation's conflicts/missing-information (plus anything downstream
-    of them), re-validates, and regenerates the 5 documents so the
+    of them), re-validates, and regenerates the specification documents so the
     person gets a corrected package rather than just an updated warning
     list."""
     ctx = _get_ctx(project_id)
@@ -401,6 +422,7 @@ def project_session(project_id):
         "consistency_notes": rec.get("consistency_notes") or [],
         "created_at": rec.get("created_at"),
         "agents_running": running,
+        "feasibility": rec.get("feasibility"),
         "questions": _question_dicts(ctx),
         "agent_log": rec.get("agent_log") or [],
         "artefacts": rec.get("artefacts") or [],

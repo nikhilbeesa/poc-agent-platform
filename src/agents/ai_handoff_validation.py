@@ -202,7 +202,7 @@ class AIHandoffValidationAgent(BaseAgent):
         )
         unmapped_lines = "\n".join(f"- {c}" for c in matrix["unmapped_idea_capabilities"]) or "- None"
 
-        return f"""You are validating a 5-document product specification
+        return f"""You are validating a product specification package
 package before it is handed off to an INDEPENDENT, EXTERNAL Design AI
 Agent that will generate UI/UX designs from these documents alone — it
 will have no access to this conversation or any other context.
@@ -406,7 +406,7 @@ Respond ONLY with JSON in exactly this shape:
             status = "READY FOR DESIGN AGENT"
 
         return {
-            "summary": f"Validated the 5-document package: {len(conflicts)} conflict(s), {len(missing)} missing item(s) found, {matrix['totals']['coverage_percentage']}% capability coverage.",
+            "summary": f"Validated the specification package: {len(conflicts)} conflict(s), {len(missing)} missing item(s) found, {matrix['totals']['coverage_percentage']}% capability coverage.",
             "completeness_notes": completeness_notes,
             "consistency_notes": consistency_notes or ["No specific consistency notes generated."],
             "design_readiness_notes": design_readiness_notes,
