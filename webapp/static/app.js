@@ -1587,11 +1587,40 @@ function openFeasibilityModal(f, mode) {
       el('div', { class: 'fm-q', text: q.text }),
       el('span', { class: 'fm-changed-tag', text: '● changed', hidden: '' }),
     ]));
+    // The same flaw can be linked to several answers (e.g. two answers that contradict each other). Never repeat it
+    // word-for-word under each: the first linked answer carries the flaw and its suggested change; the others say
+    // which answer it is shared with, unless the check gave an answer-specific explanation for them.
+    const textOf = (id) => { const o = items.find(it => it.r.question_id === id); return o ? o.q.text : ''; };
+    const sharedOf = (x) => {
+      if (Array.isArray(x.shared_with)) return x.shared_with.filter(id => items.some(it => it.r.question_id === id));
+      return items.filter(it => it.r !== r && (it.r.reasons || []).some(y => y.flaw_id === x.flaw_id)).map(it => it.r.question_id);   // saved before this was tracked
+    };
+    const isPrimary = (x) => {
+      if (typeof x.primary === 'boolean') return x.primary;
+      const first = items.find(it => (it.r.reasons || []).some(y => y.flaw_id === x.flaw_id));
+      return !first || first.r === r;
+    };
     const why = el('ul', { class: 'fm-why' });
-    (r.reasons || []).forEach(x => why.appendChild(el('li', { text: x.flaw })));
+    const shownSuggestions = [];
+    (r.reasons || []).forEach(x => {
+      const shared = sharedOf(x);
+      const secondary = shared.length && !x.specific && !isPrimary(x);
+      const li = el('li');
+      if (secondary) {
+        const other = shared.map(textOf).filter(Boolean)[0] || 'another question';
+        li.appendChild(el('span', { class: 'fm-shared', text: 'Part of the same problem as your answer to “' + clip(other, 90) + '” — fix it there first; change this answer only if it no longer fits your plan.' }));
+      } else {
+        li.appendChild(document.createTextNode(x.flaw));
+        if (shared.length && !x.specific) {
+          const others = shared.map(textOf).filter(Boolean).map(t => '“' + clip(t, 70) + '”').join(', ');
+          if (others) li.appendChild(el('div', { class: 'fm-shared', text: 'Also involves: ' + others }));
+        }
+        if (x.suggestion) shownSuggestions.push(x.suggestion);
+      }
+      why.appendChild(li);
+    });
     card.appendChild(why);
-    const sug = (r.reasons || []).find(x => x.suggestion);
-    if (sug) card.appendChild(el('div', { class: 'fm-suggest' }, [el('strong', { text: 'Suggested: ' }), document.createTextNode(sug.suggestion)]));
+    if (shownSuggestions.length) card.appendChild(el('div', { class: 'fm-suggest' }, [el('strong', { text: 'Suggested: ' }), document.createTextNode(shownSuggestions[0])]));
     card.appendChild(buildFeasEditor(q, card));
     card.querySelector('.fm-changed-tag').hidden = true;
     body.appendChild(card);

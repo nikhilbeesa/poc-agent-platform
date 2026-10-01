@@ -307,6 +307,54 @@ def test_downstream_prompts_receive_the_shared_numbers_and_findings():
     assert "PLANNING TARGETS" in block and "FEASIBILITY FINDINGS" in block
 
 
+def _contradiction_assess(notes):
+    a = json.loads(json.dumps(ASSESS))
+    flaw = {"severity": "Critical", "area": "Economics", "flaw": "Platform-supplied cleaning products contradict the promise of cheaper prices and lower commission",
+            "why_it_matters": "Margin", "recommended_change": "Require cleaners or customers to provide supplies"}
+    if notes:
+        flaw["related_questions"] = [{"id": "nfr_users_12m", "why": "Supplies shipped by the platform raise cost per visit", "change": "Make supplies the cleaner's responsibility"},
+                                     {"id": "nfr_geography", "why": "Competing on cheaper prices is hard to keep if the platform also pays for supplies", "change": "Pick a differentiator other than price"}]
+    else:
+        flaw["related_question_ids"] = ["nfr_users_12m", "nfr_geography"]
+    a["flaws"] = [flaw]
+    return json.dumps(a)
+
+
+def test_flaw_linked_to_two_answers_is_not_repeated_word_for_word():
+    ctx = answered_context()
+    # model gave an explanation per answer -> each answer shows ITS OWN reason and change
+    out = feas._live(ctx, FakeClient(assess_reply=_contradiction_assess(notes=True)))
+    rev = {r["question_id"]: r for r in out["questions_to_revisit"]}
+    a, b = rev["nfr_users_12m"]["reasons"][0], rev["nfr_geography"]["reasons"][0]
+    assert a["flaw"] != b["flaw"] and a["suggestion"] != b["suggestion"] and a["specific"] and b["specific"]
+    assert "price" in b["flaw"].lower() and b["shared_with"] == ["nfr_users_12m"]
+    # legacy shape (ids only) -> only the FIRST answer carries the suggestion; the other is marked as sharing the problem
+    out = feas._live(ctx, FakeClient(assess_reply=_contradiction_assess(notes=False)))
+    rev = {r["question_id"]: r for r in out["questions_to_revisit"]}
+    first, second = rev["nfr_users_12m"]["reasons"][0], rev["nfr_geography"]["reasons"][0]
+    assert first["primary"] and first["suggestion"] and not second["primary"] and second["suggestion"] == ""
+    assert second["shared_with"] == ["nfr_users_12m"]
+    # the prompt now demands answer-specific reasons and forbids topic-only links
+
+
+def test_prompt_requires_answer_specific_links():
+    client = FakeClient()
+    feas._live(answered_context(), client)
+    p = next(x for x in client.prompts if "TASK:feasibility.assess" in x)
+    assert "related_questions" in p and "ONLY if changing THAT answer" in p and "contradiction between two answers" in p
+
+
+def test_export_points_a_shared_answer_at_the_one_with_the_fix():
+    ctx = answered_context()
+    out = feas._live(ctx, FakeClient(assess_reply=_contradiction_assess(notes=False)))
+    rev = out["questions_to_revisit"]
+    second = next(r for r in rev if r["question_id"] == "nfr_geography")
+    first = next(r for r in rev if r["question_id"] == "nfr_users_12m")
+    from export import _revisit_suggestion
+    assert _revisit_suggestion(first, rev).startswith("Require cleaners")
+    assert _revisit_suggestion(second, rev) == "Resolve together with: " + first["question"]
+
+
 if __name__ == "__main__":
     tests = [(n, f) for n, f in sorted(globals().items()) if n.startswith("test_") and callable(f)]
     failed = 0

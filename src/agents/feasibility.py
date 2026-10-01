@@ -73,6 +73,8 @@ def finalize(out: dict, llm_verdict: str | None = None, questions: list | None =
         f["severity"] = _norm_choice(f.get("severity"), SEVERITIES, "Major")
         ids = f.get("related_question_ids") or []
         f["related_question_ids"] = [q for q in dict.fromkeys(str(x).strip() for x in ids) if q in valid][:3]
+        notes = f.get("question_notes") if isinstance(f.get("question_notes"), dict) else {}
+        f["question_notes"] = {q: notes[q] for q in f["related_question_ids"] if isinstance(notes.get(q), dict)}
     order = {s: i for i, s in enumerate(SEVERITIES)}
     flaws.sort(key=lambda f: order[f["severity"]])
     for i, f in enumerate(flaws, start=1):          # renumber after sorting so IDs read top-down
@@ -84,11 +86,20 @@ def finalize(out: dict, llm_verdict: str | None = None, questions: list | None =
     for f in flaws:
         if f["severity"] not in ("Critical", "Major"):
             continue
-        for qid in f["related_question_ids"]:
+        linked = f["related_question_ids"]
+        for pos, qid in enumerate(linked):
             item = revisit.setdefault(qid, {"question_id": qid, "question": valid[qid].text, "current_answer": valid[qid].answer or "",
                                             "severity": f["severity"], "reasons": []})
-            item["reasons"].append({"flaw_id": f["id"], "severity": f["severity"], "flaw": f["flaw"],
-                                    "suggestion": f.get("recommended_change", "")})
+            # A flaw linked to several answers must not be repeated word-for-word under each one: the answer-specific
+            # explanation/change (when the model gave one) is shown for that answer; otherwise only the FIRST linked
+            # answer carries the flaw's own suggestion, and the others are marked as part of the same problem.
+            note = f["question_notes"].get(qid) or {}
+            why, change = str(note.get("why") or "").strip(), str(note.get("change") or "").strip()
+            item["reasons"].append({"flaw_id": f["id"], "severity": f["severity"],
+                                    "flaw": why or f["flaw"],
+                                    "suggestion": change or (f.get("recommended_change", "") if pos == 0 else ""),
+                                    "primary": pos == 0, "specific": bool(why),
+                                    "shared_with": [x for x in linked if x != qid]})
     out["questions_to_revisit"] = list(revisit.values())[:8]
     # Critical/major flaws that no single answer explains (e.g. "no differentiator stated" in a domain that never asked).
     # The UI lists them too, so the popup never looks like the complete set of problems when it is not.
@@ -399,14 +410,18 @@ def _live_feasibility_prompt(context: ProjectContext, market: dict, profile: dic
         "unclear or unproven demand, weak or copyable differentiation, cold-start / network-effect problems, disintermediation, "
         "unit economics that do not work, scope that does not fit the team/timeline/budget, regulatory or data-protection exposure, "
         "dependence on a third party, contradictions between the answers, and answers left as 'not sure'.\n"
-        "For EACH flaw, also list related_question_ids: the ids (from the list below, copied exactly) of the 1-3 discovery answers that "
-        "caused or could fix that flaw, so the founder can change just those answers. Use an empty list if the flaw is not tied to any "
-        "question asked. Never invent ids.\nDISCOVERY QUESTIONS (id, question -> answer):\n" + qlist + "\n\n"
+        "For EACH flaw, also list related_questions: the 1-2 discovery answers (ids copied exactly from the list below) that caused or "
+        "could fix that flaw, so the founder can change just those answers. Link an answer ONLY if changing THAT answer would remove or "
+        "reduce the flaw — never link an answer merely because it touches the same topic or is a minor part of the evidence. For every "
+        "linked answer give 'why' (one sentence on what is wrong with THIS answer specifically — do not just repeat the flaw) and "
+        "'change' (the concrete change to THIS answer). If the flaw is a contradiction between two answers, link both and write why/change "
+        "separately for each so each can be fixed on its own. Use an empty list if the flaw is not tied to any question asked. "
+        "Never invent ids.\nDISCOVERY QUESTIONS (id, question -> answer):\n" + qlist + "\n\n"
         "Then list the key assumptions that must be validated with real users/data (with how), the recommended changes to the idea "
         "(concrete, ordered by importance), and what must be confirmed before building. Give an overall verdict: GO, GO WITH CHANGES or RETHINK, "
         "with a 2-3 sentence rationale, and your confidence (High, Medium, Low).\n\n"
         'Respond ONLY with JSON:\n{"feasibility": {"desirability": {"rating": "High|Medium|Low", "assessment": "..."}, "technical": {...}, "operational": {...}, "financial": {...}, "legal": {...}}, '
-        '"flaws": [{"severity": "Critical|Major|Minor", "area": "...", "flaw": "...", "why_it_matters": "...", "recommended_change": "...", "related_question_ids": ["id"]}], '
+        '"flaws": [{"severity": "Critical|Major|Minor", "area": "...", "flaw": "...", "why_it_matters": "...", "recommended_change": "...", "related_questions": [{"id": "id", "why": "...", "change": "..."}]}], '
         '"assumptions_to_validate": [{"assumption": "...", "how_to_validate": "...", "risk_if_wrong": "..."}], '
         '"recommended_changes": ["..."], "must_confirm_before_build": ["..."], '
         '"verdict": "GO|GO WITH CHANGES|RETHINK", "verdict_rationale": "...", "confidence": "High|Medium|Low"}'
@@ -447,8 +462,19 @@ def _live(context: ProjectContext, client) -> dict:
         item = {k: str(f.get(k, "")).strip() for k in ("severity", "area", "flaw", "why_it_matters", "recommended_change")}
         if not item["flaw"]:
             continue
-        ids = f.get("related_question_ids")
-        item["related_question_ids"] = ids if isinstance(ids, list) else []   # validated against real ids in finalize()
+        ids, notes = [], {}
+        for x in (f.get("related_questions") if isinstance(f.get("related_questions"), list) else []):
+            if isinstance(x, dict) and x.get("id"):
+                qid = str(x["id"]).strip()
+                ids.append(qid)
+                notes[qid] = {"why": str(x.get("why") or "").strip(), "change": str(x.get("change") or "").strip()}
+            elif isinstance(x, str) and x.strip():
+                ids.append(x.strip())
+        if not ids:   # older / simpler shape
+            legacy = f.get("related_question_ids")
+            ids = legacy if isinstance(legacy, list) else []
+        item["related_question_ids"] = ids          # validated against real ids in finalize()
+        item["question_notes"] = notes
         flaws.append(item)
     if not flaws:
         raise RuntimeError("the feasibility model returned no flaws — every idea has some; refusing to produce an empty assessment")

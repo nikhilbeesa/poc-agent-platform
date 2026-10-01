@@ -684,3 +684,6 @@ body.modal-open { overflow: hidden; }
 .btn-danger:disabled { opacity: .6; cursor: default; }
 .modal.modal-sm { width: min(480px, 100%); }
 .modal-error { margin: 0; padding: 0 20px 12px; color: var(--red); font-size: 13px; }
+
+.fm-shared { display: block; margin-top: 4px; font-size: 12.5px; line-height: 1.45; color: var(--text-faint); font-style: italic; }
+.fm-item > .fm-why { margin-bottom: 10px; }

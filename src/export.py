@@ -130,6 +130,21 @@ def _system_profile_markdown(context: ProjectContext, include_security: bool) ->
     return out
 
 
+def _revisit_suggestion(item: dict, revisit: list) -> str:
+    """The change suggested for one answer. An answer that only shares a flaw with another answer has no
+    suggestion of its own, so it points at the answer where the fix is described instead of staying blank."""
+    for x in item.get("reasons") or []:
+        if x.get("suggestion"):
+            return x["suggestion"]
+    by_id = {r.get("question_id"): r for r in revisit}
+    for x in item.get("reasons") or []:
+        for qid in x.get("shared_with") or []:
+            other = by_id.get(qid)
+            if other and other.get("question"):
+                return f"Resolve together with: {other['question']}"
+    return ""
+
+
 def _feasibility_output(context: ProjectContext) -> dict:
     c = context.get_contribution(AgentRole.FEASIBILITY_ASSESSMENT)
     return c.output if c else {}
@@ -215,7 +230,7 @@ def export_feasibility_assessment(context: ProjectContext) -> Artefact:
     answers_to_revisit = (_table(["Question", "Current answer", "Why it needs a look", "Suggested change"],
                                  [[r.get("question", ""), (r.get("current_answer") or "").replace(" | ", ", ") or "(skipped)",
                                    " / ".join(x.get("flaw", "") for x in r.get("reasons", [])[:2]),
-                                   r["reasons"][0].get("suggestion", "") if r.get("reasons") else ""] for r in revisit])
+                                   _revisit_suggestion(r, revisit)] for r in revisit])
                           if revisit else "*No specific discovery answer was identified as the cause of a critical or major flaw.*")
     unlinked = o.get("unlinked_flaws") or []
     if unlinked:
