@@ -267,6 +267,140 @@ def export_feasibility_assessment(context: ProjectContext) -> Artefact:
 
 
 # ---------------------------------------------------------------------------
+# BRD navigation helpers: heading anchors, table of contents, interfaces, appendices
+# ---------------------------------------------------------------------------
+
+def _slug(text: str) -> str:
+    """Heading -> anchor id. Must match slugify() in webapp/static/export.js and app.js."""
+    t = re.sub(r"[*`]", "", str(text)).strip().lower()
+    t = re.sub(r"[^\w\- ]", "", t)
+    return t.replace(" ", "-")
+
+
+def _headings(markdown: str, levels=(2, 3)) -> list[tuple[int, str, str]]:
+    """(level, title, unique anchor) for each heading, skipping fenced code blocks. Duplicate
+    titles get -1, -2 ... suffixes, in document order (same rule as the viewer / Word export)."""
+    out, seen, in_fence = [], {}, False
+    for line in markdown.splitlines():
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        m = None if in_fence else re.match(r"^(#{1,6})\s+(.+?)\s*#*\s*$", line)
+        if not m:
+            continue
+        base = _slug(m.group(2))
+        n = seen.get(base, 0)
+        seen[base] = n + 1
+        if len(m.group(1)) in levels:
+            out.append((len(m.group(1)), re.sub(r"[*`]", "", m.group(2)).strip(), base if n == 0 else f"{base}-{n}"))
+    return out
+
+
+def _build_toc(markdown: str) -> str:
+    """Nested, linked table of contents of the document's ## and ### headings."""
+    rows = []
+    for level, title, anchor in _headings(markdown):
+        if title.lower() == "table of contents":
+            continue
+        rows.append(f"{'  ' * (level - 2)}- [{title}](#{anchor})")
+    return "\n".join(rows)
+
+
+def _user_interfaces(o: dict) -> str:
+    roles, modules = o.get("roles", []), o.get("modules", [])
+    if not roles:
+        return "*None specified.*"
+    mod_names = ", ".join(m.get("name", "") for m in modules if m.get("name")) or "See Product Overview & Modules"
+    rows = [[f"{r.get('role', '?')} interface", r.get("role", "?"), r.get("capabilities", "") or r.get("purpose", ""),
+             r.get("restricted", "") or "None specified"] for r in roles]
+    return (_table(["Interface", "Primary User", "Main Capabilities Exposed", "Restricted / Hidden"], rows)
+            + f"\n\n*Screens, navigation and layouts for these interfaces are specified in the UX / Product Flow "
+              f"Specification. Modules surfaced across interfaces: {mod_names}.*")
+
+
+def _notification_interfaces(o: dict) -> str:
+    channels = {}
+    for n in o.get("notifications_matrix", []):
+        for ch_name in re.split(r"\s*[,/+&]\s*|\s+and\s+", str(n.get("channel", ""))):
+            if ch_name.strip():
+                channels.setdefault(ch_name.strip(), []).append(n.get("event", ""))
+    if not channels:
+        return "*None specified.*"
+    return _table(["Channel", "Events Delivered", "Event Count"],
+                  [[c, "; ".join(e for e in evs[:6] if e) + (f"; and {len(evs) - 6} more (see Notifications)" if len(evs) > 6 else ""), len(evs)]
+                   for c, evs in channels.items()])
+
+
+def _interface_requirements(o: dict) -> str:
+    rows = [
+        ["IF-001", "All external calls", "Every external integration is called through an adapter with a timeout, retries with back-off and a circuit breaker, so a provider outage degrades one feature rather than the whole product.", "P1"],
+        ["IF-002", "Authentication", "Every interface authenticates the caller; credentials and API keys are held in a secrets store and never in code or client-side bundles.", "P0"],
+        ["IF-003", "Data minimisation", "Only the fields a provider needs are sent to it; personal and sensitive data follow the Data Classification section.", "P1"],
+        ["IF-004", "Asynchronous events", "Inbound webhooks and callbacks are verified (signature or shared secret) and processed idempotently so a repeated delivery has no duplicate effect.", "P1"],
+        ["IF-005", "Error handling", "Failed or rejected calls return a clear, user-safe message, are logged with a correlation ID, and are retried or queued where the operation allows.", "P1"],
+        ["IF-006", "Monitoring", "Each integration reports success rate and latency, and raises an alert to Admin/Operations when failures exceed an agreed threshold.", "P2"],
+        ["IF-007", "Change control", "Any externally exposed API or message format is versioned; breaking changes are announced and run alongside the previous version for an agreed period.", "P2"],
+    ]
+    if o.get("payment_requirements"):
+        rows.insert(3, ["IF-PAY", "Payment provider", "Card data is handled only by the PCI-compliant provider; the product stores tokens and transaction references, never card numbers.", "P0"])
+    for i, r in enumerate(rows, 1):
+        r[0] = f"IF-{i:03d}"
+    return ("*Proposed baseline for every interface above; vendor-specific protocols, endpoints and formats are confirmed "
+            "during technical design.*\n\n" + _table(["ID", "Area", "Requirement", "Priority"], rows))
+
+
+def _id_range(items: list, key: str = "id") -> tuple[str, int]:
+    ids = [str(i.get(key, "")) for i in items if isinstance(i, dict) and i.get(key)]
+    if not ids:
+        return "-", 0
+    return (ids[0] if len(ids) == 1 else f"{ids[0]} to {ids[-1]}"), len(ids)
+
+
+def _appendices(o: dict, template_text: str, domain: str) -> str:
+    """Appendix A related documents, B requirement-ID index, C supporting-section links. Section
+    links are built from the template's own headings so they can never point at a missing anchor."""
+    anchors = {re.sub(r"^\d+\.\s*", "", t): a for _, t, a in _headings(template_text)}
+
+    def link(title: str) -> str:
+        a = anchors.get(title)
+        num = next((t.split(".")[0] for _, t, an in _headings(template_text) if an == a), "")
+        return f"[Section {num} — {title}](#{a})" if a else title
+
+    docs = _table(["Document", "File", "Relationship to this BRD"], [
+        ["User Stories Document", "[user_stories.md](user_stories.md)", "Stories and acceptance criteria derived from the Functional Requirements."],
+        ["Product Requirements Document (PRD)", "[prd.md](prd.md)", "Product, technical and security specification built on this BRD."],
+        ["UX / Product Flow Specification", "[ux_product_flow_specification.md](ux_product_flow_specification.md)", "Screens, flows and states for the interfaces listed in section 29.1."],
+        ["AI Handoff Validation Report", "[ai_handoff_validation.md](ai_handoff_validation.md)", "Readiness check of the whole package, including consistency with this BRD."],
+        ["Feasibility & Competitive Assessment", "[feasibility_assessment.md](feasibility_assessment.md)", "Independent, advisory assessment of the idea; its critical risks feed section 33."],
+    ])
+    id_rows = []
+    for label, items, title, key in [
+        ("Functional requirements", o.get("requirements", []), "Functional Requirements", "id"),
+        ("Non-functional requirements", o.get("nfrs", []), "Non-Functional Requirements", "id"),
+        ("Business rules", o.get("business_rules", []), "Business Rules", "id"),
+        ("User stories", o.get("user_stories_summary", []), "User Stories", "id"),
+    ]:
+        rng, n = _id_range(items, key)
+        id_rows.append([label, rng, n, link(title)])
+    rng, n = _id_range(o.get("modules", []))
+    id_rows.insert(0, ["Modules", rng, n, link("Product Overview & Modules")])
+    id_rows.append(["Interface requirements", "IF-001 to IF-%03d" % (8 if o.get("payment_requirements") else 7), 8 if o.get("payment_requirements") else 7, link("Interfaces & Integrations")])
+
+    support = _table(["Reference", "Where to find it"], [
+        ["Terms and abbreviations", link("Glossary")],
+        ["Unresolved decisions and TBD parameters", link("Open Questions")],
+        ["Requirement-to-story-to-QA mapping", link("Traceability Matrix")],
+        ["Release phases and exit criteria", link("Release Strategy")],
+        ["Data entities, relationships and classification", link("Data Requirements") + " · " + link("Data Classification")],
+        ["Risk register", link("Risks & Mitigation")],
+    ])
+    return (f"*Domain: {domain}. Links open the related section or sibling document.*\n\n"
+            "### Appendix A — Related Documents\n\n" + docs +
+            "\n\n### Appendix B — Requirement ID Index\n\n" + _table(["Item", "ID Range", "Count", "Section"], id_rows) +
+            "\n\n### Appendix C — Supporting Sections\n\n" + support)
+
+
+# ---------------------------------------------------------------------------
 # 1. Business Requirements Document
 # ---------------------------------------------------------------------------
 
@@ -501,7 +635,10 @@ def export_business_requirements(context: ProjectContext) -> Artefact:
         "security_requirements": security_requirements,
         "privacy_compliance": o.get("privacy_compliance", "Applicable privacy and regulatory requirements must be confirmed for the launch geography."),
         "accessibility": o.get("accessibility", []),
+        "user_interfaces": _user_interfaces(o),
         "integrations": integrations,
+        "notification_interfaces": _notification_interfaces(o),
+        "interface_requirements": _interface_requirements(o),
         "assumptions": o.get("assumptions", []),
         "constraints": o.get("constraints", []),
         "dependencies": o.get("dependencies", []),
@@ -518,7 +655,11 @@ def export_business_requirements(context: ProjectContext) -> Artefact:
             for p in o.get("key_parameters", []) if str(p.get("status", "")).upper() == "TBD"
         ],
     }
+    values["table_of_contents"] = ""
+    values["appendices"] = _appendices(o, template, values["domain_classification"])
     content = _fill_template(template, values)
+    # the TOC is built last, from the real headings of the finished document
+    content = content.replace("## Table of Contents\n\n", "## Table of Contents\n" + _build_toc(content) + "\n\n", 1)
     return Artefact(id=str(uuid.uuid4()), type="business_requirements",
                      title=f"Business Requirements — {values['project_name']}",
                      content_markdown=content, generated_by=AgentRole.BUSINESS_ANALYST)

@@ -1825,10 +1825,39 @@ function renderArtefacts(artefacts) {
   updateStepper(); updateSummary();
 }
 
+// Heading anchors so the table of contents and cross-reference links work inside the viewer.
+// slugify() / the "-1, -2" duplicate rule must match _slug() / _headings() in src/export.py
+// and the bookmark logic in export.js.
+function slugify(text) {
+  return String(text || '').replace(/[*`]/g, '').trim().toLowerCase().replace(/[^\p{L}\p{N}_\- ]/gu, '').replace(/ /g, '-');
+}
+function assignHeadingIds(viewer) {
+  const seen = {};
+  viewer.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach((h) => {
+    const base = slugify(h.textContent);
+    const n = seen[base] || 0;
+    seen[base] = n + 1;
+    h.id = n ? `${base}-${n}` : base;
+  });
+}
+(function wireDocAnchors() {
+  const viewer = document.getElementById('doc-viewer');
+  if (!viewer) return;
+  viewer.addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('a[href^="#"]');
+    if (!a) return;
+    const target = viewer.querySelector('[id="' + decodeURIComponent(a.getAttribute('href').slice(1)).replace(/"/g, '') + '"]');
+    if (!target) return;
+    e.preventDefault();                       // keep the app's own #project=... hash intact
+    target.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  });
+})();
+
 function renderDoc(markdown) {
   const viewer = $('#doc-viewer');
   viewer.innerHTML = window.marked ? marked.parse(markdown, { breaks: true, gfm: true }) : markdown;
   wrapTables(viewer);
+  assignHeadingIds(viewer);
   renderMermaidBlocks(viewer);
   // Switching artifacts replaces this element's content but not the
   // element itself, so the browser keeps whatever scroll position was

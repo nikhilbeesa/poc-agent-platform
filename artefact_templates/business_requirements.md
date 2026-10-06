@@ -4,6 +4,9 @@
 **Domain:** {{domain_classification}}
 **Generated:** {{generated_date}}
 
+## Table of Contents
+{{table_of_contents}}
+
 ## 1. Document Control
 {{document_control}}
 
@@ -64,14 +67,14 @@
 ## 16. Functional Requirements
 {{requirements}}
 
-## 17. Detailed Module Requirements
+## 17. Non-Functional Requirements
+{{nfrs}}
+
+## 18. Detailed Module Requirements
 {{module_details}}
 
-## 18. Business Rules
+## 19. Business Rules
 {{business_rules}}
-
-## 19. Non-Functional Requirements
-{{nfrs}}
 
 ## 20. Data Requirements
 {{data_entities}}
@@ -106,8 +109,19 @@
 ## 28. Accessibility Requirements
 {{accessibility}}
 
-## 29. Integrations
+## 29. Interfaces & Integrations
+
+### 29.1 User Interfaces
+{{user_interfaces}}
+
+### 29.2 External System Integrations
 {{integrations}}
+
+### 29.3 Notification Channel Interfaces
+{{notification_interfaces}}
+
+### 29.4 Interface & Integration Requirements
+{{interface_requirements}}
 
 ## 30. Assumptions
 {{assumptions}}
@@ -144,3 +158,6 @@
 
 ## 41. Open Questions
 {{open_questions}}
+
+## 42. Appendices
+{{appendices}}

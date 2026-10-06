@@ -192,6 +192,32 @@ function runXml(text, f) {
   return out;
 }
 
+// ---- links & bookmarks. Headings get a Word bookmark so "#section" links (table of contents,
+// appendix cross-references) jump inside the document; other links become real hyperlinks.
+// docSlug() must match slugify() in app.js and _slug() in src/export.py.
+let DOCX_CTX = null;     // { anchors: slug -> bookmark name, links: [{ rId, target }], bmId } during one export
+
+function docSlug(text) {
+  return String(text || '').replace(/[*`]/g, '').trim().toLowerCase().replace(/[^\p{L}\p{N}_\- ]/gu, '').replace(/ /g, '-');
+}
+
+function linkXml(inner, href) {
+  const ctx = DOCX_CTX;
+  if (!ctx || !href) return inner;
+  if (href.charAt(0) === '#') {
+    let slug = href.slice(1);
+    try { slug = decodeURIComponent(slug); } catch (e) { /* keep raw */ }
+    const name = ctx.anchors[slug];
+    return name ? `<w:hyperlink w:anchor="${name}" w:history="1">${inner}</w:hyperlink>` : inner;
+  }
+  // sibling documents are exported as .docx, so a link to foo.md should open foo.docx
+  const target = /^[\w.-]+\.md$/i.test(href) ? href.replace(/\.md$/i, '.docx') : href;
+  if (!/^(https?:|mailto:|[\w.-]+\.docx$)/i.test(target)) return inner;
+  let l = ctx.links.find((x) => x.target === target);
+  if (!l) { l = { rId: `rIdLink${ctx.links.length + 1}`, target }; ctx.links.push(l); }
+  return `<w:hyperlink r:id="${l.rId}" w:history="1">${inner}</w:hyperlink>`;
+}
+
 // Inline markdown tokens -> runs. Works with the token shapes of marked 5 - 18.
 function inlineXml(tokens, f) {
   let x = '';
@@ -202,7 +228,7 @@ function inlineXml(tokens, f) {
       case 'del': x += inlineXml(t.tokens, { ...f, strike: true }); break;
       case 'codespan': x += runXml(decodeEntities(t.text), { ...f, code: true }); break;
       case 'br': x += '<w:r><w:br/></w:r>'; break;
-      case 'link': x += inlineXml(t.tokens && t.tokens.length ? t.tokens : [{ type: 'text', text: t.text }], { ...f, link: true }); break;
+      case 'link': x += linkXml(inlineXml(t.tokens && t.tokens.length ? t.tokens : [{ type: 'text', text: t.text }], { ...f, link: true }), t.href); break;
       case 'image': x += runXml(decodeEntities(t.text || ''), f); break;
       case 'html': if (/^<br\s*\/?>$/i.test((t.text || t.raw || '').trim())) x += '<w:r><w:br/></w:r>'; break;
       case 'checkbox': x += runXml(t.checked ? '\u2611 ' : '\u2610 ', f); break;
@@ -313,6 +339,23 @@ async function markdownToDocx(markdown, opts = {}) {
   const tokens = (window.marked && marked.lexer)
     ? marked.lexer(String(markdown || ''), { gfm: true, breaks: true })
     : [{ type: 'paragraph', text: String(markdown || ''), tokens: [{ type: 'text', text: String(markdown || '') }] }];
+
+  // pre-pass: one bookmark per heading (same slug + duplicate rule as the viewer), so links that
+  // appear BEFORE their target (the table of contents) still resolve
+  DOCX_CTX = { anchors: {}, links: [], bmId: 100 };
+  {
+    const seen = {};
+    let k = 0;
+    for (const t of tokens) {
+      if (t.type !== 'heading') continue;
+      const base = docSlug(decodeEntities(t.text));
+      const n = seen[base] || 0;
+      seen[base] = n + 1;
+      DOCX_CTX.anchors[n ? `${base}-${n}` : base] = `_Toc${String(++k).padStart(5, '0')}`;
+    }
+  }
+  const headingNames = Object.values(DOCX_CTX.anchors);
+  let headingIdx = 0;
 
   const body = [];
   const media = [];              // { name, data }
@@ -431,7 +474,11 @@ async function markdownToDocx(markdown, opts = {}) {
       case 'space': return '';
       case 'heading': {
         const lvl = Math.min(Math.max(t.depth || 1, 1), 4);
-        return pXml(inlineXml(t.tokens || [{ type: 'text', text: t.text }], {}), { style: `Heading${lvl}`, keepNext: true });
+        const bm = headingNames[headingIdx++];
+        const id = DOCX_CTX.bmId++;
+        const inner = inlineXml(t.tokens || [{ type: 'text', text: t.text }], {});
+        return pXml(bm ? `<w:bookmarkStart w:id="${id}" w:name="${bm}"/>${inner}<w:bookmarkEnd w:id="${id}"/>` : inner,
+                    { style: `Heading${lvl}`, keepNext: true });
       }
       case 'paragraph':
         return pXml(inlineXml(t.tokens || [{ type: 'text', text: t.text }], {}));
@@ -540,6 +587,7 @@ async function markdownToDocx(markdown, opts = {}) {
     `<Relationship Id="rIdSettings" Type="${R}/settings" Target="settings.xml"/>` +
     `<Relationship Id="rIdFooter" Type="${R}/footer" Target="footer1.xml"/>` +
     media.map((m, i) => `<Relationship Id="rIdImg${i + 1}" Type="${R}/image" Target="media/${m.name}"/>`).join('') +
+    DOCX_CTX.links.map((l) => `<Relationship Id="${l.rId}" Type="${R}/hyperlink" Target="${xmlEsc(l.target)}" TargetMode="External"/>`).join('') +
     '</Relationships>';
 
   onProgress('Packaging…');
