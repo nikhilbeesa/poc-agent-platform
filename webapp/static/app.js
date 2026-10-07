@@ -1377,8 +1377,14 @@ async function runAgentPipeline(startIndex = 0) {
           nextAgentIndex = i;
           return 'paused';
         }
-        if (r === 'saved') logLine('✓ Clarifying answers saved — they will be written into the BRD.', true);
-        if (r === 'skipped') logLine('ℹ Clarifying questions skipped — the BRD uses clearly labelled planning defaults.');
+        const res = clarLastResult || {};
+        if (r === 'saved' || r === 'skipped') {
+          const parts = [];
+          if (res.answered) parts.push(`${res.answered} answered by you`);
+          if (res.ai_chosen) parts.push(`${res.ai_chosen} chosen by the AI`);
+          if (res.skipped) parts.push(`${res.skipped} left to planning defaults`);
+          logLine(`✓ Clarifying questions settled (${parts.join(', ') || 'none'}) — written into the BRD; AI-chosen items are labelled "please confirm".`, true);
+        }
       } catch (e) {
         logLine(`⚠ Could not load clarifying questions (${e.message}) — continuing with planning defaults.`);
       }
@@ -1741,13 +1747,19 @@ let clarDraft = {};
 let clarResolve = null;
 let clarReturnFocus = null;
 
+const clarBoxId = (id) => 'clar-sug-' + String(id).replace(/[^\w-]/g, '_');
+const clarEditors = {};   // item id -> { setValue(v), markSuggested(v) }
+let clarSugg = {};        // item id -> { suggestion, reason }
+let clarTimer = null;
+
 function buildClarEditor(item) {
   const wrap = el('div', { class: 'fm-edit' });
-  const set = (v) => { v = (v || '').trim(); if (v) clarDraft[item.id] = v; else delete clarDraft[item.id]; };
+  const set = (v) => { v = (v || '').trim(); if (v) clarDraft[item.id] = v; else delete clarDraft[item.id]; scheduleClarRefresh(); };
   if (!(item.options && item.options.length)) {
-    const ta = el('textarea', { class: 'fm-edit-input', rows: '2', placeholder: 'Type your answer… (leave empty to use the planning default)' });
+    const ta = el('textarea', { class: 'fm-edit-input', rows: '2', placeholder: 'Type your answer… (leave empty and the AI suggestion above is used)' });
     ta.addEventListener('input', () => set(ta.value));
     wrap.appendChild(ta);
+    clarEditors[item.id] = { setValue: (v) => { ta.value = v; set(v); }, markSuggested: () => {} };
     return wrap;
   }
   const multi = !!item.multi_select;
@@ -1757,6 +1769,10 @@ function buildClarEditor(item) {
   const otherInput = el('input', { type: 'text', class: 'fm-edit-input', placeholder: 'Type your own answer…' });
   otherInput.hidden = true;
   const cards = new Map();
+  const paint = () => {
+    cards.forEach((cc, o) => { const on = selected.has(o); cc.classList.toggle('selected', on); cc.setAttribute('aria-checked', on ? 'true' : 'false'); });
+    otherInput.hidden = !selected.has(OTHER_LABEL);
+  };
   const compute = () => {
     const out = [];
     allOptions.forEach(opt => {
@@ -1771,8 +1787,7 @@ function buildClarEditor(item) {
     c.addEventListener('click', () => {
       if (multi) { if (selected.has(opt)) selected.delete(opt); else selected.add(opt); }
       else { selected.clear(); selected.add(opt); }
-      cards.forEach((cc, o) => { const on = selected.has(o); cc.classList.toggle('selected', on); cc.setAttribute('aria-checked', on ? 'true' : 'false'); });
-      otherInput.hidden = !selected.has(OTHER_LABEL);
+      paint();
       if (!otherInput.hidden) otherInput.focus();
       compute();
     });
@@ -1780,14 +1795,61 @@ function buildClarEditor(item) {
   });
   otherInput.addEventListener('input', compute);
   wrap.appendChild(list); wrap.appendChild(otherInput);
+  clarEditors[item.id] = {
+    setValue: (v) => {
+      selected.clear();
+      String(v || '').split('|').map(x => x.trim()).filter(Boolean).forEach(part => {
+        if (cards.has(part)) selected.add(part); else { selected.add(OTHER_LABEL); otherInput.value = part; }
+      });
+      paint(); compute();
+    },
+    markSuggested: (v) => {
+      const parts = String(v || '').split('|').map(x => x.trim());
+      cards.forEach((cc, o) => cc.classList.toggle('suggested', parts.includes(o)));
+    },
+  };
   return wrap;
 }
 
-function openClarifyModal(items) {
-  clarDraft = {};
-  $('#clar-modal-lead').textContent = `${items.length} item${items.length === 1 ? '' : 's'} could not be settled from your answers. ` +
-    'Answer what you can — your answers are written straight into the Business Requirements Document. ' +
-    'Anything you skip is covered by a clearly labelled planning default, not left as an open question.';
+// The "AI suggests …" line under each question; "Use this" fills the answer with it.
+function renderClarSuggestion(item) {
+  const box = document.getElementById(clarBoxId(item.id));
+  const sug = clarSugg[item.id];
+  if (!box) return;
+  box.innerHTML = '';
+  clarEditors[item.id] && clarEditors[item.id].markSuggested(sug ? sug.suggestion : '');
+  if (!sug) { box.hidden = true; return; }
+  box.hidden = false;
+  box.appendChild(el('div', { class: 'clar-sug-main' }, [
+    el('span', { class: 'clar-sug-tag', text: 'AI SUGGESTS' }),
+    el('span', { class: 'clar-sug-val', text: sug.suggestion }),
+  ]));
+  if (sug.reason) box.appendChild(el('div', { class: 'clar-sug-why', text: sug.reason }));
+  const use = el('button', { type: 'button', class: 'btn btn-ghost clar-sug-use', text: clarDraft[item.id] === sug.suggestion ? '✓ Selected' : 'Use this' });
+  use.addEventListener('click', () => { clarEditors[item.id].setValue(sug.suggestion); renderClarSuggestion(item); });
+  box.appendChild(use);
+}
+
+let clarItems = [];
+// When the person changes an answer, recommendations that depend on it are recalculated (debounced).
+function scheduleClarRefresh() {
+  clearTimeout(clarTimer);
+  clarTimer = setTimeout(async () => {
+    if ($('#clar-modal').hidden) return;
+    try {
+      const data = await api(`/api/project/${projectId}/clarifications/suggest`, { method: 'POST', body: JSON.stringify({ draft: clarDraft }) });
+      clarSugg = data.suggestions || {};
+      clarItems.forEach(renderClarSuggestion);
+    } catch (e) { /* suggestions are advisory — keep the current ones */ }
+  }, 600);
+}
+
+function openClarifyModal(items, suggestions) {
+  clarDraft = {}; clarSugg = suggestions || {}; clarItems = items;
+  Object.keys(clarEditors).forEach(k => delete clarEditors[k]);
+  $('#clar-modal-lead').textContent = `${items.length} item${items.length === 1 ? '' : 's'} could not be settled from your answers, so the AI has recommended the best choice for each, ` +
+    'based on everything else you told us. Use a suggestion, pick your own, or leave an item alone — anything left unanswered gets the suggested value, ' +
+    'clearly labelled in the BRD as "Recommended by AI — please confirm". Suggestions update as you change other answers.';
   const body = $('#clar-modal-body');
   body.innerHTML = '';
   items.forEach(it => {
@@ -1797,9 +1859,13 @@ function openClarifyModal(items) {
       el('div', { class: 'fm-q', text: it.text }),
     ]));
     if (it.hint) card.appendChild(el('div', { class: 'fm-current', text: it.kind === 'parameter' ? 'Currently: ' + it.hint : it.hint }));
+    const sugBox = el('div', { class: 'clar-sug' });
+    sugBox.id = clarBoxId(it.id);
+    card.appendChild(sugBox);
     card.appendChild(buildClarEditor(it));
     body.appendChild(card);
   });
+  items.forEach(renderClarSuggestion);
   clarReturnFocus = document.activeElement;
   $('#clar-modal').hidden = false;
   document.body.classList.add('modal-open');
@@ -1817,6 +1883,7 @@ function closeClarModal(result) {
 }
 
 async function submitClarifications(items, useDraft) {
+  // An empty answer tells the server to use the AI's recommendation for that item.
   const answers = items.map(it => ({ id: it.id, answer: useDraft ? (clarDraft[it.id] || '') : '' }));
   const data = await api(`/api/project/${projectId}/clarifications`, { method: 'POST', body: JSON.stringify({ answers }) });
   // Mirror what the server wrote onto the discovery questions, without marking the answers as "edited since the run".
@@ -1826,14 +1893,16 @@ async function submitClarifications(items, useDraft) {
     if (sq.answer) { dfAnswers[sq.id] = sq.answer; delete dfSkipped[sq.id]; }
   });
   updateDiscoveryStatus();
+  clarLastResult = data;
   return data;
 }
+let clarLastResult = null;
 
 // Returns 'none' (nothing to ask), 'saved', 'skipped' or 'pause'.
 async function askClarifications() {
-  const { questions: items } = await api(`/api/project/${projectId}/clarifications`);
+  const { questions: items, suggestions } = await api(`/api/project/${projectId}/clarifications`);
   if (!items || !items.length) return 'none';
-  const choice = await openClarifyModal(items);
+  const choice = await openClarifyModal(items, suggestions);
   if (choice === 'pause') return 'pause';
   await submitClarifications(items, choice === 'saved');
   return choice;

@@ -1,0 +1,189 @@
+{
+  "id": "0178b1c2-682e-4449-a307-92610eface73",
+  "business_idea": "An app where people book home cleaners and pay online",
+  "domain": "booking_platform",
+  "domain_confidence": 0.75,
+  "stage": "discovery",
+  "status": "draft",
+  "handoff_status": null,
+  "consistency_notes": [],
+  "system_profile": null,
+  "feasibility": null,
+  "created_at": "2026-10-07T06:42:21.758961+00:00",
+  "questions": [
+    {
+      "id": "bp_users",
+      "text": "Who books \u2014 individuals, businesses, or both?",
+      "category": "users",
+      "status": "answered",
+      "options": [
+        "Individual consumers",
+        "Small businesses",
+        "Enterprise teams",
+        "Both individuals and businesses"
+      ],
+      "multi_select": false,
+      "answer": "Individual consumers"
+    },
+    {
+      "id": "bp_providers",
+      "text": "How do service providers get onboarded \u2014 self-signup or vetted by you?",
+      "category": "operations",
+      "status": "answered",
+      "options": [
+        "Self-signup, no vetting",
+        "Self-signup with a review step",
+        "Fully vetted/curated by us",
+        "Not decided yet"
+      ],
+      "multi_select": false,
+      "answer": "Self-signup, no vetting"
+    },
+    {
+      "id": "bp_scheduling",
+      "text": "Do providers set their own availability, or is it assigned?",
+      "category": "scheduling",
+      "status": "answered",
+      "options": [
+        "Providers set their own availability",
+        "Availability is assigned centrally",
+        "A mix of both",
+        "Not sure yet"
+      ],
+      "multi_select": false,
+      "answer": "Providers set their own availability"
+    },
+    {
+      "id": "bp_payment",
+      "text": "Is payment taken at booking, after service, or both?",
+      "category": "payments",
+      "status": "answered",
+      "options": [
+        "At time of booking",
+        "After the service is completed",
+        "Split \u2014 deposit then balance",
+        "Not decided yet"
+      ],
+      "multi_select": false,
+      "answer": "At time of booking"
+    },
+    {
+      "id": "bp_cancellation",
+      "text": "What's your cancellation/refund policy?",
+      "category": "policy",
+      "status": "answered",
+      "options": [
+        "Flexible \u2014 full refunds",
+        "Strict \u2014 limited or no refunds",
+        "Tiered based on notice given",
+        "Haven't decided yet"
+      ],
+      "multi_select": false,
+      "answer": "Tiered based on notice given"
+    },
+    {
+      "id": "mock_platform",
+      "text": "Web, mobile app, or both?",
+      "category": "platform",
+      "status": "answered",
+      "options": [
+        "Web app",
+        "Mobile app",
+        "Both web & mobile",
+        "Not sure yet"
+      ],
+      "multi_select": false,
+      "answer": "Web app"
+    },
+    {
+      "id": "nfr_users_12m",
+      "text": "How many registered users do you expect in the first 12 months after launch?",
+      "category": "scale_performance",
+      "status": "answered",
+      "options": [
+        "Under 500",
+        "500\u20135,000",
+        "5,000\u201350,000",
+        "50,000\u2013500,000",
+        "500,000+"
+      ],
+      "multi_select": false,
+      "answer": "500\u20135,000"
+    },
+    {
+      "id": "nfr_peak_concurrent",
+      "text": "At the busiest times, roughly how many people will be using the product at the same moment?",
+      "category": "scale_performance",
+      "status": "answered",
+      "options": [
+        "Under 50",
+        "50\u2013500",
+        "500\u20135,000",
+        "5,000+",
+        "Not sure yet"
+      ],
+      "multi_select": false,
+      "answer": "50\u2013500"
+    },
+    {
+      "id": "nfr_availability",
+      "text": "How important is it that the product is available around the clock?",
+      "category": "scale_performance",
+      "status": "answered",
+      "options": [
+        "Business hours only is fine",
+        "99% (a few hours of downtime a month is OK)",
+        "99.9% (only minutes of downtime a month)",
+        "99.95%+ (near-zero downtime, mission-critical)",
+        "Not sure yet"
+      ],
+      "multi_select": false,
+      "answer": "99.9% (only minutes of downtime a month)"
+    },
+    {
+      "id": "nfr_data_sensitivity",
+      "text": "What sensitive data will the product handle? (choose all that apply)",
+      "category": "security",
+      "status": "answered",
+      "options": [
+        "Personal details (names, emails, phone numbers)",
+        "Payment / card data",
+        "Health or medical data",
+        "Children's data",
+        "Government IDs / identity documents",
+        "Precise location data",
+        "Nothing sensitive",
+        "Not sure yet"
+      ],
+      "multi_select": true,
+      "answer": "Personal details (names, emails, phone numbers) | Payment / card data"
+    },
+    {
+      "id": "nfr_geography",
+      "text": "Where will your users be located at launch?",
+      "category": "security",
+      "status": "answered",
+      "options": [
+        "One city or region",
+        "One country",
+        "Several countries",
+        "Global",
+        "Not sure yet"
+      ],
+      "multi_select": false,
+      "answer": "One country"
+    },
+    {
+      "id": "additional_information",
+      "text": "Is there any additional information or data you'd like to provide that our questions may not have covered? (For example: specific requirements, constraints, integrations, reference products, data you already have, or anything else the team should know.)",
+      "category": "additional_information",
+      "status": "answered",
+      "options": [],
+      "multi_select": false,
+      "answer": "x"
+    }
+  ],
+  "agent_log": [],
+  "artefacts": [],
+  "updated_at": "2026-10-07T06:42:21.769472+00:00"
+}

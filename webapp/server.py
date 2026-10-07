@@ -347,7 +347,20 @@ def get_clarifications(project_id):
     ctx = _get_ctx(project_id)
     if not ctx:
         return jsonify({"error": "unknown project"}), 404
-    return jsonify({"questions": clar.pending_questions(ctx)})
+    items = clar.pending_questions(ctx)
+    return jsonify({"questions": items, "suggestions": clar.suggest(ctx, items) if items else {}})
+
+
+@app.route("/api/project/<project_id>/clarifications/suggest", methods=["POST"])
+def suggest_clarifications(project_id):
+    """Fresh AI recommendations given what is currently selected in the popup ({draft: {item id: answer}}),
+    so changing one answer updates the recommendations that depend on it."""
+    ctx = _get_ctx(project_id)
+    if not ctx:
+        return jsonify({"error": "unknown project"}), 404
+    draft = (request.get_json(silent=True) or {}).get("draft") or {}
+    items = clar.pending_questions(ctx)
+    return jsonify({"suggestions": clar.suggest(ctx, items, draft) if items else {}})
 
 
 @app.route("/api/project/<project_id>/clarifications", methods=["POST"])

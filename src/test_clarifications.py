@@ -36,6 +36,24 @@ def test_brd_structure_and_answers():
     toc = re.findall(r"\]\(#([^)]+)\)", brd)
     assert toc and len(toc) >= len(heads)
 
+
+def test_ai_recommends_consistently_and_fills_blanks():
+    ctx = _project(skip_every=2)
+    items = clar.pending_questions(ctx)
+    sug = clar.suggest(ctx, items, use_llm=False)
+    for it in items:                                   # every suggestion for an options question is one of the options
+        if it.get("options") and it["id"] in sug:
+            assert all(p.strip() in it["options"] for p in sug[it["id"]]["suggestion"].split("|"))
+    # changing one answer changes the recommendations that depend on it
+    a = clar.suggest(ctx, items, {"dq:bp_cancellation": "Strict — limited or no refunds"}, use_llm=False)
+    b = clar.suggest(ctx, items, {"dq:bp_cancellation": "Flexible — full refunds"}, use_llm=False)
+    k = next(i for i in a if i.startswith("kp:refund"))
+    assert a[k]["suggestion"] != b[k]["suggestion"]
+    # leaving everything blank -> AI fills, labelled for confirmation in the BRD
+    res = clar.apply_answers(ctx, [{"id": i["id"], "answer": ""} for i in items])
+    assert res["ai_chosen"] > 0 and clar.pending_questions(ctx) == []
+    assert any("Recommended by AI" in l for l in clar.brd_assumption_lines(ctx))
+
 if __name__ == "__main__":
     for n, f in list(globals().items()):
         if n.startswith("test_"): f(); print("PASS ", n)
