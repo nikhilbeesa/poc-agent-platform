@@ -340,23 +340,27 @@ window.addEventListener('load', function () {
 </div>
 
 
-<!-- Feasibility popup: shows ONLY the discovery questions behind the critical/major flaws, editable in place -->
-<div class="modal-backdrop" id="feas-modal" hidden>
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="feas-modal-title">
+<!-- Rethink & resolve popup: every serious feasibility flaw gets a recommended fix + proposed answers, and can be fixed OR knowingly accepted -->
+<div class="modal-backdrop" id="rethink-modal" hidden>
+  <div class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="rethink-title">
     <div class="modal-head">
       <div>
-        <div class="modal-kicker" id="feas-modal-kicker"></div>
-        <h3 class="modal-title" id="feas-modal-title">Answers that need a second look</h3>
+        <div class="modal-kicker" id="rethink-kicker"></div>
+        <h3 class="modal-title" id="rethink-title">Rethink &amp; resolve</h3>
       </div>
-      <button type="button" class="modal-close" id="feas-modal-close" aria-label="Close">✕</button>
+      <button type="button" class="modal-close" id="rethink-close" aria-label="Close">✕</button>
     </div>
-    <p class="modal-lead" id="feas-modal-lead"></p>
-    <div class="modal-body" id="feas-modal-body"></div>
+    <p class="modal-lead" id="rethink-lead"></p>
+    <div class="rethink-tools">
+      <button type="button" class="btn btn-ghost" id="rethink-use-all">✨ Use all AI-proposed answers</button>
+      <span class="rethink-progress" id="rethink-progress"></span>
+    </div>
+    <div class="modal-body" id="rethink-body"></div>
     <div class="modal-foot">
-      <button type="button" class="btn btn-ghost" id="feas-modal-review-all">Review all answers</button>
+      <button type="button" class="btn btn-ghost" id="rethink-review-all">Review all answers</button>
       <span class="modal-spacer"></span>
-      <button type="button" class="btn btn-ghost" id="feas-modal-continue">Continue anyway</button>
-      <button type="button" class="btn btn-primary" id="feas-modal-save" disabled>Save changes &amp; re-run check →</button>
+      <button type="button" class="btn btn-ghost" id="rethink-accept-all">Accept all risks &amp; continue</button>
+      <button type="button" class="btn btn-primary" id="rethink-apply" disabled>Apply &amp; continue →</button>
     </div>
   </div>
 </div>

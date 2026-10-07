@@ -705,3 +705,15 @@ body.modal-open { overflow: hidden; }
 .clar-sug-use { grid-column: 2; grid-row: 1 / span 2; padding: 4px 12px; font-size: 12px; }
 .df-option.suggested { border-color: var(--cyan-dim); }
 .df-option.suggested::after { content: 'AI pick'; margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--cyan); border: 1px solid var(--cyan-dim); padding: 0 5px; white-space: nowrap; }
+
+/* Rethink & resolve popup */
+.modal.modal-wide { max-width: 860px; width: 94vw; }
+.rethink-tools { display: flex; align-items: center; gap: 14px; padding: 0 22px 8px; }
+.rethink-progress { font-family: var(--mono); font-size: 11.5px; color: var(--text-faint); }
+.rt-flaw { margin-bottom: 14px; }
+.rt-flaw.decided { border-color: var(--green); }
+.rt-why { color: var(--text-dim); font-size: 13px; margin: 2px 0 8px; }
+.rt-ways-title { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.06em; color: var(--text-faint); margin: 8px 0 2px; }
+.rt-ways { margin: 0 0 8px 18px; padding: 0; color: var(--text-dim); font-size: 13px; }
+.rt-q { border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 10px; }
+.rt-accept { display: flex; gap: 8px; align-items: center; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--text-dim); font-size: 13px; cursor: pointer; }

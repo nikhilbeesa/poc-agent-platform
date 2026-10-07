@@ -54,6 +54,29 @@ def test_ai_recommends_consistently_and_fills_blanks():
     assert res["ai_chosen"] > 0 and clar.pending_questions(ctx) == []
     assert any("Recommended by AI" in l for l in clar.brd_assumption_lines(ctx))
 
+def test_rethink_fix_or_accept_never_dead_ends():
+    import rethink as rt
+    from agents.feasibility import FeasibilityAssessmentAgent
+    ctx = _project(skip_every=2)
+    for q in ctx.discovery_questions:                      # "not sure" answers create serious flaws
+        unsure = next((o for o in q.options if "not sure" in o.lower() or "not decided" in o.lower()), None)
+        if unsure: ctx.add_answer(q.id, unsure)
+    FeasibilityAssessmentAgent().run(ctx)
+    plan = rt.plan(ctx, use_llm=False)
+    assert plan, "expected at least one serious flaw"
+    assert all(i["key"] and i["flaw"] for i in plan)
+    assert any(q["suggestion"] for i in plan for q in i["questions"]), "AI should propose a concrete answer"
+    c0 = rt.counts(ctx)
+    rt.apply(ctx, {}, [plan[0]["key"]])                    # knowingly accept one flaw
+    assert rt.counts(ctx)["open"] == c0["open"] - 1 and rt.counts(ctx)["accepted"] == 1
+    # an accepted flaw whose answers then change is open again (the acceptance no longer applies)
+    linked = next((i for i in plan if i["questions"] and i["key"] != plan[0]["key"]), None)
+    if linked:
+        rt.apply(ctx, {}, [linked["key"]]); before = rt.counts(ctx)["accepted"]
+        q = linked["questions"][0]; new = next(o for o in q["options"] if o != q["current"]) if q["options"] else "different answer"
+        rt.apply(ctx, {q["id"]: new}, [])
+        assert rt.counts(ctx)["accepted"] < before
+
 if __name__ == "__main__":
     for n, f in list(globals().items()):
         if n.startswith("test_"): f(); print("PASS ", n)

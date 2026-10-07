@@ -32,6 +32,7 @@ from context import AgentRole, ProjectContext  # noqa: E402
 import chunked as ch  # noqa: E402
 import content_kit as ck  # noqa: E402
 import system_profile as sp  # noqa: E402
+import rethink as rt  # noqa: E402
 
 VERDICTS = ("GO", "GO WITH CHANGES", "RETHINK")
 RATINGS = ("High", "Medium", "Low")
@@ -530,7 +531,7 @@ def _live_feasibility_prompt(context: ProjectContext, market: dict, profile: dic
         "linked answer give 'why' (one sentence on what is wrong with THIS answer specifically — do not just repeat the flaw) and "
         "'change' (the concrete change to THIS answer). If the flaw is a contradiction between two answers, link both and write why/change "
         "separately for each so each can be fixed on its own. Use an empty list if the flaw is not tied to any question asked. "
-        "Never invent ids.\nDISCOVERY QUESTIONS (id, question -> answer):\n" + qlist + "\n\n" + _memory_prompt_block(memory or {}) +
+        "Never invent ids.\nDISCOVERY QUESTIONS (id, question -> answer):\n" + qlist + "\n\n" + _memory_prompt_block(memory or {}) + rt.accepted_prompt_block(context) +
         "Then list the key assumptions that must be validated with real users/data (with how), the recommended changes to the idea "
         "(concrete, ordered by importance), and what must be confirmed before building. Give an overall verdict: GO, GO WITH CHANGES or RETHINK, "
         "with a 2-3 sentence rationale, and your confidence (High, Medium, Low).\n\n"

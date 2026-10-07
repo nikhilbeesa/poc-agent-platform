@@ -122,6 +122,8 @@ class ProjectContext(BaseModel):
     # (see clarifications.py). Each: {id, kind, text, answer, status: answered|skipped, parameter?}.
     # Like feasibility_history, deliberately NOT cleared by a fresh agent run.
     clarifications: list[dict] = Field(default_factory=list)
+    # Serious feasibility flaws the person chose to KEEP (see rethink.py). Not cleared by a fresh run.
+    accepted_flaws: list[dict] = Field(default_factory=list)
 
     def add_answer(self, question_id: str, answer: str) -> None:
         for q in self.discovery_questions:

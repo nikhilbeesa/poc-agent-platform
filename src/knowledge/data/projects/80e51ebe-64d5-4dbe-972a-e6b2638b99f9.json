@@ -1,0 +1,353 @@
+{
+  "id": "80e51ebe-64d5-4dbe-972a-e6b2638b99f9",
+  "business_idea": "A tool for solo freelance photographers to manage their crew and book clients, paid offline",
+  "domain": "booking_platform",
+  "domain_confidence": 0.75,
+  "stage": "agent_processing",
+  "status": "draft",
+  "handoff_status": null,
+  "consistency_notes": [],
+  "system_profile": null,
+  "feasibility": {
+    "verdict": "GO WITH CHANGES",
+    "rationale": "The idea is workable, but the issues below should be addressed first or the specification will inherit them. 0 critical and 3 major flaw(s) were found.",
+    "confidence": "Low",
+    "counts": {
+      "critical": 0,
+      "major": 3,
+      "minor": 1,
+      "competitors": 3,
+      "differentiators": 1
+    },
+    "headline_flaws": [
+      "No clear reason for users to choose this product over existing options has been stated.",
+      "The product needs customers and providers at the same time; each side only joins if the other is already there.",
+      "9 discovery questions were skipped or answered 'not sure'."
+    ],
+    "recommended_changes": [
+      "Define one specific thing this product does better for one specific user group, and test it with 10+ target users before building.",
+      "Launch in one narrow area or niche, secure the provider side first (manually if needed), and set a target for supply density before opening to customers.",
+      "Resolve the open questions in the questionnaire (use Edit on the review screen) before relying on the specification."
+    ],
+    "revisit": [
+      {
+        "question_id": "bp_providers",
+        "severity": "Major",
+        "reasons": [
+          {
+            "flaw_id": "FLAW-02",
+            "severity": "Major",
+            "flaw": "The product needs customers and providers at the same time; each side only joins if the other is already there.",
+            "suggestion": "Launch in one narrow area or niche, secure the provider side first (manually if needed), and set a target for supply density before opening to customers.",
+            "primary": true,
+            "specific": false,
+            "shared_with": []
+          },
+          {
+            "flaw_id": "FLAW-03",
+            "severity": "Major",
+            "flaw": "9 discovery questions were skipped or answered 'not sure'.",
+            "suggestion": "Resolve the open questions in the questionnaire (use Edit on the review screen) before relying on the specification.",
+            "primary": true,
+            "specific": false,
+            "shared_with": [
+              "bp_scheduling",
+              "bp_payment"
+            ]
+          }
+        ]
+      },
+      {
+        "question_id": "bp_scheduling",
+        "severity": "Major",
+        "reasons": [
+          {
+            "flaw_id": "FLAW-03",
+            "severity": "Major",
+            "flaw": "9 discovery questions were skipped or answered 'not sure'.",
+            "suggestion": "",
+            "primary": false,
+            "specific": false,
+            "shared_with": [
+              "bp_providers",
+              "bp_payment"
+            ]
+          }
+        ]
+      },
+      {
+        "question_id": "bp_payment",
+        "severity": "Major",
+        "reasons": [
+          {
+            "flaw_id": "FLAW-03",
+            "severity": "Major",
+            "flaw": "9 discovery questions were skipped or answered 'not sure'.",
+            "suggestion": "",
+            "primary": false,
+            "specific": false,
+            "shared_with": [
+              "bp_providers",
+              "bp_scheduling"
+            ]
+          }
+        ]
+      }
+    ],
+    "unlinked": [
+      {
+        "id": "FLAW-01",
+        "severity": "Major",
+        "flaw": "No clear reason for users to choose this product over existing options has been stated.",
+        "suggestion": "Define one specific thing this product does better for one specific user group, and test it with 10+ target users before building."
+      }
+    ],
+    "reviewed": [],
+    "already_reviewed": [],
+    "round": 1,
+    "history": [
+      {
+        "round": 1,
+        "verdict": "GO WITH CHANGES",
+        "items": [
+          {
+            "question_id": "bp_providers",
+            "question": "How do service providers get onboarded \u2014 self-signup or vetted by you?",
+            "answer": "Not decided yet",
+            "severity": "Major",
+            "flaw": "The product needs customers and providers at the same time; each side only joins if the other is already there.",
+            "suggestion": "Launch in one narrow area or niche, secure the provider side first (manually if needed), and set a target for supply density before opening to customers."
+          },
+          {
+            "question_id": "bp_scheduling",
+            "question": "Do providers set their own availability, or is it assigned?",
+            "answer": "Not sure yet",
+            "severity": "Major",
+            "flaw": "9 discovery questions were skipped or answered 'not sure'.",
+            "suggestion": ""
+          },
+          {
+            "question_id": "bp_payment",
+            "question": "Is payment taken at booking, after service, or both?",
+            "answer": "Not decided yet",
+            "severity": "Major",
+            "flaw": "9 discovery questions were skipped or answered 'not sure'.",
+            "suggestion": ""
+          }
+        ]
+      },
+      {
+        "round": 2,
+        "verdict": "RETHINK",
+        "items": [
+          {
+            "question_id": "bp_providers",
+            "question": "How do service providers get onboarded \u2014 self-signup or vetted by you?",
+            "answer": "Not decided yet",
+            "severity": "Major",
+            "flaw": "The product needs customers and providers at the same time; each side only joins if the other is already there.",
+            "suggestion": "Launch in one narrow area or niche, secure the provider side first (manually if needed), and set a target for supply density before opening to customers."
+          }
+        ]
+      }
+    ],
+    "clarifications": [],
+    "accepted": [
+      {
+        "key": "t:no-clear-reason-for-users-to-choose-this-product-over-existi",
+        "flaw": "No clear reason for users to choose this product over existing options has been stated.",
+        "severity": "Major",
+        "sig": "",
+        "at": "2026-10-07T06:58:29.637732+00:00"
+      }
+    ],
+    "rethink": {
+      "serious": 3,
+      "accepted": 1,
+      "open": 2
+    }
+  },
+  "created_at": "2026-10-07T06:58:29.128190+00:00",
+  "questions": [
+    {
+      "id": "bp_users",
+      "text": "Who books \u2014 individuals, businesses, or both?",
+      "category": "users",
+      "status": "answered",
+      "options": [
+        "Individual consumers",
+        "Small businesses",
+        "Enterprise teams",
+        "Both individuals and businesses"
+      ],
+      "multi_select": false,
+      "answer": "Both individuals and businesses"
+    },
+    {
+      "id": "bp_providers",
+      "text": "How do service providers get onboarded \u2014 self-signup or vetted by you?",
+      "category": "operations",
+      "status": "answered",
+      "options": [
+        "Self-signup, no vetting",
+        "Self-signup with a review step",
+        "Fully vetted/curated by us",
+        "Not decided yet"
+      ],
+      "multi_select": false,
+      "answer": "Self-signup with a review step"
+    },
+    {
+      "id": "bp_scheduling",
+      "text": "Do providers set their own availability, or is it assigned?",
+      "category": "scheduling",
+      "status": "answered",
+      "options": [
+        "Providers set their own availability",
+        "Availability is assigned centrally",
+        "A mix of both",
+        "Not sure yet"
+      ],
+      "multi_select": false,
+      "answer": "Not sure yet"
+    },
+    {
+      "id": "bp_payment",
+      "text": "Is payment taken at booking, after service, or both?",
+      "category": "payments",
+      "status": "answered",
+      "options": [
+        "At time of booking",
+        "After the service is completed",
+        "Split \u2014 deposit then balance",
+        "Not decided yet"
+      ],
+      "multi_select": false,
+      "answer": "Not decided yet"
+    },
+    {
+      "id": "bp_cancellation",
+      "text": "What's your cancellation/refund policy?",
+      "category": "policy",
+      "status": "answered",
+      "options": [
+        "Flexible \u2014 full refunds",
+        "Strict \u2014 limited or no refunds",
+        "Tiered based on notice given",
+        "Haven't decided yet"
+      ],
+      "multi_select": false,
+      "answer": "Haven't decided yet"
+    },
+    {
+      "id": "mock_platform",
+      "text": "Web, mobile app, or both?",
+      "category": "platform",
+      "status": "answered",
+      "options": [
+        "Web app",
+        "Mobile app",
+        "Both web & mobile",
+        "Not sure yet"
+      ],
+      "multi_select": false,
+      "answer": "Not sure yet"
+    },
+    {
+      "id": "nfr_users_12m",
+      "text": "How many registered users do you expect in the first 12 months after launch?",
+      "category": "scale_performance",
+      "status": "answered",
+      "options": [
+        "Under 500",
+        "500\u20135,000",
+        "5,000\u201350,000",
+        "50,000\u2013500,000",
+        "500,000+"
+      ],
+      "multi_select": false,
+      "answer": "500,000+"
+    },
+    {
+      "id": "nfr_peak_concurrent",
+      "text": "At the busiest times, roughly how many people will be using the product at the same moment?",
+      "category": "scale_performance",
+      "status": "answered",
+      "options": [
+        "Under 50",
+        "50\u2013500",
+        "500\u20135,000",
+        "5,000+",
+        "Not sure yet"
+      ],
+      "multi_select": false,
+      "answer": "Not sure yet"
+    },
+    {
+      "id": "nfr_availability",
+      "text": "How important is it that the product is available around the clock?",
+      "category": "scale_performance",
+      "status": "answered",
+      "options": [
+        "Business hours only is fine",
+        "99% (a few hours of downtime a month is OK)",
+        "99.9% (only minutes of downtime a month)",
+        "99.95%+ (near-zero downtime, mission-critical)",
+        "Not sure yet"
+      ],
+      "multi_select": false,
+      "answer": "Not sure yet"
+    },
+    {
+      "id": "nfr_data_sensitivity",
+      "text": "What sensitive data will the product handle? (choose all that apply)",
+      "category": "security",
+      "status": "answered",
+      "options": [
+        "Personal details (names, emails, phone numbers)",
+        "Payment / card data",
+        "Health or medical data",
+        "Children's data",
+        "Government IDs / identity documents",
+        "Precise location data",
+        "Nothing sensitive",
+        "Not sure yet"
+      ],
+      "multi_select": true,
+      "answer": "Not sure yet"
+    },
+    {
+      "id": "nfr_geography",
+      "text": "Where will your users be located at launch?",
+      "category": "security",
+      "status": "answered",
+      "options": [
+        "One city or region",
+        "One country",
+        "Several countries",
+        "Global",
+        "Not sure yet"
+      ],
+      "multi_select": false,
+      "answer": "Not sure yet"
+    },
+    {
+      "id": "additional_information",
+      "text": "Is there any additional information or data you'd like to provide that our questions may not have covered? (For example: specific requirements, constraints, integrations, reference products, data you already have, or anything else the team should know.)",
+      "category": "additional_information",
+      "status": "answered",
+      "options": [],
+      "multi_select": false,
+      "answer": "x"
+    }
+  ],
+  "agent_log": [
+    {
+      "agent": "feasibility_assessment",
+      "label": "Feasibility Check",
+      "summary": "Feasibility verdict: GO WITH CHANGES \u2014 0 critical and 3 major flaw(s), 3 competitor(s)/categories and 1 differentiator(s) assessed."
+    }
+  ],
+  "artefacts": [],
+  "updated_at": "2026-10-07T06:58:29.637819+00:00"
+}

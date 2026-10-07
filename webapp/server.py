@@ -18,6 +18,7 @@ from context import (  # noqa: E402
     AgentRole, Artefact, DiscoveryQuestion, ProjectContext, ProjectStage,
 )
 import clarifications as clar  # noqa: E402
+import rethink as rt  # noqa: E402
 from discovery import is_discovery_complete, run_discovery  # noqa: E402
 from export import export_all_artefacts  # noqa: E402
 from knowledge.bootstrap_seed_data import bootstrap  # noqa: E402
@@ -91,7 +92,9 @@ def _feasibility_summary(ctx):
             "round": o.get("review_round", 1),
             "history": ctx.feasibility_history,
             # answers to the pre-BRD clarifying questions ride along in the same JSON column (no schema change)
-            "clarifications": ctx.clarifications}
+            "clarifications": ctx.clarifications,
+            # serious flaws the person chose to keep (rethink.py) and how many still need a decision
+            "accepted": ctx.accepted_flaws, "rethink": rt.counts(ctx)}
 
 
 def _record_from_ctx(ctx) -> dict:
@@ -117,7 +120,7 @@ def _record_from_ctx(ctx) -> dict:
         "consistency_notes": ctx.consistency_notes,
         "system_profile": ctx.system_profile,
         # while a fresh run is between "cleared" and "feasibility done", keep the old summary but the CURRENT history
-        "feasibility": _feasibility_summary(ctx) or ({**meta["feasibility"], "history": ctx.feasibility_history, "clarifications": ctx.clarifications}
+        "feasibility": _feasibility_summary(ctx) or ({**meta["feasibility"], "history": ctx.feasibility_history, "clarifications": ctx.clarifications, "accepted": ctx.accepted_flaws}
                                                      if meta.get("feasibility") else None),
         "created_at": ctx.created_at.isoformat(),
         "questions": _question_dicts(ctx),
@@ -167,6 +170,7 @@ def _ctx_from_record(rec: dict) -> ProjectContext:
     ]
     ctx.feasibility_history = list(((rec.get("feasibility") or {}).get("history")) or [])
     ctx.clarifications = list(((rec.get("feasibility") or {}).get("clarifications")) or [])
+    ctx.accepted_flaws = list(((rec.get("feasibility") or {}).get("accepted")) or [])
     clar.seed_locked_decisions(ctx)
     META[rec["id"]] = {"agent_log": rec.get("agent_log") or [], "handoff_status": rec.get("handoff_status"),
                        "feasibility": rec.get("feasibility")}
@@ -339,6 +343,29 @@ def run_agent(project_id, index):
         }
 
     return _run_maybe_async(project_id, work)
+
+
+@app.route("/api/project/<project_id>/feasibility/rethink", methods=["GET"])
+def get_rethink(project_id):
+    """Every serious flaw with a recommended fix and a proposed answer for each answer behind it."""
+    ctx = _get_ctx(project_id)
+    if not ctx:
+        return jsonify({"error": "unknown project"}), 404
+    return jsonify({"flaws": rt.plan(ctx), "counts": rt.counts(ctx)})
+
+
+@app.route("/api/project/<project_id>/feasibility/rethink", methods=["POST"])
+def post_rethink(project_id):
+    """{changes: {question id: new answer}, accept: [flaw keys], reopen: [flaw keys]} — fix some flaws, knowingly accept others."""
+    ctx = _get_ctx(project_id)
+    if not ctx:
+        return jsonify({"error": "unknown project"}), 404
+    if jobs.is_running(project_id):
+        return jsonify({"error": "The AI agents are running — wait for the current step to finish."}), 409
+    body = request.get_json(silent=True) or {}
+    result = rt.apply(ctx, body.get("changes") or {}, body.get("accept") or [], body.get("reopen") or [])
+    _persist(ctx)
+    return jsonify({**result, "counts": rt.counts(ctx), "questions": _question_dicts(ctx)})
 
 
 @app.route("/api/project/<project_id>/clarifications", methods=["GET"])

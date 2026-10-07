@@ -14,6 +14,7 @@ quote the same IDs and numbers.
 
 import re
 import clarifications as clar
+import rethink as rt
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -182,7 +183,9 @@ def _feasibility_risk_rows(context: ProjectContext) -> list[dict]:
             "risk": f"{f.get('flaw', '')} (feasibility {f.get('id', '')})", "category": f"Feasibility — {f.get('area', '')}",
             "likelihood": "Medium", "severity": "High" if critical else "Medium",
             "rating": "High" if critical else "Medium", "score": 6 if critical else 4,
-            "owner": "Product owner", "trigger": "Raised by the feasibility assessment",
+            "owner": "Product owner",
+            "trigger": ("Raised by the feasibility assessment — knowingly ACCEPTED by the stakeholder (plan kept as is)"
+                        if rt.is_accepted(context, f) else "Raised by the feasibility assessment"),
             "consequence": f.get("why_it_matters", ""), "mitigation": f.get("recommended_change", ""),
         })
     return rows
@@ -221,9 +224,11 @@ def export_feasibility_assessment(context: ProjectContext) -> Artefact:
     labels = dict(DIMENSIONS)
     feasibility = _table(["Dimension", "Rating", "Assessment"],
                          [[labels.get(k, k), v.get("rating", ""), v.get("assessment", "")] for k, v in (o.get("feasibility") or {}).items()])
-    flaws = _table(["ID", "Severity", "Area", "Flaw", "Why it matters", "Recommended change"],
+    flaws = _table(["ID", "Severity", "Area", "Flaw", "Why it matters", "Recommended change", "Your decision"],
                    [[f.get("id", ""), f.get("severity", ""), f.get("area", ""), f.get("flaw", ""), f.get("why_it_matters", ""),
-                     f.get("recommended_change", "")] for f in o.get("flaws", [])])
+                     f.get("recommended_change", ""),
+                     ("Accepted as a risk" if rt.is_accepted(context, f) else "Open") if f.get("severity") in ("Critical", "Major") else "-"]
+                    for f in o.get("flaws", [])])
     assumptions = _table(["Assumption", "How to validate it", "Risk if wrong"],
                          [[a.get("assumption", ""), a.get("how_to_validate", ""), a.get("risk_if_wrong", "")] for a in o.get("assumptions_to_validate", [])])
     top_changes = (o.get("recommended_changes") or [])[:5]

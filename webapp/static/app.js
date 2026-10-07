@@ -1401,32 +1401,28 @@ async function runAgentPipeline(startIndex = 0) {
       if (agentMeta[i].role === 'ai_handoff_validation') { pendingQa = data; showQaPending(); }
       if (agentMeta[i].role === 'feasibility_assessment' && data.feasibility) {
         showFeasibility(data.feasibility);
-        // An early check is only useful if it can stop wasted work: on a RETHINK verdict, stop and let the
-        // person fix just the answers behind the problems (or continue anyway).
+        // An early check is only useful if it can stop wasted work: on a RETHINK verdict stop and let the person
+        // resolve every serious flaw — fix it, or knowingly accept the risk. It never silently carries on while a
+        // serious flaw is still undecided, and it cannot loop: an accepted flaw stays accepted until its answers change.
         const fz = data.feasibility;
-        const newItems = (fz.revisit || []).length;
-        const round = fz.round || 1;
-        // After the founder has already been through a round, only stop again if there is something NEW to look at.
-        // Re-asking about answers they already changed (or kept) on the check's advice is what made this loop.
-        const gateUseful = round === 1 || (newItems > 0 && round <= MAX_FEAS_GATE_ROUNDS);
-        if (fz.verdict === 'RETHINK' && startIndex === 0 && !gateUseful) {
-          logLine(round > MAX_FEAS_GATE_ROUNDS && newItems
-            ? `ℹ Feasibility is still RETHINK after ${round - 1} review round(s). Continuing with the specification — the remaining flaws are carried into the documents; you can still open the review from the red box.`
-            : 'ℹ Feasibility is still RETHINK, but the answers behind the remaining flaws were already reviewed by you. They are kept as residual risks in the assessment — continuing with the specification.');
-        }
-        if (fz.verdict === 'RETHINK' && startIndex === 0 && gateUseful) {
-          const choice = await openFeasibilityModal(data.feasibility, 'gate');
-          if (choice === 'rerun') {
-            logLine('↻ Answers updated — re-running the feasibility check…');
-            return 'rerun';
+        const open = (fz.rethink || {}).open || 0;
+        if (fz.verdict === 'RETHINK' && startIndex === 0) {
+          if (open > 0) {
+            const choice = await openRethinkModal(fz, 'gate');
+            if (choice === 'rerun') {
+              logLine('↻ Answers updated — re-running the feasibility check…');
+              return 'rerun';
+            }
+            if (choice === 'pause') {
+              logLine('⏸ Paused after the feasibility check. Reopen "Rethink & resolve" from the red box when you are ready, or click Continue.');
+              $('#agents-status').textContent = 'paused';
+              nextAgentIndex = i + 1;
+              return 'paused';
+            }
+            logLine('▶ Continuing — the risks you accepted are recorded in the BRD risk register.');
+          } else {
+            logLine(`ℹ Feasibility is still RETHINK, but you accepted all ${(fz.rethink || {}).accepted || 0} remaining risk(s). They are recorded in the BRD risk register — continuing.`);
           }
-          if (choice === 'pause') {
-            logLine('⏸ Paused after the feasibility check. Reopen the review from the red box, edit your answers, or click "Continue anyway".');
-            $('#agents-status').textContent = 'paused';
-            nextAgentIndex = i + 1;
-            return 'paused';
-          }
-          logLine('▶ Continuing despite the RETHINK verdict.');
         }
       }
     } catch (e) {
@@ -1490,7 +1486,6 @@ async function autoResolveGaps(initial) {
 }
 
 let lastFeasibility = null;
-const MAX_FEAS_GATE_ROUNDS = 3;   // after this many review rounds the RETHINK gate stops pausing the run
 
 function showFeasibility(f) {
   lastFeasibility = f;
@@ -1506,13 +1501,13 @@ function showFeasibility(f) {
     `<span class="feas-counts"> — ${c.critical || 0} critical · ${c.major || 0} major · ${c.minor || 0} minor flaw(s)</span>` +
     `<div class="feas-why">${escapeHtml(f.rationale || '')}</div>${flaws}` +
     `<div class="feas-foot">Full analysis (competitors, differentiators, flaws, recommended changes) is in the first document below once exported.</div>`;
-  const n = (f.revisit || []).length;
-  if (n) {
-    const btn = el('button', { type: 'button', class: 'btn btn-ghost feas-actions', id: 'btn-feas-review',
-                               text: `✎ Review the ${n} answer${n === 1 ? '' : 's'} behind these flaws` });
+  const rc = f.rethink || {};
+  if ((rc.serious || 0) > 0) {
+    const label = rc.open ? `↻ Rethink & resolve ${rc.open} flaw${rc.open === 1 ? '' : 's'}` : `✎ Review the ${rc.accepted} accepted risk${rc.accepted === 1 ? '' : 's'}`;
+    const btn = el('button', { type: 'button', class: 'btn btn-ghost feas-actions', id: 'btn-feas-review', text: label });
     btn.addEventListener('click', () => {
       if (runState === 'running' || runState === 'external') { alert('Please wait until the agents have finished.'); return; }
-      openFeasibilityModal(lastFeasibility, runState === 'paused' ? 'paused' : 'review').then(handleFeasChoice);
+      openRethinkModal(lastFeasibility, runState === 'paused' ? 'paused' : 'review').then(handleFeasChoice);
     });
     box.appendChild(btn);
   }
@@ -1526,218 +1521,164 @@ function handleFeasChoice(choice) {
   }
 }
 
-// ---- Feasibility popup -------------------------------------------------------------------
-// Shows ONLY the discovery questions behind the critical/major flaws, each editable in place, so the person
-// does not have to hunt through the whole questionnaire. Resolves with 'rerun' (answers saved), 'continue',
-// or 'pause' (closed without a decision).
-//   mode 'gate'   — opened automatically on a RETHINK verdict, mid-run (offers "Continue anyway")
-//   mode 'paused' — reopened after pausing (offers "Continue anyway")
-//   mode 'review' — opened from the box later (no "Continue anyway")
-let feasModalDraft = {};
-let feasModalResolve = null;
-let feasModalReturnFocus = null;
+// ---- Rethink & resolve popup ---------------------------------------------------------------
+// One card per serious feasibility flaw: why it matters, the recommended change, the AI's proposed answer for each
+// answer behind it, and a choice — change the answer(s), or knowingly keep the plan and ACCEPT the risk.
+// Resolves 'rerun' (answers changed -> re-check), 'continue' (everything decided, nothing changed) or 'pause'.
+//   mode 'gate'   — opened automatically on a RETHINK verdict, mid-run
+//   mode 'paused' — reopened after pausing
+//   mode 'review' — opened from the red box later
+let rtFlaws = [];
+let rtDraft = {};            // question id -> new answer
+let rtAccept = new Set();    // flaw keys the person is keeping
+let rtResolve = null;
+let rtReturnFocus = null;
+const rtEditors = {};        // question id -> editor api
 
-function feasAnswerParts(q) {
-  const raw = dfAnswers[q.id] || '';
-  return q.multi_select ? raw.split(' | ').map(s => s.trim()).filter(Boolean) : (raw ? [raw] : []);
+const rtDecided = (f) => rtAccept.has(f.key) || f.questions.some(q => q.id in rtDraft);
+
+function updateRethinkFooter() {
+  const open = rtFlaws.filter(f => !rtDecided(f));
+  const changes = Object.keys(rtDraft).length;
+  const apply = $('#rethink-apply');
+  apply.disabled = open.length > 0;
+  apply.textContent = open.length ? `Decide ${open.length} more to continue` : (changes ? `Apply ${changes} change${changes === 1 ? '' : 's'} & re-check →` : 'Continue with accepted risks →');
+  $('#rethink-progress').textContent = `${rtFlaws.length - open.length} of ${rtFlaws.length} decided`;
+  rtFlaws.forEach(f => {
+    const card = document.getElementById(rtCardId(f.key));
+    if (card) card.classList.toggle('decided', rtDecided(f));
+  });
 }
+const rtCardId = (key) => 'rt-' + String(key).replace(/[^\w-]/g, '_');
 
-function buildFeasEditor(q, card) {
-  const wrap = el('div', { class: 'fm-edit' });
-  const current = dfAnswers[q.id] || '';
-  wrap.appendChild(el('div', { class: 'fm-current', text: 'Current answer: ' + (current ? current.split(' | ').join(', ') : '(skipped)') }));
-
-  const report = (text) => {            // record / clear the draft for this question
-    text = (text || '').trim();
-    if (text && text !== current) feasModalDraft[q.id] = text; else delete feasModalDraft[q.id];
-    const changed = q.id in feasModalDraft;
-    card.classList.toggle('changed', changed);
-    const tag = card.querySelector('.fm-changed-tag'); if (tag) tag.hidden = !changed;
-    $('#feas-modal-save').disabled = Object.keys(feasModalDraft).length === 0;
-  };
-
-  if (!(q.options && q.options.length)) {
-    const ta = el('textarea', { class: 'fm-edit-input', rows: '2', placeholder: 'Type your answer…' });
-    ta.value = current;
-    ta.addEventListener('input', () => report(ta.value));
-    wrap.appendChild(ta);
+function buildRethinkQuestion(f, q, firstTime) {
+  const wrap = el('div', { class: 'rt-q' });
+  wrap.appendChild(el('div', { class: 'fm-q', text: q.text }));
+  wrap.appendChild(el('div', { class: 'fm-current', text: 'Current answer: ' + (q.current ? q.current.split(' | ').join(', ') : '(skipped)') }));
+  if (!firstTime) {
+    wrap.appendChild(el('div', { class: 'fm-shared', text: 'This answer is also behind an earlier problem on this list — change it there.' }));
     return wrap;
   }
-
-  const multi = !!q.multi_select;
-  const allOptions = q.options.includes(OTHER_LABEL) ? q.options : [...q.options, OTHER_LABEL];
-  const parts = feasAnswerParts(q);
-  const selected = new Set(parts.filter(p => q.options.includes(p)));
-  let otherText = parts.filter(p => !q.options.includes(p)).join(', ');
-  if (otherText) selected.add(OTHER_LABEL);
-
-  const list = el('div', { class: 'df-options fm-options', role: multi ? 'group' : 'radiogroup' });
-  const otherInput = el('input', { type: 'text', class: 'fm-edit-input', placeholder: 'Type your own answer…' });
-  otherInput.value = otherText;
-  otherInput.hidden = !selected.has(OTHER_LABEL);
-
-  const cards = new Map();
-  const compute = () => {
-    const out = [];
-    allOptions.forEach(opt => {
-      if (!selected.has(opt)) return;
-      if (opt === OTHER_LABEL) { if (otherInput.value.trim()) out.push(otherInput.value.trim()); }
-      else out.push(opt);
-    });
-    report(out.join(' | '));
-  };
-  allOptions.forEach(opt => {
-    const c = buildOptionCard(opt, selected.has(opt), multi ? 'checkbox' : 'radio', opt === OTHER_LABEL);
-    cards.set(opt, c);
-    c.addEventListener('click', () => {
-      if (multi) {
-        if (selected.has(opt)) selected.delete(opt); else selected.add(opt);
-      } else {
-        selected.clear(); selected.add(opt);
-      }
-      cards.forEach((cc, o) => { const on = selected.has(o); cc.classList.toggle('selected', on); cc.setAttribute('aria-checked', on ? 'true' : 'false'); });
-      otherInput.hidden = !selected.has(OTHER_LABEL);
-      if (!otherInput.hidden) otherInput.focus();
-      compute();
-    });
-    list.appendChild(c);
-  });
-  otherInput.addEventListener('input', compute);
-  wrap.appendChild(list); wrap.appendChild(otherInput);
+  const sugBox = el('div', { class: 'clar-sug' });
+  const ed = buildAnswerEditor(q, (v) => {
+    if (v && v !== q.current) rtDraft[q.id] = v; else delete rtDraft[q.id];
+    if (q.id in rtDraft) rtAccept.delete(f.key);
+    renderRtSuggestion(q, sugBox); syncRtAccept(f); updateRethinkFooter();
+  }, 'Type your answer…');
+  rtEditors[q.id] = ed.api;
+  if (q.suggestion) { wrap.appendChild(sugBox); renderRtSuggestion(q, sugBox); }
+  wrap.appendChild(ed.el);
   return wrap;
 }
 
-function openFeasibilityModal(f, mode) {
-  const items = (f.revisit || []).map(r => ({ r, q: questions.find(x => x.id === r.question_id) })).filter(x => x.q);
-  feasModalDraft = {};
-  const verdictSlug = f.verdict === 'GO' ? 'go' : f.verdict === 'RETHINK' ? 'rethink' : 'changes';
-  const kicker = $('#feas-modal-kicker');
-  kicker.className = 'modal-kicker ' + verdictSlug;
-  kicker.textContent = `Feasibility check · ${f.verdict || ''}`;
-  $('#feas-modal-title').textContent = items.length
-    ? `${items.length} answer${items.length === 1 ? '' : 's'} behind the problems found` : 'No specific answer to change';
-  const round = f.round || 1;
-  const reviewedNote = round > 1 ? ' Answers you already reviewed in an earlier round are not asked about again.' : '';
-  $('#feas-modal-lead').textContent = (items.length
-    ? 'Change anything that no longer reflects your plan, then re-run the check — or continue with your current answers.'
-    : (round > 1 ? 'No new answers to change.' : 'The problems found are not tied to a single question (see below). You can review all your answers, or continue anyway.'))
-    + reviewedNote;
-
-  const body = $('#feas-modal-body');
-  body.innerHTML = '';
-  if (!items.length) body.appendChild(el('div', { class: 'fm-empty', text: f.rationale || '' }));
-  items.forEach(({ r, q }) => {
-    const card = el('div', { class: 'fm-item' });
-    card.appendChild(el('div', { class: 'fm-top' }, [
-      el('span', { class: 'fm-sev ' + (r.severity === 'Critical' ? 'critical' : 'major'), text: (r.severity || '').toUpperCase() }),
-      el('div', { class: 'fm-q', text: q.text }),
-      el('span', { class: 'fm-changed-tag', text: '● changed', hidden: '' }),
-    ]));
-    // The same flaw can be linked to several answers (e.g. two answers that contradict each other). Never repeat it
-    // word-for-word under each: the first linked answer carries the flaw and its suggested change; the others say
-    // which answer it is shared with, unless the check gave an answer-specific explanation for them.
-    const textOf = (id) => { const o = items.find(it => it.r.question_id === id); return o ? o.q.text : ''; };
-    const sharedOf = (x) => {
-      if (Array.isArray(x.shared_with)) return x.shared_with.filter(id => items.some(it => it.r.question_id === id));
-      return items.filter(it => it.r !== r && (it.r.reasons || []).some(y => y.flaw_id === x.flaw_id)).map(it => it.r.question_id);   // saved before this was tracked
-    };
-    const isPrimary = (x) => {
-      if (typeof x.primary === 'boolean') return x.primary;
-      const first = items.find(it => (it.r.reasons || []).some(y => y.flaw_id === x.flaw_id));
-      return !first || first.r === r;
-    };
-    const why = el('ul', { class: 'fm-why' });
-    const shownSuggestions = [];
-    (r.reasons || []).forEach(x => {
-      const shared = sharedOf(x);
-      const secondary = shared.length && !x.specific && !isPrimary(x);
-      const li = el('li');
-      if (secondary) {
-        const other = shared.map(textOf).filter(Boolean)[0] || 'another question';
-        li.appendChild(el('span', { class: 'fm-shared', text: 'Part of the same problem as your answer to “' + clip(other, 90) + '” — fix it there first; change this answer only if it no longer fits your plan.' }));
-      } else {
-        li.appendChild(document.createTextNode(x.flaw));
-        if (shared.length && !x.specific) {
-          const others = shared.map(textOf).filter(Boolean).map(t => '“' + clip(t, 70) + '”').join(', ');
-          if (others) li.appendChild(el('div', { class: 'fm-shared', text: 'Also involves: ' + others }));
-        }
-        if (x.suggestion) shownSuggestions.push(x.suggestion);
-      }
-      why.appendChild(li);
-    });
-    card.appendChild(why);
-    if (shownSuggestions.length) card.appendChild(el('div', { class: 'fm-suggest' }, [el('strong', { text: 'Suggested: ' }), document.createTextNode(shownSuggestions[0])]));
-    card.appendChild(buildFeasEditor(q, card));
-    card.querySelector('.fm-changed-tag').hidden = true;
-    body.appendChild(card);
-  });
-
-  // Serious flaws that no single answer explains: shown read-only so this list is never mistaken for the whole picture.
-  const unlinked = f.unlinked || [];
-  if (unlinked.length) {
-    const box = el('div', { class: 'fm-unlinked' }, [el('div', { class: 'fm-unlinked-title', text: 'Also flagged — not tied to a single answer' })]);
-    const ul = el('ul', { class: 'fm-why' });
-    unlinked.forEach(u => {
-      const li = el('li', { text: u.flaw });
-      if (u.suggestion) li.appendChild(el('div', { class: 'fm-suggest', text: 'Suggested: ' + u.suggestion }));
-      ul.appendChild(li);
-    });
-    box.appendChild(ul);
-    body.appendChild(box);
-  }
-
-  // Flaws on answers the founder already reviewed: read-only, so it is clear they were heard and will not be re-asked.
-  const reviewed = f.reviewed || [];
-  if (reviewed.length) {
-    const box = el('div', { class: 'fm-unlinked fm-reviewed' }, [el('div', { class: 'fm-unlinked-title', text: 'Already reviewed by you — kept as residual risks, not asked again' })]);
-    const ul = el('ul', { class: 'fm-why' });
-    reviewed.forEach(u => ul.appendChild(el('li', { text: u.flaw })));
-    box.appendChild(ul);
-    body.appendChild(box);
-  }
-
-  $('#feas-modal-continue').hidden = mode === 'review';
-  $('#feas-modal-save').hidden = !items.length;
-  $('#feas-modal-save').disabled = true;
-  $('#feas-modal-review-all').hidden = false;
-
-  feasModalReturnFocus = document.activeElement;
-  $('#feas-modal').hidden = false;
-  document.body.classList.add('modal-open');
-  body.scrollTop = 0;
-  setTimeout(() => { const first = body.querySelector('button, input, textarea') || $('#feas-modal-close'); first.focus(); }, 30);
-  return new Promise(resolve => { feasModalResolve = resolve; });
+function renderRtSuggestion(q, box) {
+  box.innerHTML = '';
+  rtEditors[q.id] && rtEditors[q.id].markSuggested(q.suggestion || '');
+  box.appendChild(el('div', { class: 'clar-sug-main' }, [
+    el('span', { class: 'clar-sug-tag', text: 'AI PROPOSES' }),
+    el('span', { class: 'clar-sug-val', text: q.suggestion }),
+  ]));
+  if (q.reason) box.appendChild(el('div', { class: 'clar-sug-why', text: q.reason }));
+  const use = el('button', { type: 'button', class: 'btn btn-ghost clar-sug-use', text: rtDraft[q.id] === q.suggestion ? '✓ Selected' : 'Use this' });
+  use.addEventListener('click', () => rtEditors[q.id].setValue(q.suggestion));
+  box.appendChild(use);
 }
 
-function closeFeasModal(result) {
-  $('#feas-modal').hidden = true;
+function syncRtAccept(f) {
+  const cb = document.getElementById(rtCardId(f.key) + '-accept');
+  if (cb) cb.checked = rtAccept.has(f.key);
+}
+
+function openRethinkModal(fz, mode) {
+  return api(`/api/project/${projectId}/feasibility/rethink`).then(({ flaws }) => {
+    rtFlaws = flaws || [];
+    rtDraft = {}; rtAccept = new Set(rtFlaws.filter(f => f.accepted).map(f => f.key));
+    Object.keys(rtEditors).forEach(k => delete rtEditors[k]);
+    const slug = fz.verdict === 'GO' ? 'go' : fz.verdict === 'RETHINK' ? 'rethink' : 'changes';
+    $('#rethink-kicker').className = 'modal-kicker ' + slug;
+    $('#rethink-kicker').textContent = `Feasibility check · ${fz.verdict || ''}`;
+    const n = rtFlaws.length;
+    $('#rethink-title').textContent = n ? `Rethink & resolve — ${n} serious problem${n === 1 ? '' : 's'}` : 'No serious problems to resolve';
+    $('#rethink-lead').textContent = 'For each problem, either change the answer(s) behind it — the AI has proposed a concrete change — or keep your plan and accept the risk. ' +
+      'Accepted risks are recorded in the BRD risk register, and the same problem will not block you again unless the answers behind it change.';
+    $('#rethink-accept-all').hidden = mode === 'review' && !rtFlaws.some(f => !f.accepted);
+
+    const body = $('#rethink-body'); body.innerHTML = '';
+    const shown = new Set();
+    rtFlaws.forEach(f => {
+      const card = el('div', { class: 'fm-item rt-flaw' }); card.id = rtCardId(f.key);
+      card.appendChild(el('div', { class: 'fm-top' }, [
+        el('span', { class: 'fm-sev ' + (f.severity === 'Critical' ? 'critical' : 'major'), text: (f.severity || '').toUpperCase() }),
+        el('div', { class: 'fm-q', text: f.flaw }),
+      ]));
+      if (f.why) card.appendChild(el('div', { class: 'rt-why', text: f.why }));
+      if (f.recommended) card.appendChild(el('div', { class: 'fm-suggest' }, [el('strong', { text: 'Recommended change: ' }), document.createTextNode(f.recommended)]));
+      if ((f.ways_forward || []).length > 1) {
+        const ul = el('ul', { class: 'rt-ways' });
+        f.ways_forward.forEach(w => ul.appendChild(el('li', { text: w })));
+        card.appendChild(el('div', { class: 'rt-ways-title', text: 'Ways forward' })); card.appendChild(ul);
+      }
+      if (!f.questions.length) {
+        card.appendChild(el('div', { class: 'fm-shared', text: 'This is about the plan as a whole, not one answer. Either rework your idea/answers (use “Review all answers”), or accept the risk below.' }));
+      }
+      f.questions.forEach(q => { const first = !shown.has(q.id); shown.add(q.id); card.appendChild(buildRethinkQuestion(f, q, first)); });
+      const lab = el('label', { class: 'rt-accept' });
+      const cb = el('input', { type: 'checkbox' }); cb.id = rtCardId(f.key) + '-accept'; cb.checked = rtAccept.has(f.key);
+      cb.addEventListener('change', () => {
+        if (cb.checked) { rtAccept.add(f.key); f.questions.forEach(q => { delete rtDraft[q.id]; rtEditors[q.id] && rtEditors[q.id].setValue(''); }); }
+        else rtAccept.delete(f.key);
+        updateRethinkFooter();
+      });
+      lab.appendChild(cb); lab.appendChild(document.createTextNode(' Keep my plan — I understand and accept this risk'));
+      card.appendChild(lab);
+      body.appendChild(card);
+    });
+    updateRethinkFooter();
+    rtReturnFocus = document.activeElement;
+    $('#rethink-modal').hidden = false;
+    document.body.classList.add('modal-open');
+    body.scrollTop = 0;
+    setTimeout(() => $('#rethink-close').focus(), 30);
+    return new Promise(resolve => { rtResolve = resolve; });
+  });
+}
+
+function closeRethinkModal(result) {
+  $('#rethink-modal').hidden = true;
   document.body.classList.remove('modal-open');
-  const resolve = feasModalResolve; feasModalResolve = null;
-  if (feasModalReturnFocus && feasModalReturnFocus.focus) feasModalReturnFocus.focus();
+  const resolve = rtResolve; rtResolve = null;
+  if (rtReturnFocus && rtReturnFocus.focus) rtReturnFocus.focus();
   if (resolve) resolve(result);
 }
 
-$('#feas-modal-close').addEventListener('click', () => closeFeasModal('pause'));
-$('#feas-modal-continue').addEventListener('click', () => closeFeasModal('continue'));
-$('#feas-modal-review-all').addEventListener('click', () => {
-  closeFeasModal('pause');
+async function submitRethink(acceptAll) {
+  const btn = $('#rethink-apply'); btn.disabled = true;
+  try {
+    const accept = acceptAll ? rtFlaws.filter(f => !f.questions.some(q => q.id in rtDraft)).map(f => f.key) : [...rtAccept];
+    const reopen = rtFlaws.filter(f => f.accepted && !accept.includes(f.key)).map(f => f.key);
+    const data = await api(`/api/project/${projectId}/feasibility/rethink`, { method: 'POST', body: JSON.stringify({ changes: rtDraft, accept, reopen }) });
+    mirrorQuestions(data.questions);
+    if (lastFeasibility) { lastFeasibility.rethink = data.counts; showFeasibility(lastFeasibility); }
+    closeRethinkModal(data.changed > 0 ? 'rerun' : 'continue');
+  } catch (e) {
+    alert('Could not save: ' + e.message);
+    updateRethinkFooter();
+  }
+}
+
+$('#rethink-close').addEventListener('click', () => closeRethinkModal('pause'));
+$('#rethink-apply').addEventListener('click', () => submitRethink(false));
+$('#rethink-accept-all').addEventListener('click', () => submitRethink(true));
+$('#rethink-use-all').addEventListener('click', () => {
+  rtFlaws.forEach(f => f.questions.forEach(q => { if (q.suggestion && rtEditors[q.id]) rtEditors[q.id].setValue(q.suggestion); }));
+});
+$('#rethink-review-all').addEventListener('click', () => {
+  closeRethinkModal('pause');
   const review = $('#discovery-review');
   if (review) review.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
-$('#feas-modal-save').addEventListener('click', async () => {
-  const btn = $('#feas-modal-save');
-  btn.disabled = true; btn.textContent = 'Saving…';
-  try {
-    for (const [qid, text] of Object.entries(feasModalDraft)) await saveAnswer(qid, text);   // same path as the questionnaire
-    closeFeasModal('rerun');
-  } catch (e) {
-    alert('Could not save: ' + e.message);
-    btn.disabled = false;
-  }
-  btn.textContent = 'Save changes & re-run check →';
-});
-$('#feas-modal').addEventListener('mousedown', e => { if (e.target.id === 'feas-modal') closeFeasModal('pause'); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#feas-modal').hidden) closeFeasModal('pause'); });
+$('#rethink-modal').addEventListener('mousedown', e => { if (e.target.id === 'rethink-modal') closeRethinkModal('pause'); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#rethink-modal').hidden) closeRethinkModal('pause'); });
 
 // ---- Clarifying questions popup ------------------------------------------------------------
 // Asked after the feasibility check and BEFORE the Business Analyst writes the BRD. What used to be an
@@ -1752,15 +1693,16 @@ const clarEditors = {};   // item id -> { setValue(v), markSuggested(v) }
 let clarSugg = {};        // item id -> { suggestion, reason }
 let clarTimer = null;
 
-function buildClarEditor(item) {
+// Option cards / free text for one question. onChange(value) gets the chosen answer ('' when cleared).
+// Returns { el, api: { setValue, markSuggested } } — used by the clarifying-questions and the rethink popups.
+function buildAnswerEditor(item, onChange, placeholder) {
   const wrap = el('div', { class: 'fm-edit' });
-  const set = (v) => { v = (v || '').trim(); if (v) clarDraft[item.id] = v; else delete clarDraft[item.id]; scheduleClarRefresh(); };
+  const set = (v) => onChange((v || '').trim());
   if (!(item.options && item.options.length)) {
-    const ta = el('textarea', { class: 'fm-edit-input', rows: '2', placeholder: 'Type your answer… (leave empty and the AI suggestion above is used)' });
+    const ta = el('textarea', { class: 'fm-edit-input', rows: '2', placeholder });
     ta.addEventListener('input', () => set(ta.value));
     wrap.appendChild(ta);
-    clarEditors[item.id] = { setValue: (v) => { ta.value = v; set(v); }, markSuggested: () => {} };
-    return wrap;
+    return { el: wrap, api: { setValue: (v) => { ta.value = v; set(v); }, markSuggested: () => {} } };
   }
   const multi = !!item.multi_select;
   const allOptions = item.options.includes(OTHER_LABEL) ? item.options : [...item.options, OTHER_LABEL];
@@ -1795,9 +1737,9 @@ function buildClarEditor(item) {
   });
   otherInput.addEventListener('input', compute);
   wrap.appendChild(list); wrap.appendChild(otherInput);
-  clarEditors[item.id] = {
+  return { el: wrap, api: {
     setValue: (v) => {
-      selected.clear();
+      selected.clear(); otherInput.value = '';
       String(v || '').split('|').map(x => x.trim()).filter(Boolean).forEach(part => {
         if (cards.has(part)) selected.add(part); else { selected.add(OTHER_LABEL); otherInput.value = part; }
       });
@@ -1807,8 +1749,24 @@ function buildClarEditor(item) {
       const parts = String(v || '').split('|').map(x => x.trim());
       cards.forEach((cc, o) => cc.classList.toggle('suggested', parts.includes(o)));
     },
-  };
-  return wrap;
+  } };
+}
+
+function buildClarEditor(item) {
+  const ed = buildAnswerEditor(item, (v) => { if (v) clarDraft[item.id] = v; else delete clarDraft[item.id]; scheduleClarRefresh(); },
+                               'Type your answer… (leave empty and the AI suggestion above is used)');
+  clarEditors[item.id] = ed.api;
+  return ed.el;
+}
+
+// Mirror what the server wrote onto the discovery questions, without marking the answers as "edited since the run".
+function mirrorQuestions(serverQuestions) {
+  (serverQuestions || []).forEach(sq => {
+    const local = questions.find(x => x.id === sq.id);
+    if (local) { local.answer = sq.answer; local.status = sq.status; }
+    if (sq.answer) { dfAnswers[sq.id] = sq.answer; delete dfSkipped[sq.id]; }
+  });
+  updateDiscoveryStatus();
 }
 
 // The "AI suggests …" line under each question; "Use this" fills the answer with it.
@@ -1886,13 +1844,7 @@ async function submitClarifications(items, useDraft) {
   // An empty answer tells the server to use the AI's recommendation for that item.
   const answers = items.map(it => ({ id: it.id, answer: useDraft ? (clarDraft[it.id] || '') : '' }));
   const data = await api(`/api/project/${projectId}/clarifications`, { method: 'POST', body: JSON.stringify({ answers }) });
-  // Mirror what the server wrote onto the discovery questions, without marking the answers as "edited since the run".
-  (data.questions || []).forEach(sq => {
-    const local = questions.find(x => x.id === sq.id);
-    if (local) { local.answer = sq.answer; local.status = sq.status; }
-    if (sq.answer) { dfAnswers[sq.id] = sq.answer; delete dfSkipped[sq.id]; }
-  });
-  updateDiscoveryStatus();
+  mirrorQuestions(data.questions);
   clarLastResult = data;
   return data;
 }
