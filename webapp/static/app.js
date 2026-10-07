@@ -1244,7 +1244,7 @@ $('#btn-run-agents').addEventListener('click', async () => {
       resetAgentPanel();
       drawSchematic();
     } else if (wasPaused) {
-      logLine(`▶ Continuing with ${agentMeta[nextAgentIndex].label} despite the feasibility verdict…`);
+      logLine(`▶ Continuing with ${agentMeta[nextAgentIndex].label}…`);
     } else {
       logLine(`↻ Retrying from ${agentMeta[nextAgentIndex].label}…`);
     }
@@ -1367,6 +1367,22 @@ async function runAgentPipeline(startIndex = 0) {
   $('#btn-resolve-issues').hidden = true;
 
   for (let i = startIndex; i < agentMeta.length; i++) {
+    // Before the BRD is drafted, put the still-open questions to the person (they are not listed in the BRD).
+    if (agentMeta[i].role === 'business_analyst') {
+      try {
+        const r = await askClarifications();
+        if (r === 'pause') {
+          logLine('⏸ Paused before drafting the BRD — your clarifying questions are waiting. Click "Continue" to answer them.');
+          $('#agents-status').textContent = 'paused';
+          nextAgentIndex = i;
+          return 'paused';
+        }
+        if (r === 'saved') logLine('✓ Clarifying answers saved — they will be written into the BRD.', true);
+        if (r === 'skipped') logLine('ℹ Clarifying questions skipped — the BRD uses clearly labelled planning defaults.');
+      } catch (e) {
+        logLine(`⚠ Could not load clarifying questions (${e.message}) — continuing with planning defaults.`);
+      }
+    }
     setNodeState(i, 'active');
     logLine(`⏳ ${agentMeta[i].label} reading project context…`);
     try {
@@ -1716,6 +1732,118 @@ $('#feas-modal-save').addEventListener('click', async () => {
 });
 $('#feas-modal').addEventListener('mousedown', e => { if (e.target.id === 'feas-modal') closeFeasModal('pause'); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#feas-modal').hidden) closeFeasModal('pause'); });
+
+// ---- Clarifying questions popup ------------------------------------------------------------
+// Asked after the feasibility check and BEFORE the Business Analyst writes the BRD. What used to be an
+// "Open Questions" list inside the document is put to the person here; their answers go into the BRD.
+// Resolves 'saved' (answers stored), 'skipped' (planning defaults used) or 'pause' (closed without choosing).
+let clarDraft = {};
+let clarResolve = null;
+let clarReturnFocus = null;
+
+function buildClarEditor(item) {
+  const wrap = el('div', { class: 'fm-edit' });
+  const set = (v) => { v = (v || '').trim(); if (v) clarDraft[item.id] = v; else delete clarDraft[item.id]; };
+  if (!(item.options && item.options.length)) {
+    const ta = el('textarea', { class: 'fm-edit-input', rows: '2', placeholder: 'Type your answer… (leave empty to use the planning default)' });
+    ta.addEventListener('input', () => set(ta.value));
+    wrap.appendChild(ta);
+    return wrap;
+  }
+  const multi = !!item.multi_select;
+  const allOptions = item.options.includes(OTHER_LABEL) ? item.options : [...item.options, OTHER_LABEL];
+  const selected = new Set();
+  const list = el('div', { class: 'df-options fm-options', role: multi ? 'group' : 'radiogroup' });
+  const otherInput = el('input', { type: 'text', class: 'fm-edit-input', placeholder: 'Type your own answer…' });
+  otherInput.hidden = true;
+  const cards = new Map();
+  const compute = () => {
+    const out = [];
+    allOptions.forEach(opt => {
+      if (!selected.has(opt)) return;
+      if (opt === OTHER_LABEL) { if (otherInput.value.trim()) out.push(otherInput.value.trim()); } else out.push(opt);
+    });
+    set(out.join(' | '));
+  };
+  allOptions.forEach(opt => {
+    const c = buildOptionCard(opt, false, multi ? 'checkbox' : 'radio', opt === OTHER_LABEL);
+    cards.set(opt, c);
+    c.addEventListener('click', () => {
+      if (multi) { if (selected.has(opt)) selected.delete(opt); else selected.add(opt); }
+      else { selected.clear(); selected.add(opt); }
+      cards.forEach((cc, o) => { const on = selected.has(o); cc.classList.toggle('selected', on); cc.setAttribute('aria-checked', on ? 'true' : 'false'); });
+      otherInput.hidden = !selected.has(OTHER_LABEL);
+      if (!otherInput.hidden) otherInput.focus();
+      compute();
+    });
+    list.appendChild(c);
+  });
+  otherInput.addEventListener('input', compute);
+  wrap.appendChild(list); wrap.appendChild(otherInput);
+  return wrap;
+}
+
+function openClarifyModal(items) {
+  clarDraft = {};
+  $('#clar-modal-lead').textContent = `${items.length} item${items.length === 1 ? '' : 's'} could not be settled from your answers. ` +
+    'Answer what you can — your answers are written straight into the Business Requirements Document. ' +
+    'Anything you skip is covered by a clearly labelled planning default, not left as an open question.';
+  const body = $('#clar-modal-body');
+  body.innerHTML = '';
+  items.forEach(it => {
+    const card = el('div', { class: 'fm-item' });
+    card.appendChild(el('div', { class: 'fm-top' }, [
+      el('span', { class: 'fm-sev major', text: it.kind === 'parameter' ? 'DECISION' : 'QUESTION' }),
+      el('div', { class: 'fm-q', text: it.text }),
+    ]));
+    if (it.hint) card.appendChild(el('div', { class: 'fm-current', text: it.kind === 'parameter' ? 'Currently: ' + it.hint : it.hint }));
+    card.appendChild(buildClarEditor(it));
+    body.appendChild(card);
+  });
+  clarReturnFocus = document.activeElement;
+  $('#clar-modal').hidden = false;
+  document.body.classList.add('modal-open');
+  body.scrollTop = 0;
+  setTimeout(() => { const f = body.querySelector('button, input, textarea') || $('#clar-modal-close'); f.focus(); }, 30);
+  return new Promise(resolve => { clarResolve = resolve; });
+}
+
+function closeClarModal(result) {
+  $('#clar-modal').hidden = true;
+  document.body.classList.remove('modal-open');
+  const resolve = clarResolve; clarResolve = null;
+  if (clarReturnFocus && clarReturnFocus.focus) clarReturnFocus.focus();
+  if (resolve) resolve(result);
+}
+
+async function submitClarifications(items, useDraft) {
+  const answers = items.map(it => ({ id: it.id, answer: useDraft ? (clarDraft[it.id] || '') : '' }));
+  const data = await api(`/api/project/${projectId}/clarifications`, { method: 'POST', body: JSON.stringify({ answers }) });
+  // Mirror what the server wrote onto the discovery questions, without marking the answers as "edited since the run".
+  (data.questions || []).forEach(sq => {
+    const local = questions.find(x => x.id === sq.id);
+    if (local) { local.answer = sq.answer; local.status = sq.status; }
+    if (sq.answer) { dfAnswers[sq.id] = sq.answer; delete dfSkipped[sq.id]; }
+  });
+  updateDiscoveryStatus();
+  return data;
+}
+
+// Returns 'none' (nothing to ask), 'saved', 'skipped' or 'pause'.
+async function askClarifications() {
+  const { questions: items } = await api(`/api/project/${projectId}/clarifications`);
+  if (!items || !items.length) return 'none';
+  const choice = await openClarifyModal(items);
+  if (choice === 'pause') return 'pause';
+  await submitClarifications(items, choice === 'saved');
+  return choice;
+}
+
+$('#clar-modal-close').addEventListener('click', () => closeClarModal('pause'));
+$('#clar-modal-skip').addEventListener('click', () => closeClarModal('skipped'));
+$('#clar-modal-save').addEventListener('click', () => closeClarModal('saved'));
+$('#clar-modal').addEventListener('mousedown', e => { if (e.target.id === 'clar-modal') closeClarModal('pause'); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#clar-modal').hidden) closeClarModal('pause'); });
 
 let pendingQa = null;   // the validator's first result, held back until the auto-resolve rounds have finished
 

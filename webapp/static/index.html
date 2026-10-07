@@ -361,6 +361,26 @@ window.addEventListener('load', function () {
   </div>
 </div>
 
+<!-- Clarifying questions popup: asked after the feasibility check and BEFORE the BRD is written (replaces an "Open Questions" section) -->
+<div class="modal-backdrop" id="clar-modal" hidden>
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="clar-modal-title">
+    <div class="modal-head">
+      <div>
+        <div class="modal-kicker" id="clar-modal-kicker">Before the Business Requirements Document is written</div>
+        <h3 class="modal-title" id="clar-modal-title">A few things we still need from you</h3>
+      </div>
+      <button type="button" class="modal-close" id="clar-modal-close" aria-label="Close">✕</button>
+    </div>
+    <p class="modal-lead" id="clar-modal-lead"></p>
+    <div class="modal-body" id="clar-modal-body"></div>
+    <div class="modal-foot">
+      <span class="modal-spacer"></span>
+      <button type="button" class="btn btn-ghost" id="clar-modal-skip">Skip — use planning defaults</button>
+      <button type="button" class="btn btn-primary" id="clar-modal-save">Save answers &amp; continue →</button>
+    </div>
+  </div>
+</div>
+
 <!-- Delete-project confirmation -->
 <div class="modal-backdrop" id="del-modal" hidden>
   <div class="modal modal-sm" role="alertdialog" aria-modal="true" aria-labelledby="del-modal-title" aria-describedby="del-modal-lead">

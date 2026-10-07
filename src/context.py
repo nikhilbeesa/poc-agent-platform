@@ -118,6 +118,11 @@ class ProjectContext(BaseModel):
     # Deliberately NOT cleared by a fresh agent run (that is exactly when it is needed).
     feasibility_history: list[dict] = Field(default_factory=list)
 
+    # Answers to the clarifying questions asked after the feasibility check and before the BRD is written
+    # (see clarifications.py). Each: {id, kind, text, answer, status: answered|skipped, parameter?}.
+    # Like feasibility_history, deliberately NOT cleared by a fresh agent run.
+    clarifications: list[dict] = Field(default_factory=list)
+
     def add_answer(self, question_id: str, answer: str) -> None:
         for q in self.discovery_questions:
             if q.id == question_id:

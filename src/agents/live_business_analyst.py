@@ -26,6 +26,7 @@ import re
 
 import chunked as ch
 import content_kit as ck
+import clarifications as clar
 from context import AgentRole, ProjectContext
 
 ROLE = AgentRole.BUSINESS_ANALYST.value
@@ -257,7 +258,7 @@ def _narrative(context: ProjectContext, client, plan: dict) -> dict:
         "\n\nMinimums: problem_statement 6+; business_objectives 5+; kpis 8+ (mark unknown targets "
         "TBD, never invent an authoritative number); scope_in 8+; scope_out 5+; non_goals 4+; "
         "user_journeys: one per role; release_strategy: 4-5 phases running from the first pilot "
-        "through general availability; future_enhancements 6+; open_questions 4+; assumptions 5+; "
+        "through general availability; future_enhancements 6+; assumptions 5+; "
         "constraints 4+; dependencies 5+. State explicitly that applicable regulation must be "
         "confirmed for the launch geography if unknown — never invent a compliance claim.\n\n"
         "Respond ONLY with JSON in exactly this shape:\n" + NARRATIVE_SHAPE
@@ -629,7 +630,7 @@ def generate(context: ProjectContext, client) -> dict:
     if revising:
         out["summary"] = _summary_with_counts(prev_narrative_summary, out)
 
-    _finalize_depth_sections(out)
+    _finalize_depth_sections(out, context)
 
     # chunk fingerprints + which top-level keys are narrative (for the next revision)
     out["_chunk_src"] = {mid: c.get("_src") for mid, c in chunks.items()}
@@ -641,7 +642,7 @@ def generate(context: ProjectContext, client) -> dict:
     return out
 
 
-def _finalize_depth_sections(out: dict) -> None:
+def _finalize_depth_sections(out: dict, context: ProjectContext | None = None) -> None:
     """Code-side guarantees for the depth sections, applied on every run/revision:
     risks get a derived rating and are ranked; flow diagrams are validated with a
     deterministic fallback built from the future/current-state flow text; key
@@ -653,6 +654,9 @@ def _finalize_depth_sections(out: dict) -> None:
          ("Current-state flow (as-is)", out.get("current_state_flow", ""))],
     )
     out["key_parameters"] = ch.normalize_key_parameters(out.get("key_parameters"))
+    if context is not None:
+        out["key_parameters"] = clar.apply_to_key_parameters(context, out["key_parameters"])
+    out["open_questions"] = []   # asked of the user before drafting (clarifications.py), never listed in the BRD
 
 
 def _summary_with_counts(summary: str, out: dict) -> str:

@@ -17,6 +17,7 @@ from agents.base import BaseAgent  # noqa: E402
 from context import AgentRole, ProjectContext  # noqa: E402
 import chunked as ch  # noqa: E402
 import content_kit as ck  # noqa: E402
+import clarifications as clar  # noqa: E402
 
 
 class BusinessAnalystAgent(BaseAgent):
@@ -421,7 +422,7 @@ Respond ONLY with JSON in exactly this shape:
             "dependencies": [d["integration"] for d in integrations] + ["Legal/compliance review prior to launch"],
             "risks": ch.normalize_risks(risks),
             "flow_diagrams": ch.normalize_flow_diagrams(ck.build_flow_diagrams(modules, context, current_flow, future_flow)),
-            "key_parameters": ch.normalize_key_parameters(ck.build_key_parameters(modules, context)),
+            "key_parameters": clar.apply_to_key_parameters(context, ch.normalize_key_parameters(ck.build_key_parameters(modules, context))),
             "mvp_prioritization": {**mvp, "out_of_scope": mvp_out},
             "user_stories_summary": [
                 {"id": s["id"], "title": s["feature"], "actor": s["role"], "story": s["story"],
@@ -434,10 +435,9 @@ Respond ONLY with JSON in exactly this shape:
             "release_strategy": release_strategy,
             "future_enhancements": future_enhancements,
             "glossary": glossary,
-            "open_questions": (
-                [f"{q.text} — left unanswered by the user; treat as an open question requiring follow-up." for q in context.discovery_questions if q.status.value in ("pending", "skipped")]
-                or ["None outstanding — all discovery questions were answered"]
-            ),
+            # Open questions are no longer part of the BRD: they are asked of the user before it is written
+            # (clarifications.py) and the answers are written into the document instead.
+            "open_questions": [],
             # Kept for backward compatibility with earlier/simpler consumers
             # (older export/template code, other agents' prompts, etc.).
             "project_overview": context.business_idea_raw,

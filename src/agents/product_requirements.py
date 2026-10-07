@@ -362,7 +362,7 @@ Respond ONLY with JSON in exactly this shape:
                 "failure": "Show a clear error message with a retry or correction path",
                 "processing": "Disable the triggering action while in progress to prevent duplicate submissions",
             },
-            "audit_and_versioning": "Admin/Operations actions are recorded in an append-only audit log (see BRD Section 24). Full version history of records is not required for the MVP scope.",
+            "audit_and_versioning": "Admin/Operations actions are recorded in an append-only audit log (see BRD Section 16.6). Full version history of records is not required for the MVP scope.",
             "non_functional_requirements": non_functional_requirements,
             "technical_integration_constraints": {
                 "application_type": "Recommended: responsive web application; TBD: native mobile app for a later phase",
@@ -382,9 +382,9 @@ Respond ONLY with JSON in exactly this shape:
                 "mfa_requirements": "Not required for MVP — Recommended for Admin roles in a later phase",
                 "roles": [r["role"] for r in ba_output.get("roles", [])] or ["End User", "Admin"],
                 "access_restrictions": [f"{r['role']}: {r.get('restricted', 'N/A')}" for r in ba_output.get("roles", [])],
-                "sensitive_data_handling": ("Payment data must never be stored directly — delegated to a PCI-compliant processor (see BRD Section 23)" if has_payments else "Personal identifiers should be encrypted at rest"),
+                "sensitive_data_handling": ("Payment data must never be stored directly — delegated to a PCI-compliant processor (see BRD Section 16.5)" if has_payments else "Personal identifiers should be encrypted at rest"),
                 "privacy_requirements": ba_output.get("privacy_compliance", "Standard data protection practices apply even at MVP stage"),
-                "audit_requirements": "Admin/Operations actions are logged; see BRD Section 24",
+                "audit_requirements": "Admin/Operations actions are logged; see BRD Section 16.6",
                 "approval_requirements": ["None identified from discovery"],
                 "ux_implications": [
                     "Admin-only actions (e.g. approve/reject, moderation, overrides) must not be shown to non-Admin roles",

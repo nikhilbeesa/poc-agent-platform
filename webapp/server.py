@@ -17,6 +17,7 @@ sys.path.insert(0, str(SRC_DIR))
 from context import (  # noqa: E402
     AgentRole, Artefact, DiscoveryQuestion, ProjectContext, ProjectStage,
 )
+import clarifications as clar  # noqa: E402
 from discovery import is_discovery_complete, run_discovery  # noqa: E402
 from export import export_all_artefacts  # noqa: E402
 from knowledge.bootstrap_seed_data import bootstrap  # noqa: E402
@@ -88,7 +89,9 @@ def _feasibility_summary(ctx):
             "already_reviewed": [{"question_id": r["question_id"], "changed": r.get("changed", False)}
                                  for r in (o.get("already_reviewed") or [])],
             "round": o.get("review_round", 1),
-            "history": ctx.feasibility_history}
+            "history": ctx.feasibility_history,
+            # answers to the pre-BRD clarifying questions ride along in the same JSON column (no schema change)
+            "clarifications": ctx.clarifications}
 
 
 def _record_from_ctx(ctx) -> dict:
@@ -114,7 +117,7 @@ def _record_from_ctx(ctx) -> dict:
         "consistency_notes": ctx.consistency_notes,
         "system_profile": ctx.system_profile,
         # while a fresh run is between "cleared" and "feasibility done", keep the old summary but the CURRENT history
-        "feasibility": _feasibility_summary(ctx) or ({**meta["feasibility"], "history": ctx.feasibility_history}
+        "feasibility": _feasibility_summary(ctx) or ({**meta["feasibility"], "history": ctx.feasibility_history, "clarifications": ctx.clarifications}
                                                      if meta.get("feasibility") else None),
         "created_at": ctx.created_at.isoformat(),
         "questions": _question_dicts(ctx),
@@ -163,6 +166,8 @@ def _ctx_from_record(rec: dict) -> ProjectContext:
         for a in (rec.get("artefacts") or [])
     ]
     ctx.feasibility_history = list(((rec.get("feasibility") or {}).get("history")) or [])
+    ctx.clarifications = list(((rec.get("feasibility") or {}).get("clarifications")) or [])
+    clar.seed_locked_decisions(ctx)
     META[rec["id"]] = {"agent_log": rec.get("agent_log") or [], "handoff_status": rec.get("handoff_status"),
                        "feasibility": rec.get("feasibility")}
     return ctx
@@ -307,6 +312,7 @@ def run_agent(project_id, index):
         ctx.consistency_notes = []
         ctx.resolution_notes = []
         ctx.locked_decisions = []
+        clar.seed_locked_decisions(ctx)   # earlier answers to the clarifying questions stay settled decisions
         ctx.system_profile = None   # rebuilt from the (possibly edited) answers by the first agent
         ctx.stage = ProjectStage.AGENT_PROCESSING
     if index != len(ctx.agent_contributions):
@@ -333,6 +339,29 @@ def run_agent(project_id, index):
         }
 
     return _run_maybe_async(project_id, work)
+
+
+@app.route("/api/project/<project_id>/clarifications", methods=["GET"])
+def get_clarifications(project_id):
+    """Questions still open before the BRD is written — asked in a popup, never listed in the BRD."""
+    ctx = _get_ctx(project_id)
+    if not ctx:
+        return jsonify({"error": "unknown project"}), 404
+    return jsonify({"questions": clar.pending_questions(ctx)})
+
+
+@app.route("/api/project/<project_id>/clarifications", methods=["POST"])
+def post_clarifications(project_id):
+    """Saves the answers ([{id, answer}]; an empty answer = skip, use the planning default)."""
+    ctx = _get_ctx(project_id)
+    if not ctx:
+        return jsonify({"error": "unknown project"}), 404
+    if jobs.is_running(project_id):
+        return jsonify({"error": "The AI agents are running — wait for the current step to finish."}), 409
+    body = request.get_json(silent=True) or {}
+    result = clar.apply_answers(ctx, body.get("answers") or [])
+    _persist(ctx)
+    return jsonify({**result, "questions": _question_dicts(ctx)})
 
 
 @app.route("/api/project/<project_id>/export", methods=["POST"])

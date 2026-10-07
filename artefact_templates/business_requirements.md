@@ -65,10 +65,47 @@
 {{modules}}
 
 ## 16. Functional Requirements
+
+### 16.1 Functional Requirements Catalogue
 {{requirements}}
 
+### 16.2 Data Requirements
+{{data_entities}}
+
+**Data relationships:**
+{{data_relationships}}
+
+### 16.3 Data Classification
+{{data_classification}}
+
+### 16.4 Notifications
+{{notifications_matrix}}
+
+### 16.5 Payment Requirements
+{{payment_requirements}}
+
+### 16.6 Admin & Operations Requirements
+{{admin_operations}}
+
+### 16.7 Reporting & Analytics
+{{reporting}}
+
+**Key analytics events:**
+{{analytics_events}}
+
 ## 17. Non-Functional Requirements
+
+### 17.1 Performance, Scalability & Availability
 {{nfrs}}
+
+### 17.2 Security Requirements
+{{security_requirements}}
+
+### 17.3 Privacy & Compliance
+{{privacy_compliance}}
+
+### 17.4 Accessibility Requirements
+{{accessibility}}
 
 ## 18. Detailed Module Requirements
 {{module_details}}
@@ -76,88 +113,46 @@
 ## 19. Business Rules
 {{business_rules}}
 
-## 20. Data Requirements
-{{data_entities}}
+## 20. Interfaces & Integrations
 
-**Data relationships:**
-{{data_relationships}}
-
-## 21. Data Classification
-{{data_classification}}
-
-## 22. Notifications
-{{notifications_matrix}}
-
-## 23. Payment Requirements
-{{payment_requirements}}
-
-## 24. Admin & Operations Requirements
-{{admin_operations}}
-
-## 25. Reporting & Analytics
-{{reporting}}
-
-**Key analytics events:**
-{{analytics_events}}
-
-## 26. Security Requirements
-{{security_requirements}}
-
-## 27. Privacy & Compliance
-{{privacy_compliance}}
-
-## 28. Accessibility Requirements
-{{accessibility}}
-
-## 29. Interfaces & Integrations
-
-### 29.1 User Interfaces
+### 20.1 User Interfaces
 {{user_interfaces}}
 
-### 29.2 External System Integrations
+### 20.2 External System Integrations
 {{integrations}}
 
-### 29.3 Notification Channel Interfaces
+### 20.3 Notification Channel Interfaces
 {{notification_interfaces}}
 
-### 29.4 Interface & Integration Requirements
+### 20.4 Interface & Integration Requirements
 {{interface_requirements}}
 
-## 30. Assumptions
+## 21. Assumptions
 {{assumptions}}
 
-## 31. Constraints
+## 22. Constraints
 {{constraints}}
 
-## 32. Dependencies
+## 23. Dependencies
 {{dependencies}}
 
-## 33. Risks & Mitigation
+## 24. Risks & Mitigation
 {{risks}}
 
-## 34. MVP Prioritization
+## 25. MVP Prioritization
 {{mvp_prioritization}}
 
-## 35. User Stories
-{{user_stories_summary}}
-
-## 36. Acceptance Criteria
-{{acceptance_criteria_summary}}
-
-## 37. Traceability Matrix
+## 26. Traceability Matrix
 {{traceability_matrix}}
 
-## 38. Release Strategy
+## 27. Release Strategy
 {{release_strategy}}
 
-## 39. Future Enhancements
+## 28. Future Enhancements
 {{future_enhancements}}
 
-## 40. Glossary
+## 29. Glossary
 {{glossary}}
 
-## 41. Open Questions
-{{open_questions}}
-
-## 42. Appendices
+## 30. Appendices
 {{appendices}}

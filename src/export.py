@@ -13,6 +13,7 @@ quote the same IDs and numbers.
 """
 
 import re
+import clarifications as clar
 import sys
 import uuid
 from datetime import datetime, timezone
@@ -359,26 +360,25 @@ def _id_range(items: list, key: str = "id") -> tuple[str, int]:
 def _appendices(o: dict, template_text: str, domain: str) -> str:
     """Appendix A related documents, B requirement-ID index, C supporting-section links. Section
     links are built from the template's own headings so they can never point at a missing anchor."""
-    anchors = {re.sub(r"^\d+\.\s*", "", t): a for _, t, a in _headings(template_text)}
+    anchors = {re.sub(r"^\d+(?:\.\d+)*\.?\s+", "", t): a for _, t, a in _headings(template_text)}
 
     def link(title: str) -> str:
         a = anchors.get(title)
-        num = next((t.split(".")[0] for _, t, an in _headings(template_text) if an == a), "")
+        num = next((re.match(r"^\d+(?:\.\d+)*", t).group(0) for _, t, an in _headings(template_text) if an == a and re.match(r"^\d", t)), "")
         return f"[Section {num} — {title}](#{a})" if a else title
 
     docs = _table(["Document", "File", "Relationship to this BRD"], [
         ["User Stories Document", "[user_stories.md](user_stories.md)", "Stories and acceptance criteria derived from the Functional Requirements."],
         ["Product Requirements Document (PRD)", "[prd.md](prd.md)", "Product, technical and security specification built on this BRD."],
-        ["UX / Product Flow Specification", "[ux_product_flow_specification.md](ux_product_flow_specification.md)", "Screens, flows and states for the interfaces listed in section 29.1."],
+        ["UX / Product Flow Specification", "[ux_product_flow_specification.md](ux_product_flow_specification.md)", "Screens, flows and states for the interfaces listed in " + link("User Interfaces") + "."],
         ["AI Handoff Validation Report", "[ai_handoff_validation.md](ai_handoff_validation.md)", "Readiness check of the whole package, including consistency with this BRD."],
-        ["Feasibility & Competitive Assessment", "[feasibility_assessment.md](feasibility_assessment.md)", "Independent, advisory assessment of the idea; its critical risks feed section 33."],
+        ["Feasibility & Competitive Assessment", "[feasibility_assessment.md](feasibility_assessment.md)", "Independent, advisory assessment of the idea; its critical risks feed " + link("Risks & Mitigation") + "."],
     ])
     id_rows = []
     for label, items, title, key in [
         ("Functional requirements", o.get("requirements", []), "Functional Requirements", "id"),
         ("Non-functional requirements", o.get("nfrs", []), "Non-Functional Requirements", "id"),
         ("Business rules", o.get("business_rules", []), "Business Rules", "id"),
-        ("User stories", o.get("user_stories_summary", []), "User Stories", "id"),
     ]:
         rng, n = _id_range(items, key)
         id_rows.append([label, rng, n, link(title)])
@@ -388,10 +388,11 @@ def _appendices(o: dict, template_text: str, domain: str) -> str:
 
     support = _table(["Reference", "Where to find it"], [
         ["Terms and abbreviations", link("Glossary")],
-        ["Unresolved decisions and TBD parameters", link("Open Questions")],
+        ["Key business parameters and thresholds", link("Business Rules")],
         ["Requirement-to-story-to-QA mapping", link("Traceability Matrix")],
         ["Release phases and exit criteria", link("Release Strategy")],
         ["Data entities, relationships and classification", link("Data Requirements") + " · " + link("Data Classification")],
+        ["Notifications, payments, admin and reporting", link("Notifications") + " · " + link("Payment Requirements") + " · " + link("Admin & Operations Requirements") + " · " + link("Reporting & Analytics")],
         ["Risk register", link("Risks & Mitigation")],
     ])
     return (f"*Domain: {domain}. Links open the related section or sibling document.*\n\n"
@@ -524,7 +525,7 @@ def export_business_requirements(context: ProjectContext) -> Artefact:
     security_requirements = _bullets(o.get("security_requirements", []))
     threats = _table(["Threat", "Example Control"], [[t.get("threat", ""), t.get("control", "")] for t in o.get("threats", [])])
     security_requirements = f"{security_requirements}\n\n**Threats & controls:**\n\n{threats}"
-    security_requirements += f"\n\n### Security requirements (SEC)\n\n{_profile_tables(context)['security']}"
+    security_requirements += f"\n\n#### Security requirements (SEC)\n\n{_profile_tables(context)['security']}"
 
     integrations = _table(["Integration", "Purpose", "Key Requirements"],
                            [[i.get("integration", ""), i.get("purpose", ""), i.get("requirements", "")] for i in o.get("integrations", [])])
@@ -591,7 +592,7 @@ def export_business_requirements(context: ProjectContext) -> Artefact:
         key_parameters_section = (
             "\n\n**Key business parameters and thresholds**\n\n"
             "*Concrete values the requirements depend on. \"Proposed default\" values need business confirmation; "
-            "\"TBD\" items are listed under Open Questions.*\n\n"
+            "\"TBD\" items were put to the stakeholder before drafting and still await a decision.*\n\n"
             + _table(["Parameter", "Value", "Status", "Related", "Owner"],
                      [[p.get("parameter", ""), p.get("value", ""), p.get("status", ""), p.get("related", "") or "-",
                        p.get("owner", "") or "-"] for p in kp])
@@ -639,22 +640,22 @@ def export_business_requirements(context: ProjectContext) -> Artefact:
         "integrations": integrations,
         "notification_interfaces": _notification_interfaces(o),
         "interface_requirements": _interface_requirements(o),
-        "assumptions": o.get("assumptions", []),
+        "assumptions": list(o.get("assumptions", [])) + clar.brd_assumption_lines(context),
         "constraints": o.get("constraints", []),
         "dependencies": o.get("dependencies", []),
         "risks": risks_section,
         "mvp_prioritization": mvp_prioritization,
-        "user_stories_summary": user_stories_summary,
-        "acceptance_criteria_summary": acceptance_criteria_summary,
         "traceability_matrix": traceability_matrix,
         "release_strategy": release_strategy,
         "future_enhancements": o.get("future_enhancements", []),
         "glossary": glossary,
-        "open_questions": list(o.get("open_questions", [])) + [
-            f"Decision needed — {p['parameter']}: {p['value']}"
-            for p in o.get("key_parameters", []) if str(p.get("status", "")).upper() == "TBD"
-        ],
     }
+    # sections that are now sub-sections of 16 / 17 must not carry their own ### headings
+    for k in ("requirements", "data_entities", "data_relationships", "data_classification", "notifications_matrix",
+              "payment_requirements", "admin_operations", "reporting", "analytics_events", "nfrs", "security_requirements",
+              "privacy_compliance", "accessibility"):
+        if isinstance(values.get(k), str):
+            values[k] = re.sub(r"(?m)^###(?!#) ", "#### ", values[k])
     values["table_of_contents"] = ""
     values["appendices"] = _appendices(o, template, values["domain_classification"])
     content = _fill_template(template, values)
@@ -1017,7 +1018,7 @@ def export_prd(context: ProjectContext) -> Artefact:
         "success_metrics": o.get("success_metrics", []),
         "out_of_scope": o.get("out_of_scope", []),
         "dependencies": o.get("dependencies", []),
-        "assumptions": o.get("assumptions", []),
+        "assumptions": list(o.get("assumptions", [])) + clar.brd_assumption_lines(context),
         "release_milestones": milestones,
     }
     content = _fill_template(template, values)
