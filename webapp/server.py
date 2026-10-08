@@ -19,6 +19,8 @@ from context import (  # noqa: E402
 )
 import clarifications as clar  # noqa: E402
 import rethink as rt  # noqa: E402
+from integrations import sync as backlog_sync  # noqa: E402
+from integrations.http import IntegrationError  # noqa: E402
 from discovery import is_discovery_complete, run_discovery  # noqa: E402
 from export import export_all_artefacts  # noqa: E402
 from knowledge.bootstrap_seed_data import bootstrap  # noqa: E402
@@ -94,7 +96,9 @@ def _feasibility_summary(ctx):
             # answers to the pre-BRD clarifying questions ride along in the same JSON column (no schema change)
             "clarifications": ctx.clarifications,
             # serious flaws the person chose to keep (rethink.py) and how many still need a decision
-            "accepted": ctx.accepted_flaws, "rethink": rt.counts(ctx)}
+            "accepted": ctx.accepted_flaws, "rethink": rt.counts(ctx),
+            # what was pushed to Jira / Azure DevOps (ids and links only — credentials are never stored)
+            "integrations": ctx.integration_links}
 
 
 def _record_from_ctx(ctx) -> dict:
@@ -120,7 +124,7 @@ def _record_from_ctx(ctx) -> dict:
         "consistency_notes": ctx.consistency_notes,
         "system_profile": ctx.system_profile,
         # while a fresh run is between "cleared" and "feasibility done", keep the old summary but the CURRENT history
-        "feasibility": _feasibility_summary(ctx) or ({**meta["feasibility"], "history": ctx.feasibility_history, "clarifications": ctx.clarifications, "accepted": ctx.accepted_flaws}
+        "feasibility": _feasibility_summary(ctx) or ({**meta["feasibility"], "history": ctx.feasibility_history, "clarifications": ctx.clarifications, "accepted": ctx.accepted_flaws, "integrations": ctx.integration_links}
                                                      if meta.get("feasibility") else None),
         "created_at": ctx.created_at.isoformat(),
         "questions": _question_dicts(ctx),
@@ -171,6 +175,7 @@ def _ctx_from_record(rec: dict) -> ProjectContext:
     ctx.feasibility_history = list(((rec.get("feasibility") or {}).get("history")) or [])
     ctx.clarifications = list(((rec.get("feasibility") or {}).get("clarifications")) or [])
     ctx.accepted_flaws = list(((rec.get("feasibility") or {}).get("accepted")) or [])
+    ctx.integration_links = dict(((rec.get("feasibility") or {}).get("integrations")) or {})
     clar.seed_locked_decisions(ctx)
     META[rec["id"]] = {"agent_log": rec.get("agent_log") or [], "handoff_status": rec.get("handoff_status"),
                        "feasibility": rec.get("feasibility")}
@@ -343,6 +348,76 @@ def run_agent(project_id, index):
         }
 
     return _run_maybe_async(project_id, work)
+
+
+# ---- Push user stories to Jira / Azure DevOps ---------------------------------------------------
+# Credentials arrive in the request body, are used for that call (or the background push) and are never stored,
+# logged or returned. Optional server-wide defaults come from environment variables (a token set there is used
+# when the person leaves the token blank, and is never sent to the browser).
+_ENV = {"jira": {"base_url": "JIRA_BASE_URL", "email": "JIRA_EMAIL", "project": "JIRA_PROJECT_KEY", "token": "JIRA_API_TOKEN"},
+        "ado": {"base_url": "ADO_ORG_URL", "project": "ADO_PROJECT", "token": "ADO_PAT"}}
+
+
+def _creds(target, body):
+    given = (body or {}).get("creds") or {}
+    return {k: (str(given.get(k) or "").strip() or os.environ.get(env, "")) for k, env in _ENV[target].items()}
+
+
+def _integration_ctx(project_id, target):
+    ctx = _get_ctx(project_id)
+    if not ctx:
+        return None, (jsonify({"error": "unknown project"}), 404)
+    if target not in _ENV:
+        return None, (jsonify({"error": "unknown target"}), 404)
+    return ctx, None
+
+
+@app.route("/api/integrations/config", methods=["GET"])
+def integrations_config():
+    """Non-secret defaults to prefill the form, and whether a server-side token exists (so people need not paste one)."""
+    out = {}
+    for t, env in _ENV.items():
+        out[t] = {k: os.environ.get(v, "") for k, v in env.items() if k != "token"}
+        out[t]["token_configured"] = bool(os.environ.get(env["token"]))
+    return jsonify(out)
+
+
+@app.route("/api/project/<project_id>/integrations/<target>/check", methods=["POST"])
+def integration_check(project_id, target):
+    ctx, err = _integration_ctx(project_id, target)
+    if err:
+        return err
+    try:
+        return jsonify(backlog_sync.check(target, _creds(target, request.get_json(silent=True))))
+    except IntegrationError as e:
+        return jsonify({"error": str(e)}), 400
+
+
+@app.route("/api/project/<project_id>/integrations/<target>/preview", methods=["POST"])
+def integration_preview(project_id, target):
+    ctx, err = _integration_ctx(project_id, target)
+    if err:
+        return err
+    c = _creds(target, request.get_json(silent=True))
+    return jsonify(backlog_sync.preview(ctx, target, c if c.get("token") else None))
+
+
+@app.route("/api/project/<project_id>/integrations/<target>/push", methods=["POST"])
+def integration_push(project_id, target):
+    ctx, err = _integration_ctx(project_id, target)
+    if err:
+        return err
+    if jobs.is_running(project_id):
+        return jsonify({"error": "The AI agents are still running — push once they have finished."}), 409
+    body = request.get_json(silent=True) or {}
+    job_id = backlog_sync.start_push(project_id, ctx, target, _creds(target, body), body.get("options") or {}, lambda: _persist(ctx))
+    return jsonify({"push_id": job_id})   # NOT "job_id": the front-end api() helper polls that name as an agent job
+
+
+@app.route("/api/project/<project_id>/integrations/push/<job_id>", methods=["GET"])
+def integration_push_status(project_id, job_id):
+    st = backlog_sync.job_status(project_id, job_id)
+    return (jsonify(st) if st else (jsonify({"error": "unknown job"}), 404))
 
 
 @app.route("/api/project/<project_id>/feasibility/rethink", methods=["GET"])

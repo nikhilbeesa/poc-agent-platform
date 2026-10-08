@@ -299,3 +299,22 @@ round-trip and no extra dependency. Headings, lists, bold/italic/code, links and
 converted to native Word styles; tables with 7+ columns get their own landscape page; Mermaid
 process-flow diagrams are embedded as images (if a diagram can't be drawn, its source text is
 included instead so an export never fails). Files open in Word, LibreOffice and Google Docs.
+
+## Send user stories to Jira / Azure DevOps
+
+After export, **⇄ Send to Jira / Azure DevOps** (next to *Download all*) creates one Epic per module and one Story per
+user story (titled `US-001 · …` so it stays traceable), with priority, labels, acceptance criteria, and dependency links.
+It is safe to click again: items already sent are remembered per project and per target, so nothing is duplicated;
+tick *Update items I already sent* to refresh stories that changed.
+
+* **Jira Cloud** — site address, account email, [API token](https://id.atlassian.com/manage-profile/security/api-tokens), project key.
+  Falls back to Task when there is no Story type; leaves out fields a project's screen rejects (e.g. priority) and says so.
+* **Azure DevOps** — organisation, project, personal access token (*Work Items: Read & write*). The story type is detected
+  from the project's process (User Story / Product Backlog Item / Requirement / Issue).
+* **Credentials** are used for the request only — never stored, logged or returned. Optional server-wide defaults:
+  `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_PROJECT_KEY`, `JIRA_API_TOKEN`, `ADO_ORG_URL`, `ADO_PROJECT`, `ADO_PAT`
+  (a token set here is used when the form's token is left blank and is never sent to the browser).
+* **Allowed hosts** (SSRF protection): `*.atlassian.net`, `dev.azure.com`, `*.visualstudio.com`. For Jira Data Center /
+  Azure DevOps Server add hosts with `JIRA_ALLOWED_HOSTS` / `ADO_ALLOWED_HOSTS` (comma-separated). `INTEGRATIONS_ALLOW_LOCAL=1`
+  permits localhost and is for tests only.
+* Tests run against local mock servers: `python3 src/test_integrations.py`.

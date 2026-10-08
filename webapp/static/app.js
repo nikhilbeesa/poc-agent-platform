@@ -1921,6 +1921,124 @@ $('#btn-export').addEventListener('click', async () => {
   }
 });
 
+
+// ---- Send user stories to Jira / Azure DevOps ---------------------------------------------------
+// The token is read from the field for each request and never stored; non-secret fields are remembered in this browser.
+const BL_FIELDS = { jira: ['base_url', 'email', 'token', 'project'], ado: ['base_url', 'project', 'token'] };
+let blTarget = 'jira';
+let blBusy = false;
+let blDefaults = null;
+
+const blField = (t, k) => document.getElementById(`bl-${t}-${k}`);
+function blCreds() {
+  const c = {};
+  BL_FIELDS[blTarget].forEach(k => { c[k] = (blField(blTarget, k).value || '').trim(); });
+  return c;
+}
+function blRemember() {
+  const saved = JSON.parse(localStorage.getItem('backlogFields') || '{}');
+  Object.keys(BL_FIELDS).forEach(t => { saved[t] = saved[t] || {}; BL_FIELDS[t].filter(k => k !== 'token').forEach(k => { saved[t][k] = blField(t, k).value.trim(); }); });
+  localStorage.setItem('backlogFields', JSON.stringify(saved));   // never the token
+}
+function blSetTarget(t) {
+  blTarget = t;
+  document.querySelectorAll('.bl-tab').forEach(b => { const on = b.dataset.target === t; b.classList.toggle('active', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
+  $('#bl-fields-jira').hidden = t !== 'jira';
+  $('#bl-fields-ado').hidden = t !== 'ado';
+  $('#bl-test-result').textContent = ''; $('#bl-result').hidden = true; $('#bl-progress').hidden = true;
+  blRefreshPreview();
+}
+function blPlaceholderToken() {
+  Object.keys(BL_FIELDS).forEach(t => {
+    const has = blDefaults && blDefaults[t] && blDefaults[t].token_configured;
+    blField(t, 'token').placeholder = has ? 'Using the token saved on the server — leave blank' : '';
+  });
+}
+async function blRefreshPreview() {
+  const box = $('#bl-preview'); box.textContent = '';
+  try {
+    const p = await api(`/api/project/${projectId}/integrations/${blTarget}/preview`, { method: 'POST', body: JSON.stringify({ creds: blCreds() }) });
+    box.appendChild(el('div', { class: 'bl-count', text: `${p.epics} epics + ${p.stories} user stories ready · ${p.by_priority.High} High, ${p.by_priority.Medium} Medium, ${p.by_priority.Low} Low priority · ${p.dependencies} dependency links` }));
+    if (p.already_pushed) box.appendChild(el('div', { class: 'bl-note', text: `${p.already_pushed} items were already sent to this project — they will be skipped, not duplicated.` }));
+  } catch (e) { box.appendChild(el('div', { class: 'bl-note', text: e.message })); }
+}
+async function openBacklogModal() {
+  if (!blDefaults) { try { blDefaults = await api('/api/integrations/config'); } catch (e) { blDefaults = {}; } }
+  const saved = JSON.parse(localStorage.getItem('backlogFields') || '{}');
+  Object.keys(BL_FIELDS).forEach(t => BL_FIELDS[t].filter(k => k !== 'token').forEach(k => {
+    blField(t, k).value = (saved[t] && saved[t][k]) || (blDefaults[t] && blDefaults[t][k]) || '';
+  }));
+  blPlaceholderToken();
+  $('#bl-result').hidden = true; $('#bl-progress').hidden = true; $('#bl-test-result').textContent = '';
+  blField('jira', 'token').value = ''; blField('ado', 'token').value = '';
+  $('#backlog-modal').hidden = false; document.body.classList.add('modal-open');
+  blSetTarget(blTarget);
+  setTimeout(() => $('.bl-tab.active').focus(), 30);
+}
+function closeBacklogModal() {
+  if (blBusy) return;
+  $('#backlog-modal').hidden = true; document.body.classList.remove('modal-open');
+  blField('jira', 'token').value = ''; blField('ado', 'token').value = '';
+}
+function blShowResult(r) {
+  const box = $('#bl-result'); box.hidden = false; box.innerHTML = '';
+  const parts = [`${r.created} created`, `${r.updated} updated`, `${r.unchanged} already there`, `${r.dependency_links} dependency links`];
+  box.appendChild(el('div', { class: 'bl-ok', text: `✓ Done in ${r.seconds}s — ${parts.join(' · ')}` }));
+  (r.warnings || []).forEach(w => box.appendChild(el('div', { class: 'bl-note', text: 'ℹ ' + w })));
+  if (r.failed.length) {
+    box.appendChild(el('div', { class: 'bl-fail', text: `${r.failed.length} item(s) could not be sent — fix the cause and click Send again; the rest will not be duplicated:` }));
+    r.failed.slice(0, 8).forEach(f => box.appendChild(el('div', { class: 'bl-fail-item', text: `${f.title}: ${f.error}` })));
+  }
+  const links = r.items.filter(i => i.url && i.status !== 'unchanged').slice(0, 12);
+  if (links.length) {
+    const ul = el('ul', { class: 'bl-links' });
+    links.forEach(i => { const a = el('a', { href: i.url, target: '_blank', rel: 'noopener noreferrer', text: `${i.key} — ${i.title}` }); ul.appendChild(el('li', {}, [a])); });
+    box.appendChild(ul);
+    if (r.items.length > links.length) box.appendChild(el('div', { class: 'bl-note', text: `…and ${r.items.length - links.length} more in your backlog.` }));
+  }
+}
+async function blPush() {
+  if (blBusy) return;
+  blBusy = true; const btn = $('#bl-push'); btn.disabled = true; btn.textContent = 'Sending…';
+  $('#bl-result').hidden = true; $('#bl-progress').hidden = false; $('#bl-bar-fill').style.width = '4%'; $('#bl-progress-text').textContent = 'Connecting…';
+  blRemember();
+  try {
+    const { push_id } = await api(`/api/project/${projectId}/integrations/${blTarget}/push`, { method: 'POST', body: JSON.stringify({ creds: blCreds(), options: { update_existing: $('#bl-update').checked } }) });
+    for (;;) {
+      await new Promise(r => setTimeout(r, 700));
+      const st = await api(`/api/project/${projectId}/integrations/push/${push_id}`);
+      $('#bl-progress-text').textContent = st.progress || '';
+      const m = /(\d+)\/(\d+)/.exec(st.progress || ''); if (m) $('#bl-bar-fill').style.width = Math.max(4, Math.round(100 * m[1] / m[2])) + '%';
+      if (st.status === 'done') { $('#bl-bar-fill').style.width = '100%'; blShowResult(st.result); break; }
+      if (st.status === 'error') { $('#bl-result').hidden = false; $('#bl-result').innerHTML = ''; $('#bl-result').appendChild(el('div', { class: 'bl-fail', text: '✗ ' + st.error })); break; }
+    }
+  } catch (e) {
+    $('#bl-result').hidden = false; $('#bl-result').innerHTML = ''; $('#bl-result').appendChild(el('div', { class: 'bl-fail', text: '✗ ' + e.message }));
+  } finally {
+    blBusy = false; btn.disabled = false; btn.textContent = 'Send to backlog →';
+    blField('jira', 'token').value = ''; blField('ado', 'token').value = '';   // never keep it around
+    blRefreshPreview();
+  }
+}
+$('#btn-backlog').addEventListener('click', openBacklogModal);
+$('#backlog-close').addEventListener('click', closeBacklogModal);
+$('#bl-cancel').addEventListener('click', closeBacklogModal);
+$('#bl-push').addEventListener('click', blPush);
+$('#bl-update').addEventListener('change', () => {});
+document.querySelectorAll('.bl-tab').forEach(b => b.addEventListener('click', () => blSetTarget(b.dataset.target)));
+$('#bl-test').addEventListener('click', async () => {
+  const out = $('#bl-test-result'); out.className = 'bl-status'; out.textContent = 'Checking…';
+  try {
+    const r = await api(`/api/project/${projectId}/integrations/${blTarget}/check`, { method: 'POST', body: JSON.stringify({ creds: blCreds() }) });
+    out.className = 'bl-status ok';
+    out.textContent = `✓ Connected${r.user ? ' as ' + r.user : ''} · project “${r.project}” · epics: ${r.epic_type || 'none'} · stories: ${r.story_type}${r.process ? ' (' + r.process + ' process)' : ''}`;
+    (r.warnings || []).forEach(w => { out.textContent += ' · ℹ ' + w; });
+    blRemember();
+  } catch (e) { out.className = 'bl-status bad'; out.textContent = '✗ ' + e.message; }
+});
+$('#backlog-modal').addEventListener('mousedown', e => { if (e.target.id === 'backlog-modal') closeBacklogModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#backlog-modal').hidden) closeBacklogModal(); });
+
 $('#btn-resolve-issues').addEventListener('click', async () => {
   const btn = $('#btn-resolve-issues');
   btn.disabled = true; btn.textContent = 'Resolving…';

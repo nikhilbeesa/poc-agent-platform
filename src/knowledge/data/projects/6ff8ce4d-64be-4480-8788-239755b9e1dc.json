@@ -1,0 +1,1379 @@
+{
+  "id": "6ff8ce4d-64be-4480-8788-239755b9e1dc",
+  "business_idea": "An app where people book home cleaners and pay online",
+  "domain": "booking_platform",
+  "domain_confidence": 0.75,
+  "stage": "complete",
+  "status": "draft",
+  "handoff_status": "READY FOR DESIGN AGENT",
+  "consistency_notes": [
+    "Every business requirement is referenced by at least one user story.",
+    "PRD functional requirements (72) cover all 72 user stories.",
+    "Every PRD functional requirement traces to at least one UX screen or flow.",
+    "PRD roles and UX roles/permissions matrix are aligned."
+  ],
+  "system_profile": {
+    "summary": "Planning for up to 500 registered users in the first 12 months (peak up to 50 concurrent, designed for 100) with a 99.0% during business hours availability target.",
+    "scale": {
+      "rows": [
+        {
+          "parameter": "Registered users \u2014 first 12 months",
+          "value": "Under 500",
+          "basis": "Stated"
+        },
+        {
+          "parameter": "Registered users \u2014 planning horizon (36 months)",
+          "value": "about 2,000 (4x the 12-month figure)",
+          "basis": "Assumed \u2014 confirm"
+        },
+        {
+          "parameter": "Peak concurrent users (first 12 months)",
+          "value": "Under 50",
+          "basis": "Stated"
+        },
+        {
+          "parameter": "Design capacity (2x peak headroom)",
+          "value": "100 concurrent users",
+          "basis": "Derived"
+        },
+        {
+          "parameter": "Sustained request rate at design capacity",
+          "value": "about 20 requests/second (assuming about one request every 5 seconds per active user)",
+          "basis": "Derived"
+        },
+        {
+          "parameter": "Availability target",
+          "value": "99.0% during business hours (allowed downtime: about 7 hours per month (outside business hours: best effort))",
+          "basis": "Stated"
+        },
+        {
+          "parameter": "Recovery time objective (RTO) / recovery point objective (RPO)",
+          "value": "8 hours / 24 hours",
+          "basis": "Stated"
+        },
+        {
+          "parameter": "Launch geography",
+          "value": "One city or region",
+          "basis": "Stated"
+        },
+        {
+          "parameter": "Sensitive data handled",
+          "value": "Personal details (names, emails, phone numbers)",
+          "basis": "Stated"
+        },
+        {
+          "parameter": "Client platforms",
+          "value": "Web application",
+          "basis": "Stated"
+        }
+      ],
+      "assumptions": [],
+      "planning": {
+        "users_12m": 500,
+        "users_36m": 2000,
+        "peak": 50,
+        "design_peak": 100,
+        "rps": 20
+      }
+    },
+    "availability": {
+      "uptime_target": "99.0% during business hours",
+      "allowed_downtime": "about 7 hours per month (outside business hours: best effort)",
+      "rto": "8 hours",
+      "rpo": "24 hours",
+      "tier": "low",
+      "basis": "Stated"
+    },
+    "system_requirements": [
+      {
+        "category": "Platform & clients",
+        "requirement": "The product shall be delivered as a responsive web application backed by a versioned HTTPS API that a mobile client can reuse later.",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SYS-001"
+      },
+      {
+        "category": "Browser & device support",
+        "requirement": "The web client shall support the latest two major versions of Chrome, Safari, Edge and Firefox, on desktop, tablet and phone screen sizes.",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SYS-002"
+      },
+      {
+        "category": "Hosting & infrastructure",
+        "requirement": "The product shall run on a managed cloud platform with automated instance replacement; a single availability zone is acceptable at this availability target.",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SYS-003"
+      },
+      {
+        "category": "Architecture",
+        "requirement": "The application tier shall be stateless and horizontally scalable behind a load balancer; session state shall live in a shared store, never on an application server.",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SYS-004"
+      },
+      {
+        "category": "Data storage",
+        "requirement": "A managed relational database shall be the system of record; object storage shall be used for any generated or uploaded files.",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SYS-005"
+      },
+      {
+        "category": "Environments & delivery",
+        "requirement": "Separate development, staging and production environments shall exist, provisioned as code, with a CI/CD pipeline that runs automated tests and supports rollback within minutes.",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SYS-006"
+      },
+      {
+        "category": "Backup & disaster recovery",
+        "requirement": "Automated database backups with point-in-time recovery shall be kept, meeting an RPO of 24 hours and an RTO of 8 hours; a restore shall be tested at least quarterly.",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SYS-007"
+      },
+      {
+        "category": "Monitoring & observability",
+        "requirement": "Application performance monitoring, centralised structured logs, uptime checks and alerting on the availability and latency targets in this document shall be in place before launch.",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SYS-008"
+      },
+      {
+        "category": "Integrations",
+        "requirement": "Every third-party integration (email/SMS, payments, analytics) shall be called through an adapter with timeouts, retries with back-off and a circuit breaker, so a provider outage degrades one feature instead of the whole product.",
+        "priority": "P1",
+        "status": "Proposed \u2014 confirm",
+        "id": "SYS-009"
+      },
+      {
+        "category": "Configuration & secrets",
+        "requirement": "Environment configuration shall be external to the code, and secrets shall be held in a managed secrets store, never in the repository or client bundles.",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SYS-010"
+      },
+      {
+        "category": "Time & localisation",
+        "requirement": "All timestamps shall be stored in UTC and displayed in the user's time zone; text shall be stored as UTF-8 to allow later localisation.",
+        "priority": "P1",
+        "status": "Proposed \u2014 confirm",
+        "id": "SYS-011"
+      }
+    ],
+    "security_requirements": [
+      {
+        "category": "Authentication",
+        "requirement": "Passwords shall be stored using a modern adaptive hash (Argon2id or bcrypt), be checked against known-breached passwords, and be at least 10 characters; login shall be rate-limited with temporary lockout after repeated failures.",
+        "verification": "Security review and automated test of the login flow",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SEC-001"
+      },
+      {
+        "category": "Authentication",
+        "requirement": "Multi-factor authentication shall be available to all users and mandatory for administrators and any user role that can access other people's data or payouts.",
+        "verification": "Configuration review; admin login test",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SEC-002"
+      },
+      {
+        "category": "Session management",
+        "requirement": "Sessions shall use short-lived tokens with rotation, secure/HttpOnly/SameSite cookies (web), server-side invalidation on logout and password change, and an idle timeout.",
+        "verification": "Penetration test",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SEC-003"
+      },
+      {
+        "category": "Authorization",
+        "requirement": "Access shall be enforced on the server for every request using role-based permissions, with object-level checks so one user can never read or change another user's records by changing an ID.",
+        "verification": "Automated authorization tests per role; penetration test",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SEC-004"
+      },
+      {
+        "category": "Encryption in transit",
+        "requirement": "All traffic shall use TLS 1.2 or higher with HSTS; plain HTTP shall redirect and internal service-to-service traffic shall also be encrypted.",
+        "verification": "TLS scan (e.g. SSL Labs grade A)",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SEC-005"
+      },
+      {
+        "category": "Encryption at rest",
+        "requirement": "Databases, backups and object storage shall be encrypted with AES-256; keys shall be managed in a key-management service and rotated at least annually.",
+        "verification": "Cloud configuration audit",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SEC-006"
+      },
+      {
+        "category": "Application security",
+        "requirement": "The product shall be protected against the OWASP Top 10: parameterised queries only, output encoding, CSRF protection, a strict Content-Security-Policy and standard security headers.",
+        "verification": "SAST/DAST in CI; penetration test",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SEC-007"
+      },
+      {
+        "category": "Abuse protection",
+        "requirement": "Public endpoints shall have rate limiting and bot/abuse protection (sign-up, login, password reset, search and any messaging or review submission).",
+        "verification": "Load/abuse test",
+        "priority": "P1",
+        "status": "Proposed \u2014 confirm",
+        "id": "SEC-008"
+      },
+      {
+        "category": "Audit logging",
+        "requirement": "Security-relevant events (logins, permission changes, admin actions, data exports, deletions) shall be logged with user, time and origin, protected from modification, and retained for at least 12 months; logs shall not contain passwords, tokens or full payment details.",
+        "verification": "Log review",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SEC-009"
+      },
+      {
+        "category": "Vulnerability management",
+        "requirement": "Dependencies shall be scanned on every build, critical vulnerabilities patched within 7 days and high within 30 days, and an independent penetration test performed before launch and at least annually.",
+        "verification": "CI report; pen-test report",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SEC-010"
+      },
+      {
+        "category": "Privacy & compliance",
+        "requirement": "Applicable data-protection law for the launch geography (for example GDPR, UK GDPR, CCPA or the India DPDP Act) shall be identified before build; the product shall record consent where required and support access, correction, export and deletion of a person's data.",
+        "verification": "Legal review; test of the data-request flows",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SEC-011"
+      },
+      {
+        "category": "Data retention",
+        "requirement": "Each data category shall have a documented retention period, and expired or deleted personal data shall be removed from the live system and from backups within a defined window.",
+        "verification": "Retention policy review",
+        "priority": "P1",
+        "status": "Proposed \u2014 confirm",
+        "id": "SEC-012"
+      },
+      {
+        "category": "Incident response",
+        "requirement": "A written incident-response plan shall define roles, escalation, evidence handling and breach notification to users and regulators within the legally required time.",
+        "verification": "Tabletop exercise before launch",
+        "priority": "P1",
+        "status": "Proposed \u2014 confirm",
+        "id": "SEC-013"
+      },
+      {
+        "category": "Administrative access",
+        "requirement": "Production access shall be limited to named staff on a least-privilege basis, require MFA, and be logged; no shared accounts.",
+        "verification": "Access review each quarter",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SEC-014"
+      },
+      {
+        "category": "Third-party risk",
+        "requirement": "Every vendor that processes user data shall be assessed and covered by a data-processing agreement before integration.",
+        "verification": "Vendor register review",
+        "priority": "P1",
+        "status": "Proposed \u2014 confirm",
+        "id": "SEC-015"
+      },
+      {
+        "category": "Payment security",
+        "requirement": "Card data shall never touch or be stored on the product's servers: payments shall use a PCI DSS-compliant hosted payment provider, webhooks shall be signature-verified, and payment actions shall be idempotent to prevent double charges.",
+        "verification": "Provider attestation; payment-flow test",
+        "priority": "P0",
+        "status": "Proposed \u2014 confirm",
+        "id": "SEC-016"
+      }
+    ],
+    "performance_requirements": [
+      {
+        "metric": "Page / screen load time (95th percentile)",
+        "target": "2.0 seconds or better; Largest Contentful Paint 2.5 seconds or better",
+        "condition": "on a typical broadband or 4G connection, at up to 100 concurrent users",
+        "measurement": "Real-user monitoring and synthetic tests",
+        "priority": "P0",
+        "status": "Derived from stated volumes",
+        "id": "PERF-001"
+      },
+      {
+        "metric": "API response time \u2014 reads (95th / 99th percentile)",
+        "target": "300 ms / 800 ms",
+        "condition": "at up to 100 concurrent users",
+        "measurement": "APM percentile dashboards; load test",
+        "priority": "P0",
+        "status": "Derived from stated volumes",
+        "id": "PERF-002"
+      },
+      {
+        "metric": "API response time \u2014 writes (95th percentile)",
+        "target": "500 ms",
+        "condition": "at up to 100 concurrent users",
+        "measurement": "APM percentile dashboards; load test",
+        "priority": "P0",
+        "status": "Derived from stated volumes",
+        "id": "PERF-003"
+      },
+      {
+        "metric": "Error rate",
+        "target": "below 0.5% of requests",
+        "condition": "at up to 100 concurrent users",
+        "measurement": "APM error-rate alert; load test",
+        "priority": "P0",
+        "status": "Derived from stated volumes",
+        "id": "PERF-004"
+      },
+      {
+        "metric": "Sustained throughput",
+        "target": "at least 20 requests per second with targets above still met",
+        "condition": "steady load for 30 minutes",
+        "measurement": "Load test",
+        "priority": "P0",
+        "status": "Derived from stated volumes",
+        "id": "PERF-005"
+      },
+      {
+        "metric": "Background jobs and notifications",
+        "target": "delivered within 60 seconds of the triggering event (95th percentile)",
+        "condition": "normal load",
+        "measurement": "Queue-latency metric",
+        "priority": "P1",
+        "status": "Derived from stated volumes",
+        "id": "PERF-006"
+      },
+      {
+        "metric": "Payment step (excluding provider time)",
+        "target": "3 seconds or better",
+        "condition": "normal load",
+        "measurement": "APM trace of the checkout flow",
+        "priority": "P0",
+        "status": "Derived from stated volumes",
+        "id": "PERF-007"
+      }
+    ],
+    "scalability_requirements": [
+      {
+        "requirement": "Horizontal scaling of the application tier",
+        "target": "Scale out automatically to hold the performance targets up to 100 concurrent users",
+        "approach": "Stateless instances behind a load balancer; autoscaling on CPU (target 60%) and request latency, with a minimum of 2 instances",
+        "verification": "Load test with a ramp to the design capacity",
+        "priority": "P0",
+        "status": "Derived from stated volumes",
+        "id": "SCL-001"
+      },
+      {
+        "requirement": "Capacity headroom",
+        "target": "Handle 2x the expected peak (50 -> 100 concurrent users) with no degradation of the performance targets",
+        "approach": "Capacity model reviewed before launch and after each doubling of users",
+        "verification": "Load test at 2x peak plus a spike test at 3x",
+        "priority": "P0",
+        "status": "Derived from stated volumes",
+        "id": "SCL-002"
+      },
+      {
+        "requirement": "User growth",
+        "target": "Support growth from about 500 to about 2,000 registered users (36-month planning horizon) without re-architecture",
+        "approach": "Database read replicas, connection pooling, caching of read-heavy data, and a documented partitioning/archiving plan before tables exceed ~50 million rows",
+        "verification": "Architecture review at each 2x growth; load test on synthetic data at 36-month volume",
+        "priority": "P1",
+        "status": "Derived from stated volumes",
+        "id": "SCL-003"
+      },
+      {
+        "requirement": "Data growth",
+        "target": "Storage, indexes and backups shall grow with data without slowing the main flows",
+        "approach": "Indexing standards, archive of old records, lifecycle rules on object storage",
+        "verification": "Query-plan review; storage-growth dashboard",
+        "priority": "P1",
+        "status": "Derived from stated volumes",
+        "id": "SCL-004"
+      },
+      {
+        "requirement": "Graceful degradation under overload",
+        "target": "When capacity is exceeded, non-critical features (recommendations, analytics, exports) shall be shed first so core flows keep working",
+        "approach": "Feature flags, queue-based processing for spikes (notifications, reports), request shedding with clear user messaging",
+        "verification": "Chaos/overload test",
+        "priority": "P1",
+        "status": "Derived from stated volumes",
+        "id": "SCL-005"
+      },
+      {
+        "requirement": "Load testing",
+        "target": "A repeatable load-test suite shall exist and run before launch and before each major release",
+        "approach": "Scenarios for the main user journeys at expected, peak and 2x-peak volumes",
+        "verification": "Reports archived per release",
+        "priority": "P0",
+        "status": "Derived from stated volumes",
+        "id": "SCL-006"
+      }
+    ],
+    "open_questions": [],
+    "generated_by": "baseline"
+  },
+  "feasibility": {
+    "verdict": "GO WITH CHANGES",
+    "rationale": "The idea is workable, but the issues below should be addressed first or the specification will inherit them. 0 critical and 2 major flaw(s) were found.",
+    "confidence": "Low",
+    "counts": {
+      "critical": 0,
+      "major": 2,
+      "minor": 1,
+      "competitors": 3,
+      "differentiators": 1
+    },
+    "headline_flaws": [
+      "No clear reason for users to choose this product over existing options has been stated.",
+      "The product needs customers and providers at the same time; each side only joins if the other is already there."
+    ],
+    "recommended_changes": [
+      "Define one specific thing this product does better for one specific user group, and test it with 10+ target users before building.",
+      "Launch in one narrow area or niche, secure the provider side first (manually if needed), and set a target for supply density before opening to customers."
+    ],
+    "revisit": [
+      {
+        "question_id": "bp_providers",
+        "severity": "Major",
+        "reasons": [
+          {
+            "flaw_id": "FLAW-02",
+            "severity": "Major",
+            "flaw": "The product needs customers and providers at the same time; each side only joins if the other is already there.",
+            "suggestion": "Launch in one narrow area or niche, secure the provider side first (manually if needed), and set a target for supply density before opening to customers.",
+            "primary": true,
+            "specific": false,
+            "shared_with": []
+          }
+        ]
+      }
+    ],
+    "unlinked": [
+      {
+        "id": "FLAW-01",
+        "severity": "Major",
+        "flaw": "No clear reason for users to choose this product over existing options has been stated.",
+        "suggestion": "Define one specific thing this product does better for one specific user group, and test it with 10+ target users before building."
+      }
+    ],
+    "reviewed": [],
+    "already_reviewed": [],
+    "round": 1,
+    "history": [
+      {
+        "round": 1,
+        "verdict": "GO WITH CHANGES",
+        "items": [
+          {
+            "question_id": "bp_providers",
+            "question": "How do service providers get onboarded \u2014 self-signup or vetted by you?",
+            "answer": "Self-signup, no vetting",
+            "severity": "Major",
+            "flaw": "The product needs customers and providers at the same time; each side only joins if the other is already there.",
+            "suggestion": "Launch in one narrow area or niche, secure the provider side first (manually if needed), and set a target for supply density before opening to customers."
+          }
+        ]
+      }
+    ],
+    "clarifications": [],
+    "accepted": [],
+    "rethink": {
+      "serious": 2,
+      "accepted": 0,
+      "open": 2
+    },
+    "integrations": {
+      "jira:127.0.0.1:40383:APP": {
+        "EPIC-001": {
+          "key": "APP-1",
+          "url": "http://127.0.0.1:40383/browse/APP-1",
+          "hash": "25cdbb971088",
+          "linked": []
+        },
+        "EPIC-002": {
+          "key": "APP-2",
+          "url": "http://127.0.0.1:40383/browse/APP-2",
+          "hash": "bfb58011be7e",
+          "linked": []
+        },
+        "EPIC-003": {
+          "key": "APP-3",
+          "url": "http://127.0.0.1:40383/browse/APP-3",
+          "hash": "cc667df5655b",
+          "linked": []
+        },
+        "EPIC-004": {
+          "key": "APP-4",
+          "url": "http://127.0.0.1:40383/browse/APP-4",
+          "hash": "269337f3db4d",
+          "linked": []
+        },
+        "EPIC-005": {
+          "key": "APP-5",
+          "url": "http://127.0.0.1:40383/browse/APP-5",
+          "hash": "83b0d4e4819b",
+          "linked": []
+        },
+        "EPIC-006": {
+          "key": "APP-6",
+          "url": "http://127.0.0.1:40383/browse/APP-6",
+          "hash": "b14afd455f2f",
+          "linked": []
+        },
+        "EPIC-007": {
+          "key": "APP-7",
+          "url": "http://127.0.0.1:40383/browse/APP-7",
+          "hash": "8066b592d78f",
+          "linked": []
+        },
+        "EPIC-008": {
+          "key": "APP-8",
+          "url": "http://127.0.0.1:40383/browse/APP-8",
+          "hash": "1d429158935a",
+          "linked": []
+        },
+        "EPIC-009": {
+          "key": "APP-9",
+          "url": "http://127.0.0.1:40383/browse/APP-9",
+          "hash": "1201b13536ed",
+          "linked": []
+        },
+        "EPIC-010": {
+          "key": "APP-10",
+          "url": "http://127.0.0.1:40383/browse/APP-10",
+          "hash": "3cd7b7bf4da6",
+          "linked": []
+        },
+        "EPIC-011": {
+          "key": "APP-11",
+          "url": "http://127.0.0.1:40383/browse/APP-11",
+          "hash": "7d4897516188",
+          "linked": []
+        },
+        "EPIC-012": {
+          "key": "APP-12",
+          "url": "http://127.0.0.1:40383/browse/APP-12",
+          "hash": "4710dbd6be94",
+          "linked": []
+        },
+        "EPIC-013": {
+          "key": "APP-13",
+          "url": "http://127.0.0.1:40383/browse/APP-13",
+          "hash": "cdcc77159c49",
+          "linked": []
+        },
+        "EPIC-014": {
+          "key": "APP-14",
+          "url": "http://127.0.0.1:40383/browse/APP-14",
+          "hash": "b6517f50ea50",
+          "linked": []
+        },
+        "EPIC-015": {
+          "key": "APP-15",
+          "url": "http://127.0.0.1:40383/browse/APP-15",
+          "hash": "6ed77e1e5105",
+          "linked": []
+        },
+        "EPIC-016": {
+          "key": "APP-16",
+          "url": "http://127.0.0.1:40383/browse/APP-16",
+          "hash": "0625b688d31e",
+          "linked": []
+        },
+        "US-001": {
+          "key": "APP-17",
+          "url": "http://127.0.0.1:40383/browse/APP-17",
+          "hash": "9f62be514cb6",
+          "linked": []
+        },
+        "US-002": {
+          "key": "APP-18",
+          "url": "http://127.0.0.1:40383/browse/APP-18",
+          "hash": "c47ebc5ce7e6",
+          "linked": []
+        },
+        "US-003": {
+          "key": "APP-19",
+          "url": "http://127.0.0.1:40383/browse/APP-19",
+          "hash": "e0add01b49fa",
+          "linked": []
+        },
+        "US-004": {
+          "key": "APP-20",
+          "url": "http://127.0.0.1:40383/browse/APP-20",
+          "hash": "9b49fed3cab2",
+          "linked": []
+        },
+        "US-005": {
+          "key": "APP-21",
+          "url": "http://127.0.0.1:40383/browse/APP-21",
+          "hash": "3aa2db96511f",
+          "linked": []
+        },
+        "US-006": {
+          "key": "APP-22",
+          "url": "http://127.0.0.1:40383/browse/APP-22",
+          "hash": "8fda44b4652c",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-007": {
+          "key": "APP-23",
+          "url": "http://127.0.0.1:40383/browse/APP-23",
+          "hash": "6d401fbf85f6",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-008": {
+          "key": "APP-24",
+          "url": "http://127.0.0.1:40383/browse/APP-24",
+          "hash": "ade5bfbc4f8c",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-009": {
+          "key": "APP-25",
+          "url": "http://127.0.0.1:40383/browse/APP-25",
+          "hash": "d8f86f56a14a",
+          "linked": [
+            "US-002",
+            "US-008"
+          ]
+        },
+        "US-010": {
+          "key": "APP-26",
+          "url": "http://127.0.0.1:40383/browse/APP-26",
+          "hash": "be60775b97bd",
+          "linked": [
+            "US-002",
+            "US-008"
+          ]
+        },
+        "US-011": {
+          "key": "APP-27",
+          "url": "http://127.0.0.1:40383/browse/APP-27",
+          "hash": "ec1c412e4701",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-012": {
+          "key": "APP-28",
+          "url": "http://127.0.0.1:40383/browse/APP-28",
+          "hash": "261dee91ae03",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-013": {
+          "key": "APP-29",
+          "url": "http://127.0.0.1:40383/browse/APP-29",
+          "hash": "06aa0ed7169c",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-014": {
+          "key": "APP-30",
+          "url": "http://127.0.0.1:40383/browse/APP-30",
+          "hash": "6c7fd4c6c924",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-015": {
+          "key": "APP-31",
+          "url": "http://127.0.0.1:40383/browse/APP-31",
+          "hash": "e307c7e6e460",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-016": {
+          "key": "APP-32",
+          "url": "http://127.0.0.1:40383/browse/APP-32",
+          "hash": "6208cd74c93c",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-017": {
+          "key": "APP-33",
+          "url": "http://127.0.0.1:40383/browse/APP-33",
+          "hash": "3d6c8ef58d95",
+          "linked": [
+            "US-002",
+            "US-016"
+          ]
+        },
+        "US-018": {
+          "key": "APP-34",
+          "url": "http://127.0.0.1:40383/browse/APP-34",
+          "hash": "5bcff053b2b1",
+          "linked": [
+            "US-002",
+            "US-016"
+          ]
+        },
+        "US-019": {
+          "key": "APP-35",
+          "url": "http://127.0.0.1:40383/browse/APP-35",
+          "hash": "b6254c7cc7fa",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-020": {
+          "key": "APP-36",
+          "url": "http://127.0.0.1:40383/browse/APP-36",
+          "hash": "766a1b9004fb",
+          "linked": [
+            "US-002",
+            "US-019"
+          ]
+        },
+        "US-021": {
+          "key": "APP-37",
+          "url": "http://127.0.0.1:40383/browse/APP-37",
+          "hash": "6a24d4b444f3",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-022": {
+          "key": "APP-38",
+          "url": "http://127.0.0.1:40383/browse/APP-38",
+          "hash": "0d8d31b0fc99",
+          "linked": [
+            "US-002",
+            "US-021"
+          ]
+        },
+        "US-023": {
+          "key": "APP-39",
+          "url": "http://127.0.0.1:40383/browse/APP-39",
+          "hash": "a32103f243f3",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-024": {
+          "key": "APP-40",
+          "url": "http://127.0.0.1:40383/browse/APP-40",
+          "hash": "bec4b6cf0e4a",
+          "linked": [
+            "US-002",
+            "US-023"
+          ]
+        },
+        "US-025": {
+          "key": "APP-41",
+          "url": "http://127.0.0.1:40383/browse/APP-41",
+          "hash": "253f8b3acba2",
+          "linked": [
+            "US-002",
+            "US-023"
+          ]
+        },
+        "US-026": {
+          "key": "APP-42",
+          "url": "http://127.0.0.1:40383/browse/APP-42",
+          "hash": "e1b8e1dc82cf",
+          "linked": [
+            "US-002",
+            "US-023"
+          ]
+        },
+        "US-027": {
+          "key": "APP-43",
+          "url": "http://127.0.0.1:40383/browse/APP-43",
+          "hash": "fc03ce21999f",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-028": {
+          "key": "APP-44",
+          "url": "http://127.0.0.1:40383/browse/APP-44",
+          "hash": "48a8ad51f4f1",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-029": {
+          "key": "APP-45",
+          "url": "http://127.0.0.1:40383/browse/APP-45",
+          "hash": "46952c217120",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-030": {
+          "key": "APP-46",
+          "url": "http://127.0.0.1:40383/browse/APP-46",
+          "hash": "de1650429e08",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-031": {
+          "key": "APP-47",
+          "url": "http://127.0.0.1:40383/browse/APP-47",
+          "hash": "355b13c7b1ac",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-032": {
+          "key": "APP-48",
+          "url": "http://127.0.0.1:40383/browse/APP-48",
+          "hash": "090c25bcaf9d",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-033": {
+          "key": "APP-49",
+          "url": "http://127.0.0.1:40383/browse/APP-49",
+          "hash": "ea14ca399a90",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-034": {
+          "key": "APP-50",
+          "url": "http://127.0.0.1:40383/browse/APP-50",
+          "hash": "04554c86241b",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-035": {
+          "key": "APP-51",
+          "url": "http://127.0.0.1:40383/browse/APP-51",
+          "hash": "d89c98c0bc5f",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-036": {
+          "key": "APP-52",
+          "url": "http://127.0.0.1:40383/browse/APP-52",
+          "hash": "9019b5e0822a",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-037": {
+          "key": "APP-53",
+          "url": "http://127.0.0.1:40383/browse/APP-53",
+          "hash": "7d3d9ee9678d",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-038": {
+          "key": "APP-54",
+          "url": "http://127.0.0.1:40383/browse/APP-54",
+          "hash": "fa54e0395be0",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-039": {
+          "key": "APP-55",
+          "url": "http://127.0.0.1:40383/browse/APP-55",
+          "hash": "0672959bc221",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-040": {
+          "key": "APP-56",
+          "url": "http://127.0.0.1:40383/browse/APP-56",
+          "hash": "422dff8da2d5",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-041": {
+          "key": "APP-57",
+          "url": "http://127.0.0.1:40383/browse/APP-57",
+          "hash": "e96951b22729",
+          "linked": [
+            "US-002",
+            "US-040"
+          ]
+        },
+        "US-042": {
+          "key": "APP-58",
+          "url": "http://127.0.0.1:40383/browse/APP-58",
+          "hash": "eabba3eb13d3",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-043": {
+          "key": "APP-59",
+          "url": "http://127.0.0.1:40383/browse/APP-59",
+          "hash": "50c664309a39",
+          "linked": [
+            "US-002",
+            "US-042"
+          ]
+        },
+        "US-044": {
+          "key": "APP-60",
+          "url": "http://127.0.0.1:40383/browse/APP-60",
+          "hash": "543c815920e2",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-045": {
+          "key": "APP-61",
+          "url": "http://127.0.0.1:40383/browse/APP-61",
+          "hash": "f6a9871a2de6",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-046": {
+          "key": "APP-62",
+          "url": "http://127.0.0.1:40383/browse/APP-62",
+          "hash": "b3c66b27a42c",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-047": {
+          "key": "APP-63",
+          "url": "http://127.0.0.1:40383/browse/APP-63",
+          "hash": "6a9261e763d6",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-048": {
+          "key": "APP-64",
+          "url": "http://127.0.0.1:40383/browse/APP-64",
+          "hash": "775e16d88215",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-049": {
+          "key": "APP-65",
+          "url": "http://127.0.0.1:40383/browse/APP-65",
+          "hash": "810f67b6ca1c",
+          "linked": [
+            "US-002",
+            "US-048"
+          ]
+        },
+        "US-050": {
+          "key": "APP-66",
+          "url": "http://127.0.0.1:40383/browse/APP-66",
+          "hash": "f3c7a5ba6893",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-051": {
+          "key": "APP-67",
+          "url": "http://127.0.0.1:40383/browse/APP-67",
+          "hash": "b36dd760f1b0",
+          "linked": [
+            "US-002",
+            "US-050"
+          ]
+        },
+        "US-052": {
+          "key": "APP-68",
+          "url": "http://127.0.0.1:40383/browse/APP-68",
+          "hash": "cfd0081f6dc0",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-053": {
+          "key": "APP-69",
+          "url": "http://127.0.0.1:40383/browse/APP-69",
+          "hash": "7c1df27d4962",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-054": {
+          "key": "APP-70",
+          "url": "http://127.0.0.1:40383/browse/APP-70",
+          "hash": "df4f1b3e5a2c",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-055": {
+          "key": "APP-71",
+          "url": "http://127.0.0.1:40383/browse/APP-71",
+          "hash": "773bb9da0626",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-056": {
+          "key": "APP-72",
+          "url": "http://127.0.0.1:40383/browse/APP-72",
+          "hash": "272743451b81",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-057": {
+          "key": "APP-73",
+          "url": "http://127.0.0.1:40383/browse/APP-73",
+          "hash": "7c51de672ec6",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-058": {
+          "key": "APP-74",
+          "url": "http://127.0.0.1:40383/browse/APP-74",
+          "hash": "12ddacbfe979",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-059": {
+          "key": "APP-75",
+          "url": "http://127.0.0.1:40383/browse/APP-75",
+          "hash": "402daf8295f0",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-060": {
+          "key": "APP-76",
+          "url": "http://127.0.0.1:40383/browse/APP-76",
+          "hash": "1001ff022e0a",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-061": {
+          "key": "APP-77",
+          "url": "http://127.0.0.1:40383/browse/APP-77",
+          "hash": "a724501ddc3d",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-062": {
+          "key": "APP-78",
+          "url": "http://127.0.0.1:40383/browse/APP-78",
+          "hash": "c88c79477989",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-063": {
+          "key": "APP-79",
+          "url": "http://127.0.0.1:40383/browse/APP-79",
+          "hash": "7aff23b8de77",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-064": {
+          "key": "APP-80",
+          "url": "http://127.0.0.1:40383/browse/APP-80",
+          "hash": "157571c395dc",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-065": {
+          "key": "APP-81",
+          "url": "http://127.0.0.1:40383/browse/APP-81",
+          "hash": "0e329e918f60",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-066": {
+          "key": "APP-82",
+          "url": "http://127.0.0.1:40383/browse/APP-82",
+          "hash": "348b4feb063c",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-067": {
+          "key": "APP-83",
+          "url": "http://127.0.0.1:40383/browse/APP-83",
+          "hash": "f8fc4b4b61cd",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-068": {
+          "key": "APP-84",
+          "url": "http://127.0.0.1:40383/browse/APP-84",
+          "hash": "e5d5f9237f40",
+          "linked": [
+            "US-002",
+            "US-067"
+          ]
+        },
+        "US-069": {
+          "key": "APP-85",
+          "url": "http://127.0.0.1:40383/browse/APP-85",
+          "hash": "492323eb983f",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-070": {
+          "key": "APP-86",
+          "url": "http://127.0.0.1:40383/browse/APP-86",
+          "hash": "f9ecf2f6c9ce",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-071": {
+          "key": "APP-87",
+          "url": "http://127.0.0.1:40383/browse/APP-87",
+          "hash": "8eaa3856d5ec",
+          "linked": [
+            "US-002"
+          ]
+        },
+        "US-072": {
+          "key": "APP-88",
+          "url": "http://127.0.0.1:40383/browse/APP-88",
+          "hash": "1ef70ab0ceb3",
+          "linked": [
+            "US-002"
+          ]
+        }
+      }
+    }
+  },
+  "created_at": "2026-10-08T07:05:23.411074+00:00",
+  "questions": [
+    {
+      "id": "bp_users",
+      "text": "Who books \u2014 individuals, businesses, or both?",
+      "category": "users",
+      "status": "answered",
+      "options": [
+        "Individual consumers",
+        "Small businesses",
+        "Enterprise teams",
+        "Both individuals and businesses"
+      ],
+      "multi_select": false,
+      "answer": "Individual consumers"
+    },
+    {
+      "id": "bp_providers",
+      "text": "How do service providers get onboarded \u2014 self-signup or vetted by you?",
+      "category": "operations",
+      "status": "answered",
+      "options": [
+        "Self-signup, no vetting",
+        "Self-signup with a review step",
+        "Fully vetted/curated by us",
+        "Not decided yet"
+      ],
+      "multi_select": false,
+      "answer": "Self-signup, no vetting"
+    },
+    {
+      "id": "bp_scheduling",
+      "text": "Do providers set their own availability, or is it assigned?",
+      "category": "scheduling",
+      "status": "answered",
+      "options": [
+        "Providers set their own availability",
+        "Availability is assigned centrally",
+        "A mix of both",
+        "Not sure yet"
+      ],
+      "multi_select": false,
+      "answer": "Providers set their own availability"
+    },
+    {
+      "id": "bp_payment",
+      "text": "Is payment taken at booking, after service, or both?",
+      "category": "payments",
+      "status": "skipped",
+      "options": [
+        "At time of booking",
+        "After the service is completed",
+        "Split \u2014 deposit then balance",
+        "Not decided yet"
+      ],
+      "multi_select": false,
+      "answer": null
+    },
+    {
+      "id": "bp_cancellation",
+      "text": "What's your cancellation/refund policy?",
+      "category": "policy",
+      "status": "answered",
+      "options": [
+        "Flexible \u2014 full refunds",
+        "Strict \u2014 limited or no refunds",
+        "Tiered based on notice given",
+        "Haven't decided yet"
+      ],
+      "multi_select": false,
+      "answer": "Flexible \u2014 full refunds"
+    },
+    {
+      "id": "mock_platform",
+      "text": "Web, mobile app, or both?",
+      "category": "platform",
+      "status": "answered",
+      "options": [
+        "Web app",
+        "Mobile app",
+        "Both web & mobile",
+        "Not sure yet"
+      ],
+      "multi_select": false,
+      "answer": "Web app"
+    },
+    {
+      "id": "nfr_users_12m",
+      "text": "How many registered users do you expect in the first 12 months after launch?",
+      "category": "scale_performance",
+      "status": "answered",
+      "options": [
+        "Under 500",
+        "500\u20135,000",
+        "5,000\u201350,000",
+        "50,000\u2013500,000",
+        "500,000+"
+      ],
+      "multi_select": false,
+      "answer": "Under 500"
+    },
+    {
+      "id": "nfr_peak_concurrent",
+      "text": "At the busiest times, roughly how many people will be using the product at the same moment?",
+      "category": "scale_performance",
+      "status": "answered",
+      "options": [
+        "Under 50",
+        "50\u2013500",
+        "500\u20135,000",
+        "5,000+",
+        "Not sure yet"
+      ],
+      "multi_select": false,
+      "answer": "Under 50"
+    },
+    {
+      "id": "nfr_availability",
+      "text": "How important is it that the product is available around the clock?",
+      "category": "scale_performance",
+      "status": "answered",
+      "options": [
+        "Business hours only is fine",
+        "99% (a few hours of downtime a month is OK)",
+        "99.9% (only minutes of downtime a month)",
+        "99.95%+ (near-zero downtime, mission-critical)",
+        "Not sure yet"
+      ],
+      "multi_select": false,
+      "answer": "Business hours only is fine"
+    },
+    {
+      "id": "nfr_data_sensitivity",
+      "text": "What sensitive data will the product handle? (choose all that apply)",
+      "category": "security",
+      "status": "answered",
+      "options": [
+        "Personal details (names, emails, phone numbers)",
+        "Payment / card data",
+        "Health or medical data",
+        "Children's data",
+        "Government IDs / identity documents",
+        "Precise location data",
+        "Nothing sensitive",
+        "Not sure yet"
+      ],
+      "multi_select": true,
+      "answer": "Personal details (names, emails, phone numbers)"
+    },
+    {
+      "id": "nfr_geography",
+      "text": "Where will your users be located at launch?",
+      "category": "security",
+      "status": "answered",
+      "options": [
+        "One city or region",
+        "One country",
+        "Several countries",
+        "Global",
+        "Not sure yet"
+      ],
+      "multi_select": false,
+      "answer": "One city or region"
+    },
+    {
+      "id": "additional_information",
+      "text": "Is there any additional information or data you'd like to provide that our questions may not have covered? (For example: specific requirements, constraints, integrations, reference products, data you already have, or anything else the team should know.)",
+      "category": "additional_information",
+      "status": "answered",
+      "options": [],
+      "multi_select": false,
+      "answer": "Test answer"
+    }
+  ],
+  "agent_log": [
+    {
+      "agent": "feasibility_assessment",
+      "label": "Feasibility Check",
+      "summary": "Feasibility verdict: GO WITH CHANGES \u2014 0 critical and 2 major flaw(s), 3 competitor(s)/categories and 1 differentiator(s) assessed."
+    },
+    {
+      "agent": "business_analyst",
+      "label": "Business Analyst",
+      "summary": "Business analysis for a booking platform idea covering 16 product modules, 72 functional requirements, and 42 business rules, based on 11 answered discovery questions."
+    },
+    {
+      "agent": "product_manager",
+      "label": "Product Manager",
+      "summary": "Converted 72 functional requirements across 16 epics into 72 fully detailed user stories."
+    },
+    {
+      "agent": "product_requirements",
+      "label": "Product Requirements",
+      "summary": "PRD synthesizing the business case and 16 epics into 72 fully detailed functional requirements for the booking platform product."
+    },
+    {
+      "agent": "ux_product_flow",
+      "label": "UX / Product Flow",
+      "summary": "UX specification covering 29 screens and 72 user flows derived from 72 user stories across 16 modules."
+    },
+    {
+      "agent": "ai_handoff_validation",
+      "label": "AI Handoff Validation",
+      "summary": "Validated the specification package: 0 conflict(s), 0 missing item(s) found, 100% capability coverage."
+    }
+  ],
+  "artefacts": [],
+  "updated_at": "2026-10-08T07:05:23.762765+00:00"
+}

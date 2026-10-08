@@ -717,3 +717,23 @@ body.modal-open { overflow: hidden; }
 .rt-ways { margin: 0 0 8px 18px; padding: 0; color: var(--text-dim); font-size: 13px; }
 .rt-q { border-top: 1px dashed var(--line); padding-top: 10px; margin-top: 10px; }
 .rt-accept { display: flex; gap: 8px; align-items: center; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); color: var(--text-dim); font-size: 13px; cursor: pointer; }
+
+/* Send to Jira / Azure DevOps */
+.bl-seg { display: inline-flex; border: 1px solid var(--line); margin-bottom: 14px; }
+.bl-tab { background: transparent; color: var(--text-dim); border: 0; padding: 7px 16px; cursor: pointer; font-family: var(--mono); font-size: 12.5px; }
+.bl-tab.active { background: var(--cyan-dim); color: var(--text); }
+.bl-fields { display: grid; gap: 10px; }
+.bl-fields label, .bl-check { display: grid; gap: 4px; font-size: 12.5px; color: var(--text-dim); }
+.bl-fields input { background: rgba(0,0,0,0.25); border: 1px solid var(--line); color: var(--text); padding: 8px 10px; font-family: var(--mono); font-size: 13px; }
+.bl-check { display: flex; gap: 8px; align-items: center; margin: 12px 0; }
+.bl-help, .bl-secure, .bl-note { font-size: 12.5px; color: var(--text-dim); margin: 4px 0; }
+.bl-secure { margin-top: 12px; }
+.bl-actions { display: flex; gap: 12px; align-items: center; margin-top: 10px; flex-wrap: wrap; }
+.bl-status { font-size: 12.5px; color: var(--text-dim); }
+.bl-status.ok, .bl-ok { color: var(--green); } .bl-status.bad, .bl-fail { color: #ff8b8b; }
+.bl-preview { margin: 12px 0 4px; } .bl-count { font-size: 13px; color: var(--text); }
+.bl-bar { height: 6px; background: rgba(255,255,255,0.08); } .bl-bar span { display: block; height: 100%; width: 0; background: var(--cyan); transition: width .3s; }
+.bl-progress { margin: 12px 0; font-size: 12.5px; color: var(--text-dim); }
+.bl-result { margin-top: 10px; display: grid; gap: 6px; font-size: 13px; }
+.bl-fail-item { font-size: 12px; color: var(--text-dim); } .bl-links { margin: 6px 0 0 18px; padding: 0; font-size: 12.5px; }
+.bl-links a { color: var(--cyan); }

@@ -124,6 +124,8 @@ class ProjectContext(BaseModel):
     clarifications: list[dict] = Field(default_factory=list)
     # Serious feasibility flaws the person chose to KEEP (see rethink.py). Not cleared by a fresh run.
     accepted_flaws: list[dict] = Field(default_factory=list)
+    # What was pushed to Jira / Azure DevOps: {target id: {story or epic id: {key, url, hash, linked}}}. No secrets, ever.
+    integration_links: dict = Field(default_factory=dict)
 
     def add_answer(self, question_id: str, answer: str) -> None:
         for q in self.discovery_questions:
