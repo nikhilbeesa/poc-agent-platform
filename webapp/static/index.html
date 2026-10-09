@@ -311,14 +311,16 @@ window.addEventListener('load', function () {
         <div class="lock-msg">Run the agent team to generate the handoff package.</div>
         <div class="artefact-bar" id="artefact-controls" hidden>
           <div class="tabs" id="artefact-tabs" role="tablist"></div>
-          <div class="dl-menu" id="menu-all">
-            <button type="button" class="btn btn-primary btn-small dl-trigger" id="btn-download-all-menu" aria-haspopup="menu" aria-expanded="false">⬇ Download all <span class="dl-caret">▾</span></button>
-            <div class="dl-pop" role="menu" hidden>
-              <button type="button" role="menuitem" class="dl-item" id="btn-download-all"><b>Word (.docx)</b><span>All documents, zipped</span></button>
-              <button type="button" role="menuitem" class="dl-item" id="btn-download-all-md"><b>Markdown (.md)</b><span>All documents, zipped</span></button>
+          <div class="artefact-actions">
+            <div class="dl-menu" id="menu-all">
+              <button type="button" class="btn btn-primary btn-small dl-trigger" id="btn-download-all-menu" aria-haspopup="menu" aria-expanded="false">⬇ Download all <span class="dl-caret">▾</span></button>
+              <div class="dl-pop" role="menu" hidden>
+                <button type="button" role="menuitem" class="dl-item" id="btn-download-all"><b>Word (.docx)</b><span>All documents, zipped</span></button>
+                <button type="button" role="menuitem" class="dl-item" id="btn-download-all-md"><b>Markdown (.md)</b><span>All documents, zipped</span></button>
+              </div>
             </div>
+            <button type="button" class="btn btn-small btn-send" id="btn-backlog" title="Create the epics and user stories in Jira or Azure DevOps"><span class="btn-ico" aria-hidden="true">⇄</span> Send to Jira / Azure DevOps</button>
           </div>
-          <button type="button" class="btn btn-small" id="btn-backlog" title="Create the epics and user stories in Jira or Azure DevOps">⇄ Send to Jira / Azure DevOps</button>
         </div>
         <div class="doc-frame" id="doc-frame" hidden>
           <div class="doc-head">
@@ -386,9 +388,33 @@ window.addEventListener('load', function () {
   </div>
 </div>
 
+<!-- Password prompt shown whenever "Send to Jira / Azure DevOps" is opened for a project that has a saved token -->
+<div class="modal-backdrop" id="unlock-modal" hidden>
+  <div class="modal modal-narrow" role="dialog" aria-modal="true" aria-labelledby="unlock-title">
+    <div class="modal-head">
+      <div>
+        <div class="modal-kicker">Backlog integration</div>
+        <h3 class="modal-title" id="unlock-title">Enter your password</h3>
+      </div>
+      <button type="button" class="modal-close" id="unlock-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal-body">
+      <p class="bl-help">This project has a saved Jira / Azure DevOps token, encrypted. Enter the password you chose to use it.</p>
+      <div class="bl-fields"><label>Password<input type="password" id="unlock-password" autocomplete="current-password"></label></div>
+      <div class="bl-status bad" id="unlock-error" role="alert"></div>
+      <p class="bl-help"><a href="#" id="unlock-forgot">Forgot your password? Remove the saved token and start again</a></p>
+    </div>
+    <div class="modal-foot">
+      <span class="modal-spacer"></span>
+      <button type="button" class="btn btn-ghost" id="unlock-cancel">Cancel</button>
+      <button type="button" class="btn btn-primary" id="unlock-go">Unlock →</button>
+    </div>
+  </div>
+</div>
+
 <!-- Send user stories to Jira / Azure DevOps -->
 <div class="modal-backdrop" id="backlog-modal" hidden>
-  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="backlog-title">
+  <div class="modal modal-bl" role="dialog" aria-modal="true" aria-labelledby="backlog-title">
     <div class="modal-head">
       <div>
         <div class="modal-kicker">Backlog integration</div>
@@ -396,35 +422,60 @@ window.addEventListener('load', function () {
       </div>
       <button type="button" class="modal-close" id="backlog-close" aria-label="Close">✕</button>
     </div>
-    <div class="modal-body" id="backlog-body">
-      <div class="bl-seg" role="tablist">
-        <button type="button" class="bl-tab active" data-target="jira" role="tab">Jira Cloud</button>
-        <button type="button" class="bl-tab" data-target="ado" role="tab">Azure DevOps</button>
-      </div>
-      <div class="bl-fields" id="bl-fields-jira">
-        <label>Site address<input type="url" id="bl-jira-base_url" placeholder="https://your-company.atlassian.net" autocomplete="off"></label>
-        <label>Account email<input type="email" id="bl-jira-email" placeholder="you@company.com" autocomplete="off"></label>
-        <label>API token<input type="password" id="bl-jira-token" autocomplete="new-password"></label>
-        <label>Project key<input type="text" id="bl-jira-project" placeholder="APP" autocomplete="off"></label>
-        <p class="bl-help">Create a token at id.atlassian.com → Security → API tokens. Epics become Jira Epics; stories become Stories under them, with priority, labels, acceptance criteria and “blocks” links for dependencies.</p>
-      </div>
-      <div class="bl-fields" id="bl-fields-ado" hidden>
-        <label>Organisation<input type="text" id="bl-ado-base_url" placeholder="https://dev.azure.com/your-organisation" autocomplete="off"></label>
-        <label>Project<input type="text" id="bl-ado-project" placeholder="My Project" autocomplete="off"></label>
-        <label>Personal access token<input type="password" id="bl-ado-token" autocomplete="new-password"></label>
-        <p class="bl-help">Create a PAT under User settings → Personal access tokens with <b>Work Items: Read &amp; write</b>. Epics become Epics; stories use your project's story type (User Story / Product Backlog Item / Requirement / Issue), with acceptance criteria, priority, tags, parent and predecessor links.</p>
-      </div>
-      <p class="bl-secure">🔒 Your token is sent over HTTPS for this request only — it is never saved, logged or shown again.</p>
-      <div class="bl-actions">
-        <button type="button" class="btn btn-ghost" id="bl-test">Test connection</button>
-        <span class="bl-status" id="bl-test-result" role="status"></span>
-      </div>
-      <div class="bl-preview" id="bl-preview"></div>
-      <label class="bl-check"><input type="checkbox" id="bl-update"> Update items I already sent if the story has changed since</label>
-      <div class="bl-progress" id="bl-progress" hidden><div class="bl-bar"><span id="bl-bar-fill"></span></div><div id="bl-progress-text"></div></div>
-      <div class="bl-result" id="bl-result" hidden></div>
+    <div class="modal-body bl-body" id="backlog-body">
+
+      <section class="bl-step" aria-labelledby="bl-h1">
+        <div class="bl-step-head"><span class="bl-num">1</span><h4 id="bl-h1">Where should the stories go?</h4></div>
+        <div class="bl-seg" role="tablist" aria-label="Backlog tool">
+          <button type="button" class="bl-tab active" data-target="jira" role="tab" aria-selected="true">Jira Cloud</button>
+          <button type="button" class="bl-tab" data-target="ado" role="tab" aria-selected="false">Azure DevOps</button>
+        </div>
+      </section>
+
+      <section class="bl-step" aria-labelledby="bl-h2">
+        <div class="bl-step-head"><span class="bl-num">2</span><h4 id="bl-h2">Connect</h4></div>
+
+        <div class="bl-fields" id="bl-fields-jira">
+          <label class="span2">Site address<input type="url" id="bl-jira-base_url" placeholder="https://your-company.atlassian.net" autocomplete="off"></label>
+          <label>Account email<input type="email" id="bl-jira-email" placeholder="you@company.com" autocomplete="off"></label>
+          <label>Project key<input type="text" id="bl-jira-project" placeholder="APP" autocomplete="off"></label>
+          <label class="span2" id="bl-token-label-jira">API token<input type="password" id="bl-jira-token" autocomplete="off"></label>
+          <div class="bl-vault span2" id="bl-vault-jira"></div>
+          <details class="bl-how span2">
+            <summary>How do I get a token, and what gets created?</summary>
+            <p>Create a token at id.atlassian.com → Security → API tokens. Epics become Jira Epics; stories become Stories under them, with priority, labels, acceptance criteria and “blocks” links for dependencies.</p>
+          </details>
+        </div>
+
+        <div class="bl-fields" id="bl-fields-ado" hidden>
+          <label class="span2">Organisation<input type="text" id="bl-ado-base_url" placeholder="https://dev.azure.com/your-organisation" autocomplete="off"></label>
+          <label class="span2">Project<input type="text" id="bl-ado-project" placeholder="My Project" autocomplete="off"></label>
+          <label class="span2" id="bl-token-label-ado">Personal access token<input type="password" id="bl-ado-token" autocomplete="off"></label>
+          <div class="bl-vault span2" id="bl-vault-ado"></div>
+          <details class="bl-how span2">
+            <summary>How do I get a token, and what gets created?</summary>
+            <p>Create a PAT under User settings → Personal access tokens with <b>Work Items: Read &amp; write</b>. Epics become Epics; stories use your project's story type (User Story / Product Backlog Item / Requirement / Issue), with acceptance criteria, priority, tags, parent and predecessor links.</p>
+          </details>
+        </div>
+
+        <div class="bl-actions">
+          <button type="button" class="btn btn-ghost btn-small" id="bl-test">Test connection</button>
+          <div class="bl-status" id="bl-test-result" role="status"></div>
+        </div>
+        <p class="bl-secure"><span aria-hidden="true">🔒</span><span>Your token travels over HTTPS and is never shown again. A saved token is encrypted with a password only you know.</span></p>
+      </section>
+
+      <section class="bl-step" aria-labelledby="bl-h3">
+        <div class="bl-step-head"><span class="bl-num">3</span><h4 id="bl-h3">Review &amp; send</h4></div>
+        <div class="bl-preview" id="bl-preview"></div>
+        <label class="bl-check"><input type="checkbox" id="bl-update"> Update items I already sent if the story has changed since</label>
+        <div class="bl-progress" id="bl-progress" hidden><div class="bl-bar"><span id="bl-bar-fill"></span></div><div id="bl-progress-text"></div></div>
+        <div class="bl-result" id="bl-result" hidden></div>
+      </section>
+
     </div>
     <div class="modal-foot">
+      <span class="bl-foot-summary" id="bl-foot-summary" aria-live="polite"></span>
       <span class="modal-spacer"></span>
       <button type="button" class="btn btn-ghost" id="bl-cancel">Close</button>
       <button type="button" class="btn btn-primary" id="bl-push">Send to backlog →</button>

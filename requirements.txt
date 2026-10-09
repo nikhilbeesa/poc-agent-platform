@@ -4,6 +4,7 @@ google-genai>=1.0         # Gemini API client (LLM_PROVIDER=gemini) — free-tie
 pydantic>=2.0            # Shared context schema + validation
 python-dotenv>=1.0       # Load API keys from .env
 requests>=2.31            # HTTP calls to Supabase's REST API
+cryptography>=42         # Encrypts saved Jira / Azure DevOps tokens (AES-256-GCM, scrypt key from the user's password)
 
 # Web app / deployment
 flask>=3.0                 # Local + hosted web demo server (webapp/server.py)

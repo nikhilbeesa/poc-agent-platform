@@ -21,6 +21,7 @@ import clarifications as clar  # noqa: E402
 import rethink as rt  # noqa: E402
 from integrations import sync as backlog_sync  # noqa: E402
 from integrations.http import IntegrationError  # noqa: E402
+from integrations import vault  # noqa: E402
 from discovery import is_discovery_complete, run_discovery  # noqa: E402
 from export import export_all_artefacts  # noqa: E402
 from knowledge.bootstrap_seed_data import bootstrap  # noqa: E402
@@ -98,7 +99,31 @@ def _feasibility_summary(ctx):
             # serious flaws the person chose to keep (rethink.py) and how many still need a decision
             "accepted": ctx.accepted_flaws, "rethink": rt.counts(ctx),
             # what was pushed to Jira / Azure DevOps (ids and links only — credentials are never stored)
-            "integrations": ctx.integration_links}
+            "integrations": ctx.integration_links, "integration_settings": ctx.integration_settings}
+
+
+def _feasibility_for_record(ctx, meta):
+    """What is SAVED in the feasibility column: the browser-safe summary plus the encrypted token vault. The vault
+    is added here (never in _feasibility_summary) and stripped again by _public_record before anything is sent out."""
+    feas = _feasibility_summary(ctx) or ({**meta["feasibility"], "history": ctx.feasibility_history, "clarifications": ctx.clarifications,
+                                          "accepted": ctx.accepted_flaws, "integrations": ctx.integration_links,
+                                          "integration_settings": ctx.integration_settings} if meta.get("feasibility") else None)
+    if ctx.integration_vault or ctx.integration_settings:
+        feas = dict(feas or {})
+        feas["integration_settings"] = ctx.integration_settings
+        if ctx.integration_vault:
+            feas["_vault"] = ctx.integration_vault
+        else:
+            feas.pop("_vault", None)
+    return feas
+
+
+def _public_record(rec: dict) -> dict:
+    """A saved record safe to send to a browser: the encrypted token vault never leaves the server."""
+    rec = dict(rec)
+    if isinstance(rec.get("feasibility"), dict):
+        rec["feasibility"] = {k: v for k, v in rec["feasibility"].items() if k != "_vault"}
+    return rec
 
 
 def _record_from_ctx(ctx) -> dict:
@@ -124,8 +149,7 @@ def _record_from_ctx(ctx) -> dict:
         "consistency_notes": ctx.consistency_notes,
         "system_profile": ctx.system_profile,
         # while a fresh run is between "cleared" and "feasibility done", keep the old summary but the CURRENT history
-        "feasibility": _feasibility_summary(ctx) or ({**meta["feasibility"], "history": ctx.feasibility_history, "clarifications": ctx.clarifications, "accepted": ctx.accepted_flaws, "integrations": ctx.integration_links}
-                                                     if meta.get("feasibility") else None),
+        "feasibility": _feasibility_for_record(ctx, meta),
         "created_at": ctx.created_at.isoformat(),
         "questions": _question_dicts(ctx),
         "agent_log": agent_log,
@@ -176,6 +200,8 @@ def _ctx_from_record(rec: dict) -> ProjectContext:
     ctx.clarifications = list(((rec.get("feasibility") or {}).get("clarifications")) or [])
     ctx.accepted_flaws = list(((rec.get("feasibility") or {}).get("accepted")) or [])
     ctx.integration_links = dict(((rec.get("feasibility") or {}).get("integrations")) or {})
+    ctx.integration_settings = dict(((rec.get("feasibility") or {}).get("integration_settings")) or {})
+    ctx.integration_vault = (rec.get("feasibility") or {}).get("_vault") or None
     clar.seed_locked_decisions(ctx)
     META[rec["id"]] = {"agent_log": rec.get("agent_log") or [], "handoff_status": rec.get("handoff_status"),
                        "feasibility": rec.get("feasibility")}
@@ -358,16 +384,40 @@ _ENV = {"jira": {"base_url": "JIRA_BASE_URL", "email": "JIRA_EMAIL", "project": 
         "ado": {"base_url": "ADO_ORG_URL", "project": "ADO_PROJECT", "token": "ADO_PAT"}}
 
 
-def _creds(target, body):
-    given = (body or {}).get("creds") or {}
-    return {k: (str(given.get(k) or "").strip() or os.environ.get(env, "")) for k, env in _ENV[target].items()}
+class _TicketExpired(Exception):
+    pass
+
+
+def _creds(project_id, target, body):
+    """Connection details for one request. The token comes from (in order): an unlock ticket (a saved, decrypted token that
+    stays on the server), what the person typed, or the server-wide default. Details are never logged."""
+    body = body or {}
+    given = body.get("creds") or {}
+    c = {k: (str(given.get(k) or "").strip() or os.environ.get(env, "")) for k, env in _ENV[target].items() if k != "token"}
+    typed = str(given.get("token") or "").strip()
+    if body.get("ticket") and not typed:
+        tok = vault.token_for(body["ticket"], project_id, target)
+        if not tok:
+            raise _TicketExpired()
+        c["token"] = tok
+    else:
+        c["token"] = typed or os.environ.get(_ENV[target]["token"], "")
+    return c
+
+
+def _remember_settings(ctx, target, creds):
+    """Each app project remembers its own board (site, email, project) — not the token."""
+    s = {k: creds.get(k, "") for k in _ENV[target] if k != "token"}
+    if ctx.integration_settings.get(target) != s:
+        ctx.integration_settings[target] = s
+        _persist(ctx)
 
 
 def _integration_ctx(project_id, target):
     ctx = _get_ctx(project_id)
     if not ctx:
         return None, (jsonify({"error": "unknown project"}), 404)
-    if target not in _ENV:
+    if target not in _ENV and target != "all":
         return None, (jsonify({"error": "unknown target"}), 404)
     return ctx, None
 
@@ -382,13 +432,83 @@ def integrations_config():
     return jsonify(out)
 
 
+@app.route("/api/project/<project_id>/integrations/state", methods=["GET"])
+def integration_state(project_id):
+    """This project's remembered board details and which tokens are saved (names only — never a token or ciphertext)."""
+    ctx = _get_ctx(project_id)
+    if not ctx:
+        return jsonify({"error": "unknown project"}), 404
+    return jsonify({"settings": ctx.integration_settings, "saved_tokens": vault.targets(ctx.integration_vault),
+                    "min_password": vault.MIN_PASSWORD})
+
+
+def _vault_error(e):
+    r = jsonify({"error": str(e), **({"retry_after": e.retry_after} if e.retry_after else {})})
+    r.status_code = e.status
+    if e.retry_after:
+        r.headers["Retry-After"] = str(e.retry_after)
+    return r
+
+
+@app.route("/api/project/<project_id>/integrations/unlock", methods=["POST"])
+def integration_unlock(project_id):
+    """Password -> a short-lived ticket. The decrypted tokens stay in server memory; the browser only gets the ticket."""
+    ctx = _get_ctx(project_id)
+    if not ctx:
+        return jsonify({"error": "unknown project"}), 404
+    try:
+        tokens = vault.unlock(ctx.integration_vault, project_id, str((request.get_json(silent=True) or {}).get("password") or ""))
+    except vault.VaultError as e:
+        return _vault_error(e)
+    return jsonify({"ticket": vault.issue_ticket(project_id, tokens), "targets": sorted(tokens), "expires_in": vault.TICKET_TTL})
+
+
+@app.route("/api/project/<project_id>/integrations/lock", methods=["POST"])
+def integration_lock(project_id):
+    vault.revoke(ticket=(request.get_json(silent=True) or {}).get("ticket"))
+    return jsonify({"locked": True})
+
+
+@app.route("/api/project/<project_id>/integrations/<target>/token", methods=["POST"])
+def integration_save_token(project_id, target):
+    """Encrypt and save a token with the project's password (chosen now if this is the first one)."""
+    ctx, err = _integration_ctx(project_id, target)
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    token = str(body.get("token") or "").strip()
+    try:
+        ctx.integration_vault = vault.save_token(ctx.integration_vault, project_id, str(body.get("password") or ""), target, token)
+    except vault.VaultError as e:
+        return _vault_error(e)
+    vault.add_to_tickets(project_id, target, token)
+    _persist(ctx)
+    return jsonify({"saved": True, "saved_tokens": vault.targets(ctx.integration_vault)})
+
+
+@app.route("/api/project/<project_id>/integrations/<target>/token", methods=["DELETE"])
+def integration_forget_token(project_id, target):
+    ctx, err = _integration_ctx(project_id, target)
+    if err:
+        return err
+    ctx.integration_vault = vault.forget(ctx.integration_vault, None if target == "all" else target)
+    vault.revoke(project_id=project_id, target=None if not ctx.integration_vault else target)
+    _persist(ctx)
+    return jsonify({"saved_tokens": vault.targets(ctx.integration_vault)})
+
+
 @app.route("/api/project/<project_id>/integrations/<target>/check", methods=["POST"])
 def integration_check(project_id, target):
     ctx, err = _integration_ctx(project_id, target)
     if err:
         return err
     try:
-        return jsonify(backlog_sync.check(target, _creds(target, request.get_json(silent=True))))
+        creds = _creds(project_id, target, request.get_json(silent=True))
+        out = backlog_sync.check(target, creds)
+        _remember_settings(ctx, target, creds)
+        return jsonify(out)
+    except _TicketExpired:
+        return jsonify({"error": "Your unlock has expired — enter your password again.", "expired": True}), 401
     except IntegrationError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -398,7 +518,10 @@ def integration_preview(project_id, target):
     ctx, err = _integration_ctx(project_id, target)
     if err:
         return err
-    c = _creds(target, request.get_json(silent=True))
+    try:
+        c = _creds(project_id, target, request.get_json(silent=True))
+    except _TicketExpired:
+        c = {}
     return jsonify(backlog_sync.preview(ctx, target, c if c.get("token") else None))
 
 
@@ -410,7 +533,12 @@ def integration_push(project_id, target):
     if jobs.is_running(project_id):
         return jsonify({"error": "The AI agents are still running — push once they have finished."}), 409
     body = request.get_json(silent=True) or {}
-    job_id = backlog_sync.start_push(project_id, ctx, target, _creds(target, body), body.get("options") or {}, lambda: _persist(ctx))
+    try:
+        creds = _creds(project_id, target, body)
+    except _TicketExpired:
+        return jsonify({"error": "Your unlock has expired — enter your password again.", "expired": True}), 401
+    _remember_settings(ctx, target, creds)
+    job_id = backlog_sync.start_push(project_id, ctx, target, creds, body.get("options") or {}, lambda: _persist(ctx))
     return jsonify({"push_id": job_id})   # NOT "job_id": the front-end api() helper polls that name as an agent job
 
 
@@ -643,7 +771,7 @@ def history_detail(project_id):
     record = get_project_store().get(project_id)
     if not record:
         return jsonify({"error": "project not found"}), 404
-    record = dict(record, artefacts=_heal_artefacts(record))
+    record = _public_record(dict(record, artefacts=_heal_artefacts(record)))
     return jsonify(record)
 
 

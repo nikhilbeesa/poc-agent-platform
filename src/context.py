@@ -126,6 +126,10 @@ class ProjectContext(BaseModel):
     accepted_flaws: list[dict] = Field(default_factory=list)
     # What was pushed to Jira / Azure DevOps: {target id: {story or epic id: {key, url, hash, linked}}}. No secrets, ever.
     integration_links: dict = Field(default_factory=dict)
+    # Non-secret connection details per target for THIS project: {target: {base_url, email, project}} (so each project
+    # reopens with its own board), and the ENCRYPTED token vault (integrations/vault.py) — never sent to the browser.
+    integration_settings: dict = Field(default_factory=dict)
+    integration_vault: dict | None = None
 
     def add_answer(self, question_id: str, answer: str) -> None:
         for q in self.discovery_questions:

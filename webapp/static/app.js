@@ -105,7 +105,11 @@ async function rawApi(path, opts = {}) {
         : `Request failed (HTTP ${res.status}). The server may have timed out — please try again.`
     );
   }
-  if (!res.ok) throw new Error(data.error || 'request failed');
+  if (!res.ok) {
+    const err = new Error(data.error || 'request failed');
+    err.status = res.status; err.data = data; err.retryAfter = data.retry_after;   // callers that care (password prompt) can read these
+    throw err;
+  }
   return data;
 }
 
@@ -1923,22 +1927,37 @@ $('#btn-export').addEventListener('click', async () => {
 
 
 // ---- Send user stories to Jira / Azure DevOps ---------------------------------------------------
-// The token is read from the field for each request and never stored; non-secret fields are remembered in this browser.
+// Each app project remembers its OWN board (site, email, project) on the server. A token can be remembered too, but only
+// encrypted with a password the person chooses; the password is asked for whenever this window is opened, and the browser
+// only ever receives a short-lived "ticket" — never the token itself.
 const BL_FIELDS = { jira: ['base_url', 'email', 'token', 'project'], ado: ['base_url', 'project', 'token'] };
+const BL_PLAIN = { jira: ['base_url', 'email', 'project'], ado: ['base_url', 'project'] };
 let blTarget = 'jira';
 let blBusy = false;
 let blDefaults = null;
+let blTicket = null;                 // unlock ticket for this project (null = locked / nothing saved)
+let blUnlocked = new Set();          // targets whose saved token this ticket can use
+let blSaved = new Set();             // targets that have a saved token (names only)
+let blOverride = { jira: false, ado: false };   // "use a different token" this time
+let blMinPw = 10;
 
 const blField = (t, k) => document.getElementById(`bl-${t}-${k}`);
+const blUsingSaved = (t) => !!blTicket && blUnlocked.has(t) && !blOverride[t];
 function blCreds() {
   const c = {};
   BL_FIELDS[blTarget].forEach(k => { c[k] = (blField(blTarget, k).value || '').trim(); });
+  if (blUsingSaved(blTarget)) c.token = '';
   return c;
 }
-function blRemember() {
-  const saved = JSON.parse(localStorage.getItem('backlogFields') || '{}');
-  Object.keys(BL_FIELDS).forEach(t => { saved[t] = saved[t] || {}; BL_FIELDS[t].filter(k => k !== 'token').forEach(k => { saved[t][k] = blField(t, k).value.trim(); }); });
-  localStorage.setItem('backlogFields', JSON.stringify(saved));   // never the token
+function blBody(extra) {
+  const b = { creds: blCreds(), ...(extra || {}) };
+  if (blUsingSaved(blTarget)) b.ticket = blTicket;
+  return b;
+}
+function blRememberLast() {   // only site / email, to pre-fill a NEW project — never the project key, token or password
+  const last = JSON.parse(localStorage.getItem('backlogLast') || '{}');
+  Object.keys(BL_PLAIN).forEach(t => { last[t] = last[t] || {}; ['base_url', 'email'].filter(k => BL_PLAIN[t].includes(k)).forEach(k => { last[t][k] = blField(t, k).value.trim(); }); });
+  localStorage.setItem('backlogLast', JSON.stringify(last));
 }
 function blSetTarget(t) {
   blTarget = t;
@@ -1948,29 +1967,150 @@ function blSetTarget(t) {
   $('#bl-test-result').textContent = ''; $('#bl-result').hidden = true; $('#bl-progress').hidden = true;
   blRefreshPreview();
 }
-function blPlaceholderToken() {
-  Object.keys(BL_FIELDS).forEach(t => {
-    const has = blDefaults && blDefaults[t] && blDefaults[t].token_configured;
-    blField(t, 'token').placeholder = has ? 'Using the token saved on the server — leave blank' : '';
-  });
+function blStatus(msg, kind) { const o = $('#bl-test-result'); o.className = 'bl-status' + (kind ? ' ' + kind : ''); o.textContent = msg; }
+
+// ---- the token area under each token field -----------------------------------------------------
+function blRenderVault(t) {
+  const box = $(`#bl-vault-${t}`); box.innerHTML = '';
+  const label = $(`#bl-token-label-${t}`);
+  if (blUsingSaved(t)) {
+    label.hidden = true;
+    const row = el('div', { class: 'bl-saved' }, [el('span', { text: '🔒 Using your saved, encrypted token' })]);
+    const other = el('button', { type: 'button', class: 'bl-link', text: 'Use a different token' });
+    other.addEventListener('click', () => { blOverride[t] = true; blRenderVault(t); });
+    const forget = el('button', { type: 'button', class: 'bl-link', text: 'Forget saved token' });
+    forget.addEventListener('click', async () => {
+      if (!confirm('Remove the saved token for this project? You will need to paste it again next time.')) return;
+      try {
+        const r = await api(`/api/project/${projectId}/integrations/${t}/token`, { method: 'DELETE' });
+        blSaved = new Set(r.saved_tokens); blUnlocked.delete(t);
+        if (!blSaved.size) blTicket = null;
+        blRenderVault('jira'); blRenderVault('ado');
+      } catch (e) { blStatus('✗ ' + e.message, 'bad'); }
+    });
+    row.appendChild(other); row.appendChild(forget); box.appendChild(row);
+    return;
+  }
+  label.hidden = false;
+  const first = !blSaved.size;                     // no password chosen yet for this project
+  const cb = el('input', { type: 'checkbox', id: `bl-remember-${t}` });
+  const fields = el('div', { class: 'bl-pw', hidden: '' });
+  fields.hidden = true;
+  fields.appendChild(el('label', {}, [document.createTextNode(first ? `Choose a password (at least ${blMinPw} characters)` : 'Your password for this project'),
+    el('input', { type: 'password', id: `bl-pw-${t}`, autocomplete: first ? 'new-password' : 'current-password' })]));
+  if (first) fields.appendChild(el('label', {}, [document.createTextNode('Confirm password'), el('input', { type: 'password', id: `bl-pw2-${t}`, autocomplete: 'new-password' })]));
+  fields.appendChild(el('p', { class: 'bl-help', text: 'You will enter this password each time you open “Send to Jira / Azure DevOps”. It is not stored and cannot be recovered — if you forget it, remove the saved token and add it again.' }));
+  cb.addEventListener('change', () => { fields.hidden = !cb.checked; });
+  const lab = el('label', { class: 'bl-check' }); lab.appendChild(cb); lab.appendChild(document.createTextNode(' Remember this token (encrypted with a password)'));
+  box.appendChild(lab); box.appendChild(fields);
+  if (blSaved.has(t)) box.appendChild(el('p', { class: 'bl-help', text: 'A saved token exists for this project — a new one will replace it.' }));
 }
+
+// Encrypts and saves the token typed for target t (only called after a successful connection test / push).
+async function blSaveToken(t, token, pw, pw2) {
+  if (!token) { blStatus('Paste the token first so it can be saved.', 'bad'); return false; }
+  if (!blSaved.size && pw !== pw2) { blStatus('The two passwords do not match.', 'bad'); return false; }
+  try {
+    await api(`/api/project/${projectId}/integrations/${t}/token`, { method: 'POST', body: JSON.stringify({ token, password: pw }) });
+    if (!blTicket) {                                       // unlock with the same password so the rest of this visit can use it
+      const u = await api(`/api/project/${projectId}/integrations/unlock`, { method: 'POST', body: JSON.stringify({ password: pw }) });
+      blTicket = u.ticket; blUnlocked = new Set(u.targets);
+    } else blUnlocked.add(t);                              // the server already added it to this visit's ticket
+    blSaved.add(t); blOverride[t] = false;
+    blField(t, 'token').value = '';
+    blRenderVault(t);
+    return true;
+  } catch (e) { blStatus('✗ Could not save the token: ' + e.message, 'bad'); return false; }
+}
+function blWantsSave(t) { const cb = document.getElementById(`bl-remember-${t}`); return !!cb && cb.checked && !blUsingSaved(t); }
+const blPw = (t, id) => (document.getElementById(`bl-${id}-${t}`) || {}).value || '';
+
+const blTile = (n, label) => el('div', { class: 'bl-tile' }, [el('b', { text: String(n) }), el('span', { text: label })]);
+const blChip = (label, n, kind) => el('span', { class: 'bl-chip ' + kind, text: `${n} ${label}` });
 async function blRefreshPreview() {
   const box = $('#bl-preview'); box.textContent = '';
   try {
-    const p = await api(`/api/project/${projectId}/integrations/${blTarget}/preview`, { method: 'POST', body: JSON.stringify({ creds: blCreds() }) });
-    box.appendChild(el('div', { class: 'bl-count', text: `${p.epics} epics + ${p.stories} user stories ready · ${p.by_priority.High} High, ${p.by_priority.Medium} Medium, ${p.by_priority.Low} Low priority · ${p.dependencies} dependency links` }));
-    if (p.already_pushed) box.appendChild(el('div', { class: 'bl-note', text: `${p.already_pushed} items were already sent to this project — they will be skipped, not duplicated.` }));
-  } catch (e) { box.appendChild(el('div', { class: 'bl-note', text: e.message })); }
+    const p = await api(`/api/project/${projectId}/integrations/${blTarget}/preview`, { method: 'POST', body: JSON.stringify(blBody()) });
+    box.appendChild(el('div', { class: 'bl-tiles' }, [blTile(p.epics, 'Epics'), blTile(p.stories, 'User stories'), blTile(p.dependencies, 'Dependency links')]));
+    box.appendChild(el('div', { class: 'bl-chips' }, [el('span', { class: 'bl-chips-label', text: 'Priority' }),
+      blChip('High', p.by_priority.High, 'high'), blChip('Medium', p.by_priority.Medium, 'medium'), blChip('Low', p.by_priority.Low, 'low')]));
+    $('#bl-foot-summary').textContent = `${p.epics} epics · ${p.stories} stories → ${blTarget === 'jira' ? 'Jira' : 'Azure DevOps'}`;
+    if (p.already_pushed) box.appendChild(el('p', { class: 'bl-note', text: `${p.already_pushed} items were already sent to this project — they will be skipped, not duplicated.` }));
+  } catch (e) { $('#bl-foot-summary').textContent = ''; box.appendChild(el('p', { class: 'bl-note warn', text: e.message })); }
 }
+
+// ---- password prompt ----------------------------------------------------------------------------
+let unlockResolve = null;
+let unlockTimer = null;
+function openUnlockModal() {
+  $('#unlock-password').value = ''; $('#unlock-error').textContent = ''; $('#unlock-go').disabled = false;
+  $('#unlock-modal').hidden = false; document.body.classList.add('modal-open');
+  setTimeout(() => $('#unlock-password').focus(), 30);
+  return new Promise(resolve => { unlockResolve = resolve; });
+}
+function closeUnlockModal(result) {
+  clearInterval(unlockTimer);
+  $('#unlock-modal').hidden = true; $('#unlock-password').value = '';
+  if ($('#backlog-modal').hidden) document.body.classList.remove('modal-open');
+  const r = unlockResolve; unlockResolve = null; if (r) r(result);
+}
+async function submitUnlock() {
+  const pw = $('#unlock-password').value;
+  if (!pw) { $('#unlock-error').textContent = 'Enter your password.'; return; }
+  const go = $('#unlock-go'); go.disabled = true; $('#unlock-error').textContent = '';
+  try {
+    const r = await api(`/api/project/${projectId}/integrations/unlock`, { method: 'POST', body: JSON.stringify({ password: pw }) });
+    closeUnlockModal(r);
+  } catch (e) {
+    $('#unlock-password').value = '';
+    $('#unlock-error').textContent = e.message;
+    if (e.status === 429 || /too many/i.test(e.message)) {          // locked for a while: count down, then allow another try
+      let left = e.retryAfter || 30;
+      unlockTimer = setInterval(() => {
+        left -= 1; $('#unlock-error').textContent = `Too many wrong passwords. Try again in ${Math.max(left, 0)}s.`;
+        if (left <= 0) { clearInterval(unlockTimer); $('#unlock-error').textContent = ''; go.disabled = false; $('#unlock-password').focus(); }
+      }, 1000);
+    } else { go.disabled = false; $('#unlock-password').focus(); }
+  }
+}
+$('#unlock-go').addEventListener('click', submitUnlock);
+$('#unlock-cancel').addEventListener('click', () => closeUnlockModal(null));
+$('#unlock-close').addEventListener('click', () => closeUnlockModal(null));
+$('#unlock-password').addEventListener('keydown', e => { if (e.key === 'Enter') submitUnlock(); });
+$('#unlock-forgot').addEventListener('click', async (e) => {
+  e.preventDefault();
+  if (!confirm('This removes the saved token for this project (it cannot be recovered without the password). You will paste it again and can choose a new password. Continue?')) return;
+  try { await api(`/api/project/${projectId}/integrations/all/token`, { method: 'DELETE' }); closeUnlockModal({ ticket: null, targets: [], reset: true }); }
+  catch (err) { $('#unlock-error').textContent = err.message; }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#unlock-modal').hidden) closeUnlockModal(null); });
+
+// ---- opening / closing the main window -----------------------------------------------------------
 async function openBacklogModal() {
   if (!blDefaults) { try { blDefaults = await api('/api/integrations/config'); } catch (e) { blDefaults = {}; } }
-  const saved = JSON.parse(localStorage.getItem('backlogFields') || '{}');
-  Object.keys(BL_FIELDS).forEach(t => BL_FIELDS[t].filter(k => k !== 'token').forEach(k => {
-    blField(t, k).value = (saved[t] && saved[t][k]) || (blDefaults[t] && blDefaults[t][k]) || '';
+  let state = { settings: {}, saved_tokens: [], min_password: 10 };
+  try { state = await api(`/api/project/${projectId}/integrations/state`); } catch (e) { /* first use */ }
+  blMinPw = state.min_password || 10;
+  blSaved = new Set(state.saved_tokens || []); blTicket = null; blUnlocked = new Set(); blOverride = { jira: false, ado: false };
+  if (blSaved.size) {                                   // a token is saved for this project: ask for the password first
+    const r = await openUnlockModal();
+    if (!r) return;
+    blTicket = r.ticket; blUnlocked = new Set(r.targets || []);
+    if (r.reset) blSaved = new Set();
+  }
+  const last = JSON.parse(localStorage.getItem('backlogLast') || '{}');
+  Object.keys(BL_PLAIN).forEach(t => BL_PLAIN[t].forEach(k => {
+    const mine = (state.settings || {})[t];
+    // this project's own board first; a brand-new project borrows only site / email from your last visit (never the project key)
+    blField(t, k).value = (mine && mine[k]) || (!mine && (k === 'base_url' || k === 'email') && last[t] && last[t][k]) || (blDefaults[t] && blDefaults[t][k]) || '';
   }));
-  blPlaceholderToken();
-  $('#bl-result').hidden = true; $('#bl-progress').hidden = true; $('#bl-test-result').textContent = '';
   blField('jira', 'token').value = ''; blField('ado', 'token').value = '';
+  Object.keys(BL_FIELDS).forEach(t => {
+    const has = blDefaults && blDefaults[t] && blDefaults[t].token_configured;
+    blField(t, 'token').placeholder = has ? 'Using the token saved on the server — leave blank' : '';
+    blRenderVault(t);
+  });
+  $('#bl-result').hidden = true; $('#bl-progress').hidden = true; $('#bl-test-result').textContent = '';
   $('#backlog-modal').hidden = false; document.body.classList.add('modal-open');
   blSetTarget(blTarget);
   setTimeout(() => $('.bl-tab.active').focus(), 30);
@@ -1978,66 +2118,104 @@ async function openBacklogModal() {
 function closeBacklogModal() {
   if (blBusy) return;
   $('#backlog-modal').hidden = true; document.body.classList.remove('modal-open');
-  blField('jira', 'token').value = ''; blField('ado', 'token').value = '';
+  if (blTicket) { api(`/api/project/${projectId}/integrations/lock`, { method: 'POST', body: JSON.stringify({ ticket: blTicket }) }).catch(() => {}); }
+  blTicket = null; blUnlocked = new Set();                  // locked again: the password is needed next time
+  ['jira', 'ado'].forEach(t => { blField(t, 'token').value = ''; ['pw', 'pw2'].forEach(id => { const x = document.getElementById(`bl-${id}-${t}`); if (x) x.value = ''; }); });
+}
+function blOpenResult(kind) {
+  const box = $('#bl-result'); box.hidden = false; box.innerHTML = ''; box.className = 'bl-result ' + kind;
+  return box;
+}
+function blShowError(msg) {
+  const box = blOpenResult('bad');
+  box.appendChild(el('div', { class: 'bl-result-title', text: '✗ Nothing was sent' }));
+  box.appendChild(el('div', { class: 'bl-fail-box', text: msg }));
+  box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
 }
 function blShowResult(r) {
-  const box = $('#bl-result'); box.hidden = false; box.innerHTML = '';
-  const parts = [`${r.created} created`, `${r.updated} updated`, `${r.unchanged} already there`, `${r.dependency_links} dependency links`];
-  box.appendChild(el('div', { class: 'bl-ok', text: `✓ Done in ${r.seconds}s — ${parts.join(' · ')}` }));
-  (r.warnings || []).forEach(w => box.appendChild(el('div', { class: 'bl-note', text: 'ℹ ' + w })));
-  if (r.failed.length) {
-    box.appendChild(el('div', { class: 'bl-fail', text: `${r.failed.length} item(s) could not be sent — fix the cause and click Send again; the rest will not be duplicated:` }));
-    r.failed.slice(0, 8).forEach(f => box.appendChild(el('div', { class: 'bl-fail-item', text: `${f.title}: ${f.error}` })));
+  const nFail = r.failed.length;
+  const box = blOpenResult(nFail ? 'warn' : 'ok');
+  box.appendChild(el('div', { class: 'bl-result-title' }, [
+    document.createTextNode(nFail ? `⚠ Sent, but ${nFail} item${nFail === 1 ? ' needs' : 's need'} attention` : '✓ Sent to your backlog'),
+    el('small', { text: `${r.seconds}s` }),
+  ]));
+  box.appendChild(el('div', { class: 'bl-tiles' }, [blTile(r.created, 'Created'), blTile(r.updated, 'Updated'), blTile(r.unchanged, 'Already there')]));
+  if (r.dependency_links) box.appendChild(el('p', { class: 'bl-note', text: `${r.dependency_links} dependency link${r.dependency_links === 1 ? '' : 's'} created between stories.` }));
+  (r.warnings || []).forEach(w => box.appendChild(el('p', { class: 'bl-note', text: 'ℹ ' + w })));
+  if (nFail) {
+    const fb = el('div', { class: 'bl-fail-box' }, [el('strong', { text: `${nFail} could not be sent.` }),
+      document.createTextNode(' Fix the cause and click Send again — what already went through will not be duplicated.')]);
+    const ul = el('ul'); r.failed.slice(0, 8).forEach(f => ul.appendChild(el('li', { text: `${f.title}: ${f.error}` })));
+    fb.appendChild(ul);
+    if (nFail > 8) fb.appendChild(el('div', { text: `…and ${nFail - 8} more.` }));
+    box.appendChild(fb);
   }
-  const links = r.items.filter(i => i.url && i.status !== 'unchanged').slice(0, 12);
+  const links = r.items.filter(i => i.url && i.status !== 'unchanged');
   if (links.length) {
     const ul = el('ul', { class: 'bl-links' });
-    links.forEach(i => { const a = el('a', { href: i.url, target: '_blank', rel: 'noopener noreferrer', text: `${i.key} — ${i.title}` }); ul.appendChild(el('li', {}, [a])); });
+    links.slice(0, 40).forEach(i => {
+      const a = el('a', { href: i.url, target: '_blank', rel: 'noopener noreferrer', text: i.title });
+      ul.appendChild(el('li', {}, [el('code', { text: i.key }), a]));
+    });
     box.appendChild(ul);
-    if (r.items.length > links.length) box.appendChild(el('div', { class: 'bl-note', text: `…and ${r.items.length - links.length} more in your backlog.` }));
+    if (links.length > 40) box.appendChild(el('p', { class: 'bl-note', text: `…and ${links.length - 40} more in your backlog.` }));
   }
+  box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+function blExpired(e) {   // the unlock ticket ran out (or was revoked): ask for the password again next time
+  if (!(e && e.data && e.data.expired)) return false;
+  blTicket = null; blUnlocked = new Set(); blRenderVault('jira'); blRenderVault('ado');
+  blStatus('Your unlock expired. Close this window and open it again to enter your password.', 'bad');
+  return true;
 }
 async function blPush() {
   if (blBusy) return;
+  const t = blTarget;
+  const want = blWantsSave(t), cap = { token: blField(t, 'token').value.trim(), pw: blPw(t, 'pw'), pw2: blPw(t, 'pw2') };
+  if (want && !blSaved.size && cap.pw !== cap.pw2) { blStatus('The two passwords do not match.', 'bad'); return; }
   blBusy = true; const btn = $('#bl-push'); btn.disabled = true; btn.textContent = 'Sending…';
   $('#bl-result').hidden = true; $('#bl-progress').hidden = false; $('#bl-bar-fill').style.width = '4%'; $('#bl-progress-text').textContent = 'Connecting…';
-  blRemember();
+  blRememberLast();
+  let ok = false;
   try {
-    const { push_id } = await api(`/api/project/${projectId}/integrations/${blTarget}/push`, { method: 'POST', body: JSON.stringify({ creds: blCreds(), options: { update_existing: $('#bl-update').checked } }) });
+    const { push_id } = await api(`/api/project/${projectId}/integrations/${t}/push`, { method: 'POST', body: JSON.stringify(blBody({ options: { update_existing: $('#bl-update').checked } })) });
     for (;;) {
       await new Promise(r => setTimeout(r, 700));
       const st = await api(`/api/project/${projectId}/integrations/push/${push_id}`);
       $('#bl-progress-text').textContent = st.progress || '';
       const m = /(\d+)\/(\d+)/.exec(st.progress || ''); if (m) $('#bl-bar-fill').style.width = Math.max(4, Math.round(100 * m[1] / m[2])) + '%';
-      if (st.status === 'done') { $('#bl-bar-fill').style.width = '100%'; blShowResult(st.result); break; }
-      if (st.status === 'error') { $('#bl-result').hidden = false; $('#bl-result').innerHTML = ''; $('#bl-result').appendChild(el('div', { class: 'bl-fail', text: '✗ ' + st.error })); break; }
+      if (st.status === 'done') { $('#bl-bar-fill').style.width = '100%'; blShowResult(st.result); ok = true; break; }
+      if (st.status === 'error') { blShowError(st.error); break; }
     }
   } catch (e) {
-    $('#bl-result').hidden = false; $('#bl-result').innerHTML = ''; $('#bl-result').appendChild(el('div', { class: 'bl-fail', text: '✗ ' + e.message }));
+    if (!blExpired(e)) blShowError(e.message);
   } finally {
     blBusy = false; btn.disabled = false; btn.textContent = 'Send to backlog →';
-    blField('jira', 'token').value = ''; blField('ado', 'token').value = '';   // never keep it around
-    blRefreshPreview();
+    blField('jira', 'token').value = ''; blField('ado', 'token').value = '';
   }
+  if (ok && want) await blSaveToken(t, cap.token, cap.pw, cap.pw2);     // only a token that worked is saved
+  ['pw', 'pw2'].forEach(id => { const x = document.getElementById(`bl-${id}-${t}`); if (x) x.value = ''; });
+  blRefreshPreview();
 }
 $('#btn-backlog').addEventListener('click', openBacklogModal);
 $('#backlog-close').addEventListener('click', closeBacklogModal);
 $('#bl-cancel').addEventListener('click', closeBacklogModal);
 $('#bl-push').addEventListener('click', blPush);
-$('#bl-update').addEventListener('change', () => {});
 document.querySelectorAll('.bl-tab').forEach(b => b.addEventListener('click', () => blSetTarget(b.dataset.target)));
 $('#bl-test').addEventListener('click', async () => {
-  const out = $('#bl-test-result'); out.className = 'bl-status'; out.textContent = 'Checking…';
+  const t = blTarget;
+  blStatus('Checking…');
   try {
-    const r = await api(`/api/project/${projectId}/integrations/${blTarget}/check`, { method: 'POST', body: JSON.stringify({ creds: blCreds() }) });
-    out.className = 'bl-status ok';
-    out.textContent = `✓ Connected${r.user ? ' as ' + r.user : ''} · project “${r.project}” · epics: ${r.epic_type || 'none'} · stories: ${r.story_type}${r.process ? ' (' + r.process + ' process)' : ''}`;
-    (r.warnings || []).forEach(w => { out.textContent += ' · ℹ ' + w; });
-    blRemember();
-  } catch (e) { out.className = 'bl-status bad'; out.textContent = '✗ ' + e.message; }
+    const r = await api(`/api/project/${projectId}/integrations/${t}/check`, { method: 'POST', body: JSON.stringify(blBody()) });
+    let msg = `✓ Connected${r.user ? ' as ' + r.user : ''} · project “${r.project}” · epics: ${r.epic_type || 'none'} · stories: ${r.story_type}${r.process ? ' (' + r.process + ' process)' : ''}`;
+    (r.warnings || []).forEach(w => { msg += ' · ℹ ' + w; });
+    blStatus(msg, 'ok');
+    blRememberLast();
+    if (blWantsSave(t)) { const ok = await blSaveToken(t, blField(t, 'token').value.trim(), blPw(t, 'pw'), blPw(t, 'pw2')); if (ok) blStatus(msg + ' · 🔒 token saved (encrypted)', 'ok'); }
+  } catch (e) { if (!blExpired(e)) blStatus('✗ ' + e.message, 'bad'); }
 });
 $('#backlog-modal').addEventListener('mousedown', e => { if (e.target.id === 'backlog-modal') closeBacklogModal(); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#backlog-modal').hidden) closeBacklogModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#backlog-modal').hidden && $('#unlock-modal').hidden) closeBacklogModal(); });
 
 $('#btn-resolve-issues').addEventListener('click', async () => {
   const btn = $('#btn-resolve-issues');

@@ -40,7 +40,7 @@ class Mock:
 
     def _jira(self, m, path, data):
         if path.endswith("/myself"): return 200, {"displayName": "Test User"}
-        if path.endswith("/project/APP"):
+        if re.search(r"/project/[A-Z]+$", path):
             return 200, {"name": "App", "issueTypes": [{"name": n} for n in ("Epic", "Story", "Task")]}
         if path.endswith("/issueLink"): return 201, None
         if m == "PUT": return 204, None
@@ -180,6 +180,100 @@ def test_server_endpoints_end_to_end():
         assert rec["feasibility"]["integrations"] and "secret-token" not in json.dumps(rec, default=str)
         assert server._ctx_from_record(rec).integration_links == ctx.integration_links
     finally: mk.stop()
+
+
+def test_vault_crypto():
+    from integrations import vault as v
+    vt = v.save_token(None, "pc1", "correct horse battery", "jira", "tok-123")
+    vt = v.save_token(vt, "pc1", "correct horse battery", "ado", "pat-456")
+    assert v.unlock(vt, "pc1", "correct horse battery") == {"jira": "tok-123", "ado": "pat-456"}
+    assert "tok-123" not in json.dumps(vt) and "pat-456" not in json.dumps(vt)
+    for bad in ("short", "aaaaaaaaaaaa", "tok-123tok-123"):                              # password policy
+        try: v.save_token(None, "pc2", bad, "jira", "tok-123"); assert False, bad
+        except v.VaultError: pass
+    try: v.save_token(vt, "pc1", "a different password", "jira", "x"); assert False       # can't add with another password
+    except v.VaultError as e: assert e.status == 401
+    import copy, base64                                                                    # tampering is detected
+    t = copy.deepcopy(vt); raw = bytearray(base64.b64decode(t["entries"]["jira"]["ct"])); raw[0] ^= 1
+    t["entries"]["jira"]["ct"] = base64.b64encode(bytes(raw)).decode()
+    try: v.unlock(t, "pc1", "correct horse battery"); assert False
+    except Exception: pass
+    try: v.unlock(vt, "other-project", "correct horse battery"); assert False              # bound to its project
+    except v.VaultError: pass
+    for i in range(5):                                                                      # guessing is throttled
+        try: v.unlock(vt, "pc3-lock", "nope")
+        except v.VaultError: pass
+    vt3 = v.save_token(None, "pc3-lock", "correct horse battery", "jira", "t")
+    for i in range(5):
+        try: v.unlock(vt3, "pc3-lock", "wrong-wrong-wrong")
+        except v.VaultError: pass
+    try: v.unlock(vt3, "pc3-lock", "correct horse battery"); assert False                   # even the right one waits
+    except v.VaultError as e: assert e.status == 429 and e.retry_after
+    assert v.forget(vt, "ado")["entries"].keys() == {"jira"} and v.forget(v.forget(vt, "ado"), "jira") is None
+
+
+def test_saved_token_flow_and_per_project_boards():
+    import time, glob
+    sys.path.insert(0, "../webapp")
+    os.environ.pop("JIRA_API_TOKEN", None)
+    import server
+    from project_store import get_project_store
+    c = server.app.test_client(); mk = Mock("jira", bad_auth=True)
+    ctxA, ctxB = _backlog_project(), _backlog_project()
+    ctxA.project_id, ctxB.project_id = "pvA", "pvB"; server.PROJECTS.update(pvA=ctxA, pvB=ctxB)
+    base = lambda key: {"creds": {"base_url": mk.url, "email": "me@x.com", "project": key}}
+    try:
+        assert c.get("/api/project/pvA/integrations/state").get_json()["saved_tokens"] == []
+        assert c.post("/api/project/pvA/integrations/jira/token", json={"token": "secret-token", "password": "short"}).status_code == 400
+        ok = c.post("/api/project/pvA/integrations/jira/token", json={"token": "secret-token", "password": "correct horse battery"})
+        assert ok.status_code == 200 and ok.get_json()["saved_tokens"] == ["jira"]
+        assert "secret-token" not in ok.get_data(as_text=True)
+        # NOTHING sensitive reaches the browser when a project is reopened ...
+        public = c.get("/api/history/pvA"); txt = public.get_data(as_text=True)
+        assert public.status_code == 200 and "secret-token" not in txt and "_vault" not in txt and '"ct"' not in txt
+        # ... but the saved record does hold the (encrypted) vault, and still no plaintext
+        saved = json.dumps(get_project_store().get("pvA"))
+        assert "_vault" in saved and "secret-token" not in saved
+        assert "_vault" not in json.dumps(c.get("/api/project/pvA/integrations/state").get_json())
+        # unlock: wrong password, then right one -> ticket; a push works WITHOUT typing the token
+        assert c.post("/api/project/pvA/integrations/unlock", json={"password": "wrong password!!"}).status_code == 401
+        up = c.post("/api/project/pvA/integrations/unlock", json={"password": "correct horse battery"}).get_json()
+        assert up["targets"] == ["jira"] and "secret-token" not in json.dumps(up)
+        body = {**base("APP"), "ticket": up["ticket"]}
+        assert c.post("/api/project/pvA/integrations/jira/check", json=body).get_json()["story_type"] == "Story"
+        pid = c.post("/api/project/pvA/integrations/jira/push", json=body).get_json()["push_id"]
+        for _ in range(150):
+            st = c.get(f"/api/project/pvA/integrations/push/{pid}").get_json()
+            if st["status"] != "running": break
+            time.sleep(0.2)
+        assert st["status"] == "done" and not st["result"]["failed"]
+        # a ticket only works for its own project, and stops working once locked
+        assert c.post("/api/project/pvB/integrations/jira/check", json=body).status_code == 401
+        c.post("/api/project/pvA/integrations/lock", json={"ticket": up["ticket"]})
+        r = c.post("/api/project/pvA/integrations/jira/check", json=body)
+        assert r.status_code == 401 and r.get_json().get("expired")
+        # every app project remembers its OWN board
+        c.post("/api/project/pvB/integrations/jira/check", json={**base("WEB"), "creds": {**base("WEB")["creds"], "token": "secret-token"}})
+        sa = c.get("/api/project/pvA/integrations/state").get_json()["settings"]["jira"]["project"]
+        sb = c.get("/api/project/pvB/integrations/state").get_json()["settings"]["jira"]["project"]
+        assert (sa, sb) == ("APP", "WEB")
+        assert c.get("/api/project/pvB/integrations/state").get_json()["saved_tokens"] == []     # tokens are per project too
+        # survives a server restart
+        rec = server._record_from_ctx(ctxA); back = server._ctx_from_record(rec)
+        assert back.integration_vault and back.integration_settings["jira"]["project"] == "APP"
+        # forgetting
+        assert c.delete("/api/project/pvA/integrations/jira/token").get_json()["saved_tokens"] == []
+        assert server._ctx_from_record(server._record_from_ctx(ctxA)).integration_vault is None
+        # five wrong passwords lock the vault
+        c.post("/api/project/pvA/integrations/jira/token", json={"token": "secret-token", "password": "correct horse battery"})
+        for _ in range(5): c.post("/api/project/pvA/integrations/unlock", json={"password": "bad password 123"})
+        lock = c.post("/api/project/pvA/integrations/unlock", json={"password": "correct horse battery"})
+        assert lock.status_code == 429 and lock.headers.get("Retry-After")
+    finally:
+        mk.stop()
+        for pid in ("pvA", "pvB"):
+            try: get_project_store().delete(pid)
+            except Exception: pass
 
 
 if __name__ == "__main__":
