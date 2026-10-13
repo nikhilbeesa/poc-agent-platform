@@ -33,6 +33,8 @@ class AzureDevOps:
         self.root = f"{self.base}/{self.org_path}".rstrip("/")
         self.epic_type, self.story_type, self.process = None, None, ""
         self.warnings: list[str] = []
+        self.tags_denied = False           # True once Azure DevOps refuses to create a NEW tag for this account
+        self.ok_tags: set[str] = set()     # tags that already exist (a work item carrying them was created fine)
 
     @property
     def target_id(self) -> str:
@@ -80,13 +82,43 @@ class AzureDevOps:
                 ops.append(("Microsoft.VSTS.Common.AcceptanceCriteria", bl.to_acceptance_html(item)))
         return [{"op": op, "path": f"/fields/{k}", "value": v} for k, v in ops]
 
+    @staticmethod
+    def _tag_list(ops: list[dict]) -> list[str]:
+        v = next((o["value"] for o in ops if o["path"] == "/fields/System.Tags"), "")
+        return [t.strip() for t in str(v).split(";") if t.strip()]
+
+    @staticmethod
+    def _set_tags(ops: list[dict], tags: list[str]) -> list[dict]:
+        ops = [o for o in ops if o["path"] != "/fields/System.Tags"]
+        if tags:
+            ops.append({"op": next((o["op"] for o in ops), "add"), "path": "/fields/System.Tags", "value": "; ".join(tags)})
+        return ops
+
     def _send(self, method, path, ops):
-        """Drop an optional field the process doesn't have (ADO names it in the error) and retry."""
-        for _ in range(4):
+        """Drop an optional field the process doesn't have (ADO names it in the error) and retry.
+
+        Tags need special care: creating a work item with a tag that does not exist yet needs the separate
+        'Create tag definition' permission (TF401289). Without it, every story carrying a new tag (its module name,
+        its FR-id) is refused while epics (only the long-existing 'ai-generated' tag) go through — leaving an
+        epics-only backlog. So when that happens we keep only tags that already exist, and if none are left we
+        send the work item without tags: the content is far more important than the tag."""
+        if self.tags_denied:                                   # learned earlier in this push: don't fail once per item
+            ops = self._set_tags(ops, [t for t in self._tag_list(ops) if t in self.ok_tags])
+        for _ in range(5):
             try:
                 _, body = self._c(method, path, ops, patch=True)
+                self.ok_tags.update(self._tag_list(ops))
                 return body
             except IntegrationError as e:
+                if e.status in (400, 401, 403) and "TF401289" in str(e) and self._tag_list(ops):
+                    self.tags_denied = True
+                    kept = [t for t in self._tag_list(ops) if t in self.ok_tags]
+                    ops = self._set_tags(ops, kept)
+                    self.warnings.append(
+                        "Some tags were left off: this account is not allowed to create NEW tags in the project (TF401289). "
+                        "Work items were still created. To keep the tags, ask a project administrator to give this user "
+                        "“Create tag definition” (Project settings → Permissions → the user → Create tag definition = Allow), then Send again with “update existing”.")
+                    continue
                 bad = [o for o in ops if o["path"].startswith("/fields/") and o["path"].split("/")[-1] in str(e)
                        and o["path"].split("/")[-1] != "System.Title"]
                 if e.status != 400 or not bad:

@@ -65,6 +65,10 @@ class Mock:
         if self.flags.get("signin_page") and "/workitems/$" in path:
             return 203, "<html>sign in</html>"
         if m == "POST" and "/workitems/$" in path:
+            if self.flags.get("no_new_tags"):                  # account may use existing tags but not create new ones
+                tags = next((o["value"] for o in data if o["path"].endswith("System.Tags")), "")
+                if any(t.strip() not in ("ai-generated", "") for t in tags.split(";")):
+                    return 403, {"message": "TF401289: The current user does not have permissions to create tags."}
             if self.flags.get("no_priority") and any(o["path"].endswith("Priority") for o in data):
                 return 400, {"message": "TF401326: Field 'Microsoft.VSTS.Common.Priority' cannot be found."}
             self.n += 1
@@ -112,6 +116,24 @@ def test_jira_adapts_to_project_differences():
         assert not r["failed"] and any("priority" in w for w in r["warnings"])                  # priority dropped, story still created
         epics = [c for c in mk.calls if c[0] == "POST" and c[1].endswith("/issue") and c[2]["fields"]["issuetype"]["name"] == "Epic"]
         assert any("customfield_10011" in c[2]["fields"] for c in epics)                        # old-style 'Epic Name' supplied
+    finally: mk.stop()
+
+
+def test_ado_without_permission_to_create_tags_still_creates_stories():
+    """Regression: epics (tag 'ai-generated' only) were created but every story (new module/FR tags) failed with
+    TF401289, leaving an epics-only backlog. Stories must still be created, just without the tags the account can't make."""
+    ctx = _backlog_project(); bk = backlog.build_backlog(ctx); mk = Mock("ado", no_new_tags=True)
+    try:
+        r = sync.push(ctx, "ado", ADO(mk), {})
+        assert not r["failed"], r["failed"][:2]
+        assert r["created"] == len(bk["epics"]) + len(bk["stories"])
+        assert any("TF401289" in w for w in r["warnings"])
+        stories = [c for c in mk.calls if c[0] == "POST" and "$User" in c[1] and "validateOnly" not in c[1]
+                   and any(o["path"].endswith("Description") for o in c[2])]
+        assert stories and all("FR-" not in next((o["value"] for o in c[2] if o["path"].endswith("System.Tags")), "") for c in stories[-5:])
+        story_desc = next(o["value"] for o in stories[0][2] if o["path"].endswith("System.Description"))
+        for section in ("Error messages", "Empty states", "Data validation", "Definition of Ready", "Definition of Done"):
+            assert section in story_desc, section
     finally: mk.stop()
 
 
