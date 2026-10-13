@@ -676,6 +676,16 @@ body.modal-open { overflow: hidden; }
 .dl-item:hover, .dl-item:focus-visible { background: rgba(111,199,255,0.12); outline: none; }
 .dl-item:hover b, .dl-item:focus-visible b { color: var(--cyan); }
 
+/* One row: document tabs on the left, Download / Send on the right. The tabs shrink with the window and, only when
+   even that is not enough, scroll sideways inside their own area instead of wrapping onto a second line. */
+.artefact-bar { flex-wrap: nowrap; gap: 12px; }
+.artefact-bar .tabs { flex: 1 1 0; flex-wrap: nowrap; gap: 3px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: var(--line-bright) transparent; }
+.artefact-bar .tabs::-webkit-scrollbar { height: 4px; }
+.artefact-bar .tabs::-webkit-scrollbar-thumb { background: var(--line-bright); }
+.artefact-bar .tab-btn { flex: 0 0 auto; white-space: nowrap; font-size: clamp(10.5px, 0.78vw, 12px); padding: 9px clamp(8px, 0.8vw, 13px); }
+.artefact-bar .tab-btn.active { margin-bottom: 0; padding-bottom: 9px; box-shadow: 0 1px 0 var(--bg-panel-raised); }
+.artefact-bar .artefact-actions { flex: 0 0 auto; flex-wrap: nowrap; margin-bottom: 4px; }
+
 @media (max-width: 700px) {
   .artefact-bar { flex-direction: column-reverse; align-items: stretch; gap: 10px; }
   .artefact-bar .dl-menu { align-self: flex-end; margin-bottom: 0; }
