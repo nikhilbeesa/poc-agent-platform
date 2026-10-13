@@ -322,6 +322,11 @@ window.addEventListener('load', function () {
             <button type="button" class="btn btn-small btn-send" id="btn-backlog" title="Create the epics and user stories in Jira or Azure DevOps"><span class="btn-ico" aria-hidden="true">⇄</span> Send to Jira / Azure DevOps</button>
           </div>
         </div>
+        <div class="doc-nav" id="doc-nav" hidden>
+          <button type="button" class="btn btn-small doc-nav-btn" id="doc-prev" aria-label="Previous document">‹ Prev</button>
+          <span class="doc-nav-label" id="doc-nav-label" aria-live="polite"></span>
+          <button type="button" class="btn btn-small doc-nav-btn" id="doc-next" aria-label="Next document">Next ›</button>
+        </div>
         <div class="doc-frame" id="doc-frame" hidden>
           <div class="doc-head">
             <span class="doc-head-title" id="doc-head-title"></span>

@@ -2251,6 +2251,31 @@ $('#btn-resolve-issues').addEventListener('click', async () => {
   }
 });
 
+// Show document i (used by the tabs and by the Prev / Next arrows on small screens).
+function selectArtefact(i) {
+  const a = currentArtefacts[i];
+  if (!a) return;
+  activeArtefactIndex = i;
+  document.querySelectorAll('#artefact-tabs .tab-btn').forEach((t, k) => {
+    t.classList.toggle('active', k === i); t.setAttribute('aria-selected', String(k === i));
+  });
+  $('#doc-head-title').textContent = a.title || a.type;
+  updateDocNav();
+  closeDlMenus();
+  renderDoc(a.content_markdown);
+}
+function updateDocNav() {
+  const n = currentArtefacts.length, i = activeArtefactIndex;
+  const a = currentArtefacts[i] || {};
+  $('#doc-nav-label').innerHTML = `<b>${i + 1} / ${n}</b><br>${escapeHtml((a.title || a.type || '').split('—')[0].trim())}`;
+  $('#doc-prev').disabled = i <= 0;
+  $('#doc-next').disabled = i >= n - 1;
+}
+document.addEventListener('click', (e) => {
+  if (e.target.closest('#doc-prev')) selectArtefact(activeArtefactIndex - 1);
+  else if (e.target.closest('#doc-next')) selectArtefact(activeArtefactIndex + 1);
+});
+
 function renderArtefacts(artefacts) {
   currentArtefacts = artefacts;
   activeArtefactIndex = 0;
@@ -2262,19 +2287,15 @@ function renderArtefacts(artefacts) {
   $('#doc-frame').hidden = false;
 
   artefacts.forEach((a, i) => {
-    const tab = el('button', { type: 'button', role: 'tab', 'aria-selected': String(i === 0), class: 'tab-btn' + (i === 0 ? ' active' : ''), text: a.title.split('—')[0].trim() || a.type });
-    tab.addEventListener('click', () => {
-      activeArtefactIndex = i;
-      document.querySelectorAll('#artefact-tabs .tab-btn').forEach(t => { t.classList.remove('active'); t.setAttribute('aria-selected', 'false'); });
-      tab.classList.add('active'); tab.setAttribute('aria-selected', 'true');
-      $('#doc-head-title').textContent = a.title || a.type;
-      closeDlMenus();
-      renderDoc(a.content_markdown);
-    });
+    const label = a.title.split('—')[0].trim() || a.type;
+    const tab = el('button', { type: 'button', role: 'tab', 'aria-selected': String(i === 0), class: 'tab-btn' + (i === 0 ? ' active' : ''), text: label, title: a.title || label });
+    tab.addEventListener('click', () => selectArtefact(i));
     tabs.appendChild(tab);
   });
+  $('#doc-nav').hidden = artefacts.length < 2;       // Prev / Next arrows (shown by CSS on small screens only)
 
   if (artefacts.length) { $('#doc-head-title').textContent = artefacts[0].title || artefacts[0].type; renderDoc(artefacts[0].content_markdown); }
+  updateDocNav();
   updateStepper(); updateSummary();
 }
 

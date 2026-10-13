@@ -676,19 +676,36 @@ body.modal-open { overflow: hidden; }
 .dl-item:hover, .dl-item:focus-visible { background: rgba(111,199,255,0.12); outline: none; }
 .dl-item:hover b, .dl-item:focus-visible b { color: var(--cyan); }
 
-/* One row: document tabs on the left, Download / Send on the right. The tabs shrink with the window and, only when
-   even that is not enough, scroll sideways inside their own area instead of wrapping onto a second line. */
-.artefact-bar { flex-wrap: nowrap; gap: 12px; }
-.artefact-bar .tabs { flex: 1 1 0; flex-wrap: nowrap; gap: 3px; overflow-x: auto; overflow-y: hidden; scrollbar-width: thin; scrollbar-color: var(--line-bright) transparent; }
-.artefact-bar .tabs::-webkit-scrollbar { height: 4px; }
-.artefact-bar .tabs::-webkit-scrollbar-thumb { background: var(--line-bright); }
-.artefact-bar .tab-btn { flex: 0 0 auto; white-space: nowrap; font-size: clamp(10.5px, 0.78vw, 12px); padding: 9px clamp(8px, 0.8vw, 13px); }
-.artefact-bar .tab-btn.active { margin-bottom: 0; padding-bottom: 9px; box-shadow: 0 1px 0 var(--bg-panel-raised); }
-.artefact-bar .artefact-actions { flex: 0 0 auto; flex-wrap: nowrap; margin-bottom: 4px; }
+/* Documents toolbar. Wide screens: tabs and Download / Send share ONE row. When they no longer fit, the buttons drop to
+   their own row above the tabs (wrap-reverse) and, if the tabs themselves do not fit, they wrap onto further rows —
+   nothing scrolls sideways and nothing is hidden. Phones: tabs become a 2-column grid plus Prev / Next arrows. */
+.artefact-bar { flex-wrap: wrap-reverse; align-items: flex-end; justify-content: flex-start; gap: 8px 12px; }
+.artefact-bar .tabs { flex: 1 1 auto; min-width: 0; flex-wrap: wrap; gap: 4px 3px; overflow: visible; border-bottom: none; }
+.artefact-bar .tab-btn { white-space: nowrap; font-size: clamp(11px, 0.78vw, 12px); padding: 9px clamp(9px, 0.8vw, 13px); }
+.artefact-bar .artefact-actions { margin-left: auto; margin-bottom: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.doc-nav { display: none; }
+
+@media (max-width: 1100px) {
+  .artefact-bar .tab-btn { border-bottom: 1px solid var(--line); }
+  .artefact-bar .tab-btn.active { border-bottom-color: var(--cyan); margin-bottom: 0; padding-bottom: 9px; }
+}
+@media (max-width: 900px) {
+  .artefact-bar .tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+  .artefact-bar .tab-btn { white-space: normal; text-align: left; line-height: 1.35; padding: 9px 10px; font-size: 11.5px; }
+  .doc-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 10px 0 8px; }
+  .doc-nav-btn { flex: 0 0 auto; min-width: 84px; }
+  .doc-nav-btn:disabled { opacity: .4; cursor: default; }
+  .doc-nav-label { flex: 1 1 auto; min-width: 0; text-align: center; font-family: var(--mono); font-size: 11.5px; color: var(--text-dim); line-height: 1.35; }
+  .doc-nav-label b { color: var(--cyan); font-weight: 500; }
+}
+@media (max-width: 560px) {
+  .artefact-bar .artefact-actions { width: 100%; margin-left: 0; justify-content: stretch; }
+  .artefact-bar .artefact-actions .dl-menu, .artefact-bar .artefact-actions .btn-send { flex: 1 1 auto; }
+  .artefact-bar .artefact-actions .dl-trigger, .artefact-bar .artefact-actions .btn-send { width: 100%; justify-content: center; }
+}
+@media (max-width: 380px) { .artefact-bar .tabs { grid-template-columns: minmax(0, 1fr); } }
 
 @media (max-width: 700px) {
-  .artefact-bar { flex-direction: column-reverse; align-items: stretch; gap: 10px; }
-  .artefact-bar .dl-menu { align-self: flex-end; margin-bottom: 0; }
   .doc-head { padding: 8px 10px 8px 14px; }
 }
 
@@ -737,7 +754,7 @@ body.modal-open { overflow: hidden; }
 .artefact-bar .artefact-actions .dl-menu { margin-bottom: 0; }
 .btn-send { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
 .btn-send .btn-ico { font-size: 14px; line-height: 1; }
-@media (max-width: 760px) { .artefact-bar .artefact-actions { align-self: flex-end; margin-bottom: 0; flex-wrap: wrap; justify-content: flex-end; } }
+
 
 /* ---- Send to Jira / Azure DevOps: popup ---- */
 .modal.modal-bl { width: min(660px, 100%); }
