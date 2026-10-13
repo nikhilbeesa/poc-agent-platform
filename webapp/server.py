@@ -108,8 +108,14 @@ def _feasibility_for_record(ctx, meta):
     feas = _feasibility_summary(ctx) or ({**meta["feasibility"], "history": ctx.feasibility_history, "clarifications": ctx.clarifications,
                                           "accepted": ctx.accepted_flaws, "integrations": ctx.integration_links,
                                           "integration_settings": ctx.integration_settings} if meta.get("feasibility") else None)
-    if ctx.integration_vault or ctx.integration_settings:
+    from integrations.backlog import snapshot_backlog
+    snap = snapshot_backlog(ctx)                 # the live agent output if there is one, else what was saved earlier
+    if snap:
+        ctx.saved_backlog = snap
+    if ctx.integration_vault or ctx.integration_settings or snap:
         feas = dict(feas or {})
+        if snap:
+            feas["_backlog"] = snap
         feas["integration_settings"] = ctx.integration_settings
         if ctx.integration_vault:
             feas["_vault"] = ctx.integration_vault
@@ -122,7 +128,7 @@ def _public_record(rec: dict) -> dict:
     """A saved record safe to send to a browser: the encrypted token vault never leaves the server."""
     rec = dict(rec)
     if isinstance(rec.get("feasibility"), dict):
-        rec["feasibility"] = {k: v for k, v in rec["feasibility"].items() if k != "_vault"}
+        rec["feasibility"] = {k: v for k, v in rec["feasibility"].items() if k not in ("_vault", "_backlog")}
     return rec
 
 
@@ -202,9 +208,11 @@ def _ctx_from_record(rec: dict) -> ProjectContext:
     ctx.integration_links = dict(((rec.get("feasibility") or {}).get("integrations")) or {})
     ctx.integration_settings = dict(((rec.get("feasibility") or {}).get("integration_settings")) or {})
     ctx.integration_vault = (rec.get("feasibility") or {}).get("_vault") or None
+    ctx.saved_backlog = dict((rec.get("feasibility") or {}).get("_backlog") or {})
     clar.seed_locked_decisions(ctx)
     META[rec["id"]] = {"agent_log": rec.get("agent_log") or [], "handoff_status": rec.get("handoff_status"),
-                       "feasibility": rec.get("feasibility")}
+                       "feasibility": ({k: v for k, v in rec["feasibility"].items() if k != "_backlog"}
+                                       if isinstance(rec.get("feasibility"), dict) else rec.get("feasibility"))}
     return ctx
 
 

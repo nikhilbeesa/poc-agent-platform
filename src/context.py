@@ -130,6 +130,9 @@ class ProjectContext(BaseModel):
     # reopens with its own board), and the ENCRYPTED token vault (integrations/vault.py) — never sent to the browser.
     integration_settings: dict = Field(default_factory=dict)
     integration_vault: dict | None = None
+    # The structured backlog (epics, stories, priorities, story->screen/flow links) saved with the project, so Jira / Azure
+    # DevOps can still be sent to after a page reload or server restart (agent outputs themselves are not persisted).
+    saved_backlog: dict = Field(default_factory=dict)
 
     def add_answer(self, question_id: str, answer: str) -> None:
         for q in self.discovery_questions:

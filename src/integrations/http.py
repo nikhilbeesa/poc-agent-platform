@@ -67,12 +67,15 @@ def call(method: str, url: str, *, auth: tuple[str, str], json=None, headers: di
             body = r.json() if r.content else None
         except ValueError:
             body = None
+        if r.status_code == 203 or (r.status_code < 300 and "text/html" in r.headers.get("Content-Type", "")):
+            # Azure DevOps answers a bad / expired token with a sign-in PAGE (status 203), not a 401
+            raise IntegrationError("The server returned a sign-in page instead of data — the token is expired, mistyped, or not valid for this organisation.", 401)
         if 300 <= r.status_code < 400:
             raise IntegrationError("The server redirected the request (check the address / sign-in).", r.status_code)
         if r.status_code == 401:
-            raise IntegrationError("Sign-in was rejected — check the email/token (or personal access token).", 401)
+            raise IntegrationError(_redact("Sign-in was rejected — check the email/token (or personal access token). " + _vendor_message(body), secrets).strip(), 401, {"body": body})
         if r.status_code == 403:
-            raise IntegrationError("Access denied — the account lacks permission for this project.", 403, {"body": body})
+            raise IntegrationError(_redact("Access denied — the account lacks permission for this project. " + _vendor_message(body), secrets).strip(), 403, {"body": body})
         if r.status_code >= 400:
             raise IntegrationError(_redact(_vendor_message(body) or f"HTTP {r.status_code}", secrets), r.status_code, {"body": body})
         return r.status_code, body

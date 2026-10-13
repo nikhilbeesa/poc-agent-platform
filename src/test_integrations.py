@@ -22,8 +22,8 @@ class Mock:
                 auth = self.headers.get("Authorization", "")
                 outer.calls.append((method, self.path, data, self.headers.get("Content-Type", ""), auth))
                 code, resp = outer.handle(method, self.path, data, auth)
-                payload = json.dumps(resp).encode() if resp is not None else b""
-                self.send_response(code); self.send_header("Content-Type", "application/json")
+                payload = (resp.encode() if isinstance(resp, str) else json.dumps(resp).encode()) if resp is not None else b""
+                self.send_response(code); self.send_header("Content-Type", "text/html" if isinstance(resp, str) else "application/json")
                 self.send_header("Content-Length", str(len(payload))); self.end_headers(); self.wfile.write(payload)
             do_GET = lambda s: s._go("GET"); do_POST = lambda s: s._go("POST")
             do_PUT = lambda s: s._go("PUT"); do_PATCH = lambda s: s._go("PATCH")
@@ -58,6 +58,12 @@ class Mock:
         if "/_apis/projects/" in path: return 200, {"name": "Proj"}
         types = ["Epic", "Feature", "Issue"] if self.flags.get("basic") else ["Epic", "Feature", "User Story", "Task"]
         if "/workitemtypes" in path: return 200, {"value": [{"name": t} for t in types]}
+        if m == "POST" and "/workitems/$" in path and "validateOnly=true" in path:
+            if self.flags.get("read_only_token"):
+                return 403, {"message": "VS403403: The user does not have write permissions."}
+            return 200, {"id": 0}                                  # validation only: nothing is created, nothing counted
+        if self.flags.get("signin_page") and "/workitems/$" in path:
+            return 203, "<html>sign in</html>"
         if m == "POST" and "/workitems/$" in path:
             if self.flags.get("no_priority") and any(o["path"].endswith("Priority") for o in data):
                 return 400, {"message": "TF401326: Field 'Microsoft.VSTS.Common.Priority' cannot be found."}
@@ -114,7 +120,7 @@ def test_ado_agile_and_basic():
     try:
         r = sync.push(ctx, "ado", ADO(mk), {})
         assert not r["failed"] and r["created"] == len(bk["epics"]) + len(bk["stories"]), r["failed"][:2]
-        posts = [c for c in mk.calls if c[0] == "POST" and "/workitems/$" in c[1]]
+        posts = [c for c in mk.calls if c[0] == "POST" and "/workitems/$" in c[1] and "validateOnly" not in c[1]]
         assert all(c[3] == "application/json-patch+json" for c in posts)
         story = next(c for c in posts if "$User%20Story" in c[1] or "$User Story" in c[1])
         paths = {o["path"] for o in story[2]}
@@ -126,7 +132,7 @@ def test_ado_agile_and_basic():
     try:
         r = sync.push(ctx2, "ado", ADO(mk2), {})
         assert not r["failed"] and any("Priority" in w for w in r["warnings"])
-        st = next(c for c in mk2.calls if c[0] == "POST" and "$Issue" in c[1])
+        st = next(c for c in mk2.calls if c[0] == "POST" and "$Issue" in c[1] and "validateOnly" not in c[1])
         desc = next(o["value"] for o in st[2] if o["path"].endswith("System.Description"))
         assert "Acceptance criteria" in desc                                                     # no AC field in Basic -> inside description
     finally: mk2.stop()
@@ -153,6 +159,63 @@ def _safety():
     ctx = _project(skip_every=9)                       # no stories generated yet
     try: sync.push(ctx, "jira", {"base_url": "x"}, {}); assert False
     except IntegrationError: pass
+
+
+def test_all_story_sections_reach_both_tools():
+    ctx = _backlog_project(); mj = Mock("jira"); ma = Mock("ado")
+    try:
+        sync.push(ctx, "jira", JIRA(mj), {}); sync.push(ctx, "ado", ADO(ma), {})
+        jira_story = next(c[2]["fields"] for c in mj.calls if c[0] == "POST" and c[1].endswith("/issue") and c[2]["fields"]["issuetype"]["name"] == "Story")
+        text = json.dumps(jira_story["description"])
+        for needed in ("Data validation", "Error messages", "Empty states", "Definition of Ready", "Definition of Done", "Acceptance criteria", '"type": "table"'):
+            assert needed in text, f"Jira description is missing {needed}"
+        ado_story = next(c[2] for c in ma.calls if c[0] == "POST" and "validateOnly" not in c[1] and ("$User%20Story" in c[1] or "$User Story" in c[1]))
+        desc = next(o["value"] for o in ado_story if o["path"].endswith("System.Description"))
+        for needed in ("Data validation", "Error messages", "Empty states", "Definition of Ready", "Definition of Done", "<table"):
+            assert needed in desc, f"Azure DevOps description is missing {needed}"
+    finally: mj.stop(); ma.stop()
+
+
+def test_stories_survive_reload_and_restart():
+    sys.path.insert(0, "../webapp")
+    import server
+    ctx = _backlog_project(); n = len(backlog.build_backlog(ctx)["stories"]); assert n > 0
+    rec = json.loads(json.dumps(server._record_from_ctx(ctx), default=str))      # what the database stores
+    assert "_backlog" not in server._public_record(rec)["feasibility"]            # but the browser never receives it
+    restored = server._ctx_from_record(rec)                                       # a reload / restart: no agent output in memory
+    assert not restored.agent_contributions
+    b = backlog.build_backlog(restored)
+    assert len(b["stories"]) == n and b["stories"][0]["dor"] and b["stories"][0]["data_validation"]
+    mk = Mock("ado")
+    try:
+        r = sync.push(restored, "ado", ADO(mk), {})
+        assert r["created"] == n + len(b["epics"]) and not r["failed"]
+    finally: mk.stop()
+    again = server._ctx_from_record(json.loads(json.dumps(server._record_from_ctx(restored), default=str)))   # saved again after a reload
+    assert len(backlog.build_backlog(again)["stories"]) == n
+
+
+def test_azure_token_problems_are_caught_at_test_connection():
+    mk = Mock("ado", read_only_token=True)
+    try:
+        try: sync.check("ado", ADO(mk)); assert False
+        except IntegrationError as e: assert "Work Items" in str(e) and "secret-token" not in str(e)
+    finally: mk.stop()
+    mk = Mock("ado", signin_page=True); ctx = _backlog_project()
+    try:
+        r = sync.push(ctx, "ado", ADO(mk), {})                                    # a sign-in page must be reported, not crash
+        assert r["failed"] and "sign-in page" in r["failed"][0]["error"]
+    finally: mk.stop()
+
+
+def test_resend_all_after_items_were_deleted():
+    ctx = _backlog_project(); mk = Mock("jira")
+    try:
+        first = sync.push(ctx, "jira", JIRA(mk), {})
+        assert sync.push(ctx, "jira", JIRA(mk), {})["created"] == 0               # normal repeat: nothing new
+        again = sync.push(ctx, "jira", JIRA(mk), {"resend_all": True})
+        assert again["created"] == first["created"]
+    finally: mk.stop()
 
 
 def test_server_endpoints_end_to_end():

@@ -59,6 +59,8 @@ def push(context: ProjectContext, target: str, creds: dict, options: dict, progr
     tool.check()
     update = bool(options.get("update_existing"))
     store = context.integration_links.setdefault(tool.target_id, {})
+    if options.get("resend_all"):       # items were deleted in the tool, or the person wants a fresh copy
+        store.clear()
     rep = {"created": 0, "updated": 0, "unchanged": 0, "failed": [], "items": [], "dependency_links": 0}
 
     def record(it, ref, status):

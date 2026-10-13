@@ -38,6 +38,13 @@ class Jira:
             self.warnings.append("This project has no Epic issue type — stories will be created without an epic.")
         if not self.story_type:
             raise IntegrationError("This project has neither a Story nor a Task issue type to create stories with.")
+        try:
+            _, perm = self._c("GET", f"/mypermissions?projectKey={self.key}&permissions=CREATE_ISSUES")
+            can = ((perm or {}).get("permissions") or {}).get("CREATE_ISSUES", {}).get("havePermission", True)
+        except IntegrationError:
+            can = True                      # could not ask; the push itself will report the real reason
+        if not can:
+            raise IntegrationError(f"Connected, but this account is not allowed to create issues in project {self.key}.")
         if self.story_type == "Task":
             self.warnings.append("No Story issue type here — using Task instead.")
         return {"user": (me or {}).get("displayName", ""), "project": (proj or {}).get("name", self.key),

@@ -56,6 +56,16 @@ class AzureDevOps:
             raise IntegrationError("Could not find a user-story work item type in this project.")
         if not self.epic_type:
             self.warnings.append("This project's process has no Epic type — stories will be created without an epic.")
+        # Reading work items and CREATING them need different token scopes, so "connected" proves little. validateOnly runs
+        # Azure DevOps' own create checks (permission, type, fields) without creating anything.
+        try:
+            self._c("POST", f"/{self.project}/_apis/wit/workitems/${self.story_type}?validateOnly=true",
+                    [{"op": "add", "path": "/fields/System.Title", "value": "connection test"}], patch=True)
+        except IntegrationError as e:
+            if e.status in (401, 403):
+                raise IntegrationError("Connected, but this token cannot create work items. Recreate it with the “Work Items: Read & write” scope. "
+                                       f"({e})", e.status)
+            self.warnings.append(f"Could not pre-check creating a {self.story_type} ({e}).")
         return {"user": "", "project": (proj or {}).get("name", self.project), "epic_type": self.epic_type,
                 "story_type": self.story_type, "process": self.process, "warnings": list(self.warnings)}
 
@@ -86,6 +96,8 @@ class AzureDevOps:
         raise IntegrationError("Azure DevOps kept rejecting the work item fields.")
 
     def _ref(self, body: dict) -> dict:
+        if not isinstance(body, dict) or "id" not in body:
+            raise IntegrationError("Azure DevOps did not return the new work item — nothing was created.")
         return {"key": str(body["id"]), "url": ((body.get("_links") or {}).get("html") or {}).get("href")
                 or f"{self.root}/{self.project}/_workitems/edit/{body['id']}", "api_url": body.get("url", "")}
 

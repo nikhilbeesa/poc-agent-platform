@@ -2031,6 +2031,14 @@ async function blRefreshPreview() {
   const box = $('#bl-preview'); box.textContent = '';
   try {
     const p = await api(`/api/project/${projectId}/integrations/${blTarget}/preview`, { method: 'POST', body: JSON.stringify(blBody()) });
+    $('#bl-resend-wrap').hidden = !p.already_pushed;
+    if (!p.stories) {
+      $('#bl-foot-summary').textContent = '';
+      $('#bl-push').disabled = true;
+      box.appendChild(el('p', { class: 'bl-note warn', text: 'No user stories found for this project. Open it and run the agent team (or Resolve issues) so the stories are generated, then come back.' }));
+      return;
+    }
+    $('#bl-push').disabled = blBusy;
     box.appendChild(el('div', { class: 'bl-tiles' }, [blTile(p.epics, 'Epics'), blTile(p.stories, 'User stories'), blTile(p.dependencies, 'Dependency links')]));
     box.appendChild(el('div', { class: 'bl-chips' }, [el('span', { class: 'bl-chips-label', text: 'Priority' }),
       blChip('High', p.by_priority.High, 'high'), blChip('Medium', p.by_priority.Medium, 'medium'), blChip('Low', p.by_priority.Low, 'low')]));
@@ -2110,7 +2118,7 @@ async function openBacklogModal() {
     blField(t, 'token').placeholder = has ? 'Using the token saved on the server — leave blank' : '';
     blRenderVault(t);
   });
-  $('#bl-result').hidden = true; $('#bl-progress').hidden = true; $('#bl-test-result').textContent = '';
+  $('#bl-result').hidden = true; $('#bl-progress').hidden = true; $('#bl-test-result').textContent = ''; $('#bl-resend').checked = false;
   $('#backlog-modal').hidden = false; document.body.classList.add('modal-open');
   blSetTarget(blTarget);
   setTimeout(() => $('.bl-tab.active').focus(), 30);
@@ -2178,7 +2186,7 @@ async function blPush() {
   blRememberLast();
   let ok = false;
   try {
-    const { push_id } = await api(`/api/project/${projectId}/integrations/${t}/push`, { method: 'POST', body: JSON.stringify(blBody({ options: { update_existing: $('#bl-update').checked } })) });
+    const { push_id } = await api(`/api/project/${projectId}/integrations/${t}/push`, { method: 'POST', body: JSON.stringify(blBody({ options: { update_existing: $('#bl-update').checked, resend_all: !$('#bl-resend-wrap').hidden && $('#bl-resend').checked } })) });
     for (;;) {
       await new Promise(r => setTimeout(r, 700));
       const st = await api(`/api/project/${projectId}/integrations/push/${push_id}`);
