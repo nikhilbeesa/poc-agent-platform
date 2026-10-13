@@ -108,7 +108,14 @@ def push(context: ProjectContext, target: str, creds: dict, options: dict, progr
                 me["linked"].append(dep)
                 rep["dependency_links"] += 1
             except IntegrationError as e:
-                rep["failed"].append({"id": it["id"], "title": f"link {it['id']} → {dep}", "error": str(e)})
+                if "TF201035" in str(e) or "circular" in str(e).lower():     # a loop we could not see ahead of time
+                    tool.warnings.append(f"Dependency {it['id']} → {dep} was skipped: it would create a circular link.")
+                else:
+                    rep["failed"].append({"id": it["id"], "title": f"link {it['id']} → {dep}", "error": str(e)})
+    if bk.get("dropped_dependencies"):
+        tool.warnings.append("Circular dependencies in the generated backlog were left out so the links could be created: "
+                             + ", ".join(f"{a} → {b}" for a, b in bk["dropped_dependencies"][:12])
+                             + (" …" if len(bk["dropped_dependencies"]) > 12 else "") + ". Review these stories' order.")
     rep["warnings"] = list(dict.fromkeys(tool.warnings))
     rep["target"], rep["seconds"] = tool.target_id, round(time.time() - t0, 1)
     return rep

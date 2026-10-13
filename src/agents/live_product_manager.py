@@ -181,6 +181,13 @@ def generate(context: ProjectContext, client) -> dict:
         stories.append(story)
         first_story_of_module.setdefault(mid, story)
 
+    clean, dropped = ch.break_dependency_cycles({st["id"]: st["dependencies"] for st in stories})
+    for st in stories:
+        st["dependencies"] = clean[st["id"]]
+    if dropped:
+        ch.report(f"Removed {len(dropped)} circular story dependenc{'y' if len(dropped) == 1 else 'ies'}: "
+                  + ", ".join(f"{a}→{b}" for a, b in dropped[:10]))
+
     epics = [
         {"id": epic_of[m["id"]], "name": m["name"], "description": m.get("purpose", "")}
         for m in modules if any(r.get("module_id") == m["id"] for r in reqs)

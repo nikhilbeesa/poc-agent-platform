@@ -137,6 +137,29 @@ def test_ado_without_permission_to_create_tags_still_creates_stories():
     finally: mk.stop()
 
 
+def test_circular_dependencies_are_removed_before_linking():
+    """Regression: Azure DevOps refused 'US-030 -> US-022' (TF201035, circular predecessor link)."""
+    import chunked as ch
+    clean, dropped = ch.break_dependency_cycles({"US-001": ["US-002"], "US-002": ["US-001"], "US-003": ["US-003", "US-001"],
+                                                 "US-022": ["US-030"], "US-030": ["US-022", "US-001"]})
+    assert ("US-001", "US-002") in dropped and ("US-022", "US-030") in dropped and ("US-003", "US-003") in dropped
+    assert clean["US-002"] == ["US-001"] and clean["US-030"] == ["US-022", "US-001"] and clean["US-003"] == ["US-001"]
+    ctx = _backlog_project()
+    stories = ctx.get_contribution(next(iter(__import__("context").AgentRole))).output  # noqa: F841 (keeps import side-effects)
+    pm = ctx.get_contribution(__import__("context").AgentRole.PRODUCT_MANAGER)
+    ids = [x["id"] for x in pm.output["stories"]]
+    pm.output["stories"][0]["dependencies"] = [ids[1]]; pm.output["stories"][1]["dependencies"] = [ids[0]]   # a loop
+    bk = backlog.build_backlog(ctx)
+    assert bk["dropped_dependencies"]
+    edges = {(x["id"], d) for x in bk["stories"] for d in x["dependencies"]}
+    assert not ({(ids[0], ids[1]), (ids[1], ids[0])} <= edges)                      # at most one direction survives
+    mk = Mock("ado")
+    try:
+        r = sync.push(ctx, "ado", ADO(mk), {})
+        assert not r["failed"] and any("Circular" in w for w in r["warnings"]), r
+    finally: mk.stop()
+
+
 def test_ado_agile_and_basic():
     ctx = _backlog_project(); bk = backlog.build_backlog(ctx); mk = Mock("ado")
     try:

@@ -67,10 +67,15 @@ def build_backlog(context: ProjectContext) -> dict:
     epics_by_id = {e["id"]: e for e in out.get("epics", []) if e.get("id")}
 
     from export import _story_dor_dod            # the user-stories document's own builder, so tools and document agree
+    known = {s["id"] for s in out.get("stories", []) if s.get("id")}
+    raw_deps = {s["id"]: [d for d in _list(s.get("dependencies")) if re.match(r"^US-\d+$", d) and d in known]
+                for s in out.get("stories", []) if s.get("id")}
+    clean_deps, dropped_deps = ch.break_dependency_cycles(raw_deps)    # tools (Azure DevOps) refuse circular links
     stories = []
     for s in out.get("stories", []):
         if not s.get("id"):
             continue
+        s = {**s, "dependencies": clean_deps.get(s["id"], [])}
         epic = epics_by_id.get(s.get("epic_id"), {})
         rules = ch.normalize_validation_rules(s.get("data_validation"))
         dor, dod = _story_dor_dod(s, rules, [x for x in (out.get("story_screens") or {}).get(s["id"], []) if x],
@@ -87,7 +92,7 @@ def build_backlog(context: ProjectContext) -> dict:
             "acceptance_criteria": _list(s.get("acceptance_criteria")), "edge_cases": _list(s.get("edge_cases"))[:8],
             "data_validation": rules, "error_messages": _list(s.get("error_messages")), "empty_states": _list(s.get("empty_states")),
             "dor": dor, "dod": dod,
-            "dependencies": [d for d in _list(s.get("dependencies")) if re.match(r"^US-\d+$", d)],
+            "dependencies": s["dependencies"],
             "fr_ids": _list(s.get("related_fr_ids")),
             "labels": ["ai-generated"] + [_label(epic.get("name", ""))] + [_label(f) for f in _list(s.get("related_fr_ids"))],
         }
@@ -102,7 +107,7 @@ def build_backlog(context: ProjectContext) -> dict:
                 "story_count": sum(1 for s in stories if s["epic_id"] == e["id"])}
         item["hash"] = hashlib.sha1(json.dumps(item, sort_keys=True).encode()).hexdigest()[:12]
         epics.append(item)
-    return {"epics": epics, "stories": stories}
+    return {"epics": epics, "stories": stories, "dropped_dependencies": dropped_deps}
 
 
 # ---------------------------------------------------------------------------

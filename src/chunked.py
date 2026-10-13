@@ -641,3 +641,40 @@ def normalize_key_parameters(items: Any) -> list[dict]:
         out.append({"parameter": str(p["parameter"]).strip(), "value": value, "status": status,
                     "related": str(p.get("related") or "").strip(), "owner": str(p.get("owner") or "").strip()})
     return out
+
+
+def break_dependency_cycles(deps: dict[str, list[str]]) -> tuple[dict[str, list[str]], list[tuple[str, str]]]:
+    """Make a story dependency map acyclic. Returns (clean map, dropped (story, depends_on) pairs).
+
+    AI-written dependencies can loop (US-030 needs US-022 while US-022 already needs US-030, directly or via others).
+    Jira tolerates that, but Azure DevOps refuses it (TF201035: 'circular relationship'), and a loop is meaningless as
+    a build order anyway. Self-dependencies are dropped. Edges that point to an EARLIER story (lower number — the
+    foundational one) are kept first, so the edge that closes a loop is normally the 'backwards' one."""
+    def num(x: str) -> int:
+        m = re.search(r"(\d+)$", x)
+        return int(m.group(1)) if m else 0
+
+    kept: dict[str, list[str]] = {k: [] for k in deps}
+    dropped: list[tuple[str, str]] = []
+
+    def reaches(a: str, b: str) -> bool:            # can a already reach b by following kept edges?
+        seen, stack = set(), [a]
+        while stack:
+            n = stack.pop()
+            if n == b:
+                return True
+            if n not in seen:
+                seen.add(n)
+                stack.extend(kept.get(n, []))
+        return False
+
+    edges = [(s, d) for s in deps for d in dict.fromkeys(deps[s])]
+    edges.sort(key=lambda e: (num(e[1]) > num(e[0]), num(e[0]), num(e[1])))     # forward edges first
+    for s, d in edges:
+        if s == d or reaches(d, s):
+            dropped.append((s, d))
+        else:
+            kept[s].append(d)
+    for s in kept:                                   # keep the original order of each list
+        kept[s] = [d for d in dict.fromkeys(deps[s]) if d in kept[s]]
+    return kept, sorted(dropped, key=lambda e: (num(e[0]), num(e[1])))
